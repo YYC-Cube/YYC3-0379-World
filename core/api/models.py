@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 class ModelConfig(BaseModel):
     id: str = Field(..., description="模型唯一标识")
     display_name: str = Field(..., description="前端友好名称")
-    backend: Literal["local", "openai", "zhipu"] = Field(..., description="后端类型")
+    backend: Literal["local", "openai", "zhipu", "deepseek", "ollama"] = Field(..., description="后端类型")
     version: Optional[str] = Field(None, description="模型版本")
     enabled: bool = Field(True, description="是否启用")
     max_tokens: int = Field(4096, ge=1, le=128000, description="最大 Token 数")

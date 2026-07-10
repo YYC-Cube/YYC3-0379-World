@@ -202,5 +202,20 @@ class MetricsManager:
         """记录并发限制拒绝"""
         self.concurrency_limit_rejections.inc()
 
+    def get_active_requests(self) -> float:
+        """获取当前活跃请求数"""
+        return self.active_requests._value.get()
+
+    def get_total_requests(self) -> float:
+        """获取总请求数"""
+        return self.request_counter._value.get()
+
+    def get_cache_hit_rate(self) -> float:
+        """获取缓存命中率"""
+        hits = self.cache_hits._value.get()
+        misses = self.cache_misses._value.get()
+        total = hits + misses
+        return hits / total if total > 0 else 0.0
+
 
 metrics_manager = MetricsManager()

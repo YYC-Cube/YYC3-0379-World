@@ -165,7 +165,7 @@ async def health_check():
 
     # 检查Redis
     try:
-        from app.db import redis_client
+        from cache import redis_client
 
         await redis_client.ping()
         services["redis"] = {"status": "healthy"}
@@ -174,8 +174,10 @@ async def health_check():
 
     # 检查PostgreSQL
     try:
+        from sqlalchemy import text as sa_text
+
         async with async_session() as session:
-            await session.execute("SELECT 1")
+            await session.execute(sa_text("SELECT 1"))
             services["postgresql"] = {"status": "healthy"}
     except Exception:
         services["postgresql"] = {"status": "unreachable"}
@@ -429,9 +431,11 @@ async def get_summary():
             )
         )
         row = result.first()
+        total_requests = row.total_requests if row and row.total_requests else 0
+        total_tokens = row.total_tokens if row and row.total_tokens else 0
         return UsageSummary(
-            total_requests=row.total_requests or 0,
-            total_tokens=row.total_tokens or 0,
+            total_requests=total_requests,
+            total_tokens=total_tokens,
             cost_usd=0.0,
         )
 
