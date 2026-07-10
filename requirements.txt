@@ -1,0 +1,38 @@
+# @file requirements.txt
+# @description Python 依赖包列表
+# @author YanYuCloudCube Team <admin@0379.email>
+# @version v1.0.0
+# @created 2026-03-14
+# @updated 2026-04-08
+# @status stable
+# @license MIT
+# @copyright Copyright (c) 2026 YanYuCloudCube Team
+# @tags python,fastapi,dependencies
+
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.3
+python-multipart>=0.0.6
+pydantic-settings>=2.1.0
+python-jose[cryptography]>=3.3.0
+PyJWT>=2.8.0
+passlib[bcrypt]>=1.7.4
+python-dateutil>=2.8.2
+email-validator>=2.1.0
+requests>=2.31.0
+httpx[http2]>=0.26.0
+sqlalchemy>=2.0.25
+psycopg2-binary>=2.9.9
+redis>=5.0.1
+asyncpg>=0.29.0
+prometheus-fastapi-instrumentator>=7.0.0
+
+# 知识库系统依赖
+pgvector>=0.3.6
+tiktoken>=0.5.2
+aiofiles>=23.2.1
+numpy>=1.26.4
+
+# 文档解析（可选）
+PyMuPDF>=1.24.0
+python-docx>=1.1.0

@@ -1,0 +1,88 @@
+# @file .gitignore
+# @description Git 忽略文件配置
+# @author YanYuCloudCube Team <admin@0379.email>
+# @version v1.0.0
+# @created 2026-03-14
+# @updated 2026-03-14
+# @status stable
+# @license MIT
+# @copyright Copyright (c) 2026 YanYuCloudCube Team
+# @tags git,ignore,security
+
+# 环境变量（所有.env文件均不提交远程，但保留.env.example作为模板）
+.env
+.env.*
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+ENV/
+env/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+logs/
+
+# 数据
+data/
+*.db
+*.sqlite
+
+# 证书
+traefik/acme.json
+
+# WireGuard 私钥（绝对不可提交远程）
+*.key
+core/config/keys/
+
+# 覆盖率报告
+.coverage
+htmlcov/
+.coverage.*
+
+# 本地文档（仅保留在本地，不提交远程仓库）
+docs/
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+
+# GitHub Workflows (需要手动管理以避免 OAuth 权限问题)
+.github/workflows/*.yml

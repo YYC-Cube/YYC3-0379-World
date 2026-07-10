@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  gateway-primary:
+    image: yyc3/gateway:latest
+    container_name: yyc3-gateway-primary
+    hostname: yyc3-33
+    ports:
+      - "3200:8000"
+    environment:
+      - NODE_ID=yyc3-33
+      - NODE_ROLE=primary
+      - REDIS_URL=redis://yyc3-22:6379
+      - DATABASE_URL=postgresql://yyc3:yyc3_password@yyc3-33:5432/yyc3_db
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - API_KEYS=${API_KEYS}
+    volumes:
+      - /models:/models:ro
+      - /config:/config:ro
+      - /logs:/logs
+    networks:
+      - yyc3-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    labels:
+      - "yyc3.role=primary"
+      - "yyc3.type=gateway"
+
+  gateway-backup:
+    image: yyc3/gateway:latest
+    container_name: yyc3-gateway-backup
+    hostname: yyc3-45
+    ports:
+      - "3202:8000"
+    environment:
+      - NODE_ID=yyc3-45
+      - NODE_ROLE=backup
+      - REDIS_URL=redis://yyc3-45:6399
+      - DATABASE_URL=postgresql://yyc3:yyc3_password@yyc3-45:5432/yyc3_db
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - API_KEYS=${API_KEYS}
+    volumes:
+      - /models:/models:ro
+      - /config:/config:ro
+      - /logs:/logs
+    networks:
+      - yyc3-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    labels:
+      - "yyc3.role=backup"
+      - "yyc3.type=gateway"
+
+  ollama-local:
+    image: ollama/ollama:latest
+    container_name: yyc3-ollama
+    hostname: yyc3-22
+    ports:
+      - "11434:11434"
+    volumes:
+      - /models/ollama:/root/.ollama
+    networks:
+      - yyc3-network
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 32G
+        reservations:
+          cpus: '4'
+          memory: 16G
+    restart: unless-stopped
+    labels:
+      - "yyc3.type=ollama"
+
+  model-router:
+    image: yyc3/model-router:latest
+    container_name: yyc3-model-router
+    ports:
+      - "3205:8080"
+    environment:
+      - NODES=yyc3-22,yyc3-33,yyc3-45
+      - STRATEGY=weighted_latency
+      - HEALTH_CHECK_INTERVAL=5
+    networks:
+      - yyc3-network
+    restart: unless-stopped
+    labels:
+      - "yyc3.type=router"
+
+  failover-manager:
+    image: yyc3/failover-manager:latest
+    container_name: yyc3-failover
+    ports:
+      - "3206:8081"
+    environment:
+      - PRIMARY_NODE=yyc3-33
+      - BACKUP_NODES=yyc3-45,yyc3-77
+      - HEALTH_CHECK_INTERVAL=5
+    networks:
+      - yyc3-network
+    restart: unless-stopped
+    labels:
+      - "yyc3.type=failover"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: yyc3-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - yyc3-network
+    restart: unless-stopped
+    labels:
+      - "yyc3.type=monitoring"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: yyc3-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - yyc3-network
+    restart: unless-stopped
+    labels:
+      - "yyc3.type=monitoring"
+
+networks:
+  yyc3-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  prometheus_data:
+  grafana_data:

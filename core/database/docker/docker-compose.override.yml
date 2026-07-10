@@ -1,0 +1,38 @@
+# YYC³ Docker Compose 覆盖配置
+# 自动生成于: 2026-03-20 23:52:19
+# 用途: 智能挂载配置
+
+services:
+  gateway:
+    volumes:
+      - yyc3_data:/app/data
+      - /Volumes/Development/项目提示词/0379-world/config:/app/config:ro
+    networks:
+      - 0379-world_backend
+      - docker_backend
+
+  postgres:
+    volumes:
+      - yyc3_postgres:/var/lib/postgresql/data
+    networks:
+      - 0379-world_backend
+
+  redis:
+    volumes:
+      - yyc3_redis:/data
+    networks:
+      - 0379-world_backend
+
+volumes:
+  yyc3_data:
+    external: true
+  yyc3_postgres:
+    external: true
+  yyc3_redis:
+    external: true
+
+networks:
+  0379-world_backend:
+    external: true
+  docker_backend:
+    external: true

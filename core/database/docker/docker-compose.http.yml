@@ -1,0 +1,40 @@
+# @file docker-compose.http.yml
+# @description Docker Compose 配置 - HTTP 模式（无需HTTPS证书）
+# @author YanYuCloudCube Team <admin@0379.email>
+# @version v1.0.0
+# @created 2026-03-14
+# @updated 2026-03-14
+# @status stable
+# @license MIT
+# @copyright Copyright (c) 2026 YanYuCloudCube Team
+# @tags docker,compose,http,fastapi
+
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file: .env
+    environment:
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY:?must_set_ZHIPU_API_KEY}
+      - MCP_DB_HOST=host.docker.internal
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:?must_set_DB_PASSWORD}@host.docker.internal:5433/yyc3_mcp
+    ports:
+      - "8000:8000"
+    networks:
+      - backend
+    volumes:
+      - ./data:/app/data
+      - ../config/mcp_config.json:/app/config/mcp_config.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  data:
