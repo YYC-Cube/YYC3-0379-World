@@ -1,20 +1,3 @@
----
-file: README.md
-description: YYC³ 0379-World 项目总览 — 全链路 AI 模型网关与智能协同平台
-author: YanYuCloudCube Team <admin@0379.email>
-version: v2.1.0
-created: 2026-03-14
-updated: 2026-07-10
-status: stable
-tags: [project],[overview],[api],[gateway],[ai]
-category: general
-language: zh-CN
-audience: developers,stakeholders
-complexity: intermediate
-license: MIT
-copyright: Copyright (c) 2026 YanYuCloudCube Team
----
-
 <div align="center">
 
 <img src="./public/Family-001.png" alt="YYC³ 0379-World" width="100%"/>
