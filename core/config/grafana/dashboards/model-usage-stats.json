@@ -1,0 +1,58 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "title": "YYC³ 模型使用统计",
+  "uid": "yyc3-model-stats",
+  "version": 1,
+  "panels": [
+    {
+      "title": "Token 消耗趋势",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(llm_tokens_total[5m])) by (model)",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "description": "各模型Token消耗速率"
+    },
+    {
+      "title": "请求量分布",
+      "type": "piechart",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(api_requests_total[1h])) by (backend)",
+          "legendFormat": "{{backend}}"
+        }
+      ],
+      "description": "各后端请求量占比"
+    },
+    {
+      "title": "模型延迟对比",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(llm_response_time_seconds_bucket[5m])) by (le, model))",
+          "legendFormat": "P95 {{model}}"
+        }
+      ],
+      "description": "各模型P95延迟对比"
+    },
+    {
+      "title": "错误率排行",
+      "type": "table",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(api_errors_total[1h])) by (backend))",
+          "legendFormat": "{{backend}}"
+        }
+      ],
+      "description": "错误率最高的后端"
+    }
+  ],
+  "tags": ["yyc3", "model", "usage"]
+}

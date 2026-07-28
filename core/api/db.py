@@ -31,6 +31,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -70,6 +71,13 @@ class UsageLog(Base):
     total_tokens = Column(Integer, default=0)
     user_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_usage_log_model", "model"),
+        Index("idx_usage_log_created_at", "created_at"),
+        Index("idx_usage_log_backend_type", "backend_type"),
+        Index("idx_usage_log_model_created", "model", "created_at"),
+    )
 
 
 class KnowledgeBase(Base):

@@ -62,6 +62,8 @@ class Settings(BaseSettings):
 
     api_keys: str = ""
 
+    allowed_origins: str = "https://api.0379.world"
+
     class Config:
         env_file = ".env"
         case_sensitive = False

@@ -24,7 +24,7 @@ import os
 import json
 import httpx
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.config import settings
 
 _OLLAMA_ENDPOINTS = [
@@ -46,9 +46,9 @@ async def _call_one(endpoint: str, payload: Dict) -> Dict:
 async def chat_completion(
     model: str,
     messages: List[Dict],
-    max_tokens: int | None = None,
+    max_tokens: Optional[int] = None,
     temperature: float = 0.7,
-    top_p: float | None = None,
+    top_p: Optional[float] = None,
     stream: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -62,7 +62,7 @@ async def chat_completion(
             "temperature": temperature,
         },
     }
-    
+
     if max_tokens:
         payload["options"]["num_ctx"] = max_tokens
     if top_p:
@@ -100,13 +100,13 @@ async def chat_completion(
 async def chat_completion_stream(
     model: str,
     messages: List[Dict],
-    max_tokens: int | None = None,
+    max_tokens: Optional[int] = None,
     temperature: float = 0.7,
-    top_p: float | None = None,
+    top_p: Optional[float] = None,
 ):
     """
     Ollama流式输出 - 用于WebSocket
-    
+
     Yields:
         dict: 流式响应块
     """
@@ -118,12 +118,12 @@ async def chat_completion_stream(
             "temperature": temperature,
         },
     }
-    
+
     if max_tokens:
         payload["options"]["num_ctx"] = max_tokens
     if top_p:
         payload["options"]["top_p"] = top_p
-    
+
     last_err = None
     for ep in _OLLAMA_ENDPOINTS:
         try:
@@ -134,13 +134,13 @@ async def chat_completion_stream(
                     json=payload
                 ) as response:
                     response.raise_for_status()
-                    
+
                     async for line in response.aiter_lines():
                         if line:
                             try:
                                 chunk = json.loads(line)
                                 message = chunk.get("message", {})
-                                
+
                                 yield {
                                     "id": chunk.get("created_at", ""),
                                     "object": "chat.completion.chunk",
@@ -157,12 +157,12 @@ async def chat_completion_stream(
                                 }
                             except json.JSONDecodeError:
                                 continue
-            
+
             # 成功完成，退出循环
             return
-            
+
         except Exception as exc:
             last_err = exc
             continue
-    
+
     raise RuntimeError(f"All Ollama endpoints failed for streaming: {last_err}")

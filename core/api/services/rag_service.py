@@ -29,7 +29,7 @@ class RAGService:
         knowledge_base_ids: List[str],
         top_k: int = 5,
         threshold: float = 0.7,
-        db: AsyncSession = None,
+        db: Optional[AsyncSession] = None,
     ) -> List[Dict[str, Any]]:
         """
         语义检索
@@ -46,11 +46,14 @@ class RAGService:
         """
         query_embedding = await embedding_service.get_embedding_zhipu(query)
 
+        if db is None:
+            raise ValueError("semantic_search 需要 db 参数（AsyncSession）")
+
         embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
         sql = text(
-            f"""
-            SELECT 
+            """
+            SELECT
                 dc.id,
                 dc.document_id,
                 dc.knowledge_base_id,
@@ -59,20 +62,25 @@ class RAGService:
                 dc.token_count,
                 d.title as document_title,
                 kb.name as knowledge_base_name,
-                1 - (dc.embedding <=> '{embedding_str}'::vector) as similarity
+                1 - (dc.embedding <=> CAST(:embedding AS vector)) as similarity
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             JOIN knowledge_bases kb ON dc.knowledge_base_id = kb.id
             WHERE dc.knowledge_base_id = ANY(:kb_ids)
-            AND 1 - (dc.embedding <=> '{embedding_str}'::vector) >= :threshold
-            ORDER BY dc.embedding <=> '{embedding_str}'::vector
+            AND 1 - (dc.embedding <=> CAST(:embedding AS vector)) >= :threshold
+            ORDER BY dc.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
         """
         )
 
         result = await db.execute(
             sql,
-            {"kb_ids": knowledge_base_ids, "threshold": threshold, "limit": top_k},
+            {
+                "embedding": embedding_str,
+                "kb_ids": knowledge_base_ids,
+                "threshold": threshold,
+                "limit": top_k,
+            },
         )
         rows = result.fetchall()
 
@@ -101,7 +109,7 @@ class RAGService:
         top_k: int = 5,
         keyword_weight: float = 0.3,
         semantic_weight: float = 0.7,
-        db: AsyncSession = None,
+        db: Optional[AsyncSession] = None,
     ) -> List[Dict[str, Any]]:
         """
         混合检索（关键词 + 语义）
@@ -126,7 +134,7 @@ class RAGService:
 
         keyword_sql = text(
             """
-            SELECT 
+            SELECT
                 dc.id,
                 dc.document_id,
                 dc.knowledge_base_id,
@@ -145,6 +153,8 @@ class RAGService:
         )
 
         keyword_patterns = [f"%{kw}%" for kw in keywords]
+        if db is None:
+            raise ValueError("hybrid_search 需要 db 参数（AsyncSession）")
         keyword_result = await db.execute(
             keyword_sql,
             {"kb_ids": knowledge_base_ids, "keywords": keyword_patterns, "limit": top_k},

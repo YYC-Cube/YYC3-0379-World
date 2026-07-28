@@ -23,7 +23,7 @@
 import httpx
 import json
 import time
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional
 from app.config import settings
 from app.utils import http_client
 
@@ -34,9 +34,9 @@ _OPENAI_KEY = settings.openai_api_key
 async def chat_completion(
     model: str,
     messages: List[Dict],
-    max_tokens: int | None = None,
+    max_tokens: Optional[int] = None,
     temperature: float = 0.7,
-    top_p: float | None = None,
+    top_p: Optional[float] = None,
     stream: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -74,9 +74,9 @@ async def chat_completion(
 async def chat_completion_stream(
     model: str,
     messages: List[Dict],
-    max_tokens: int | None = None,
+    max_tokens: Optional[int] = None,
     temperature: float = 0.7,
-    top_p: float | None = None,
+    top_p: Optional[float] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     OpenAI流式输出 - 统一SSE格式

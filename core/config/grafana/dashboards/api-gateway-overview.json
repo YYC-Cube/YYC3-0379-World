@@ -1,0 +1,89 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "title": "YYC³ API 网关概览",
+  "uid": "yyc3-api-gateway",
+  "version": 1,
+  "panels": [
+    {
+      "title": "请求速率 (RPS)",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(api_requests_total[5m])) by (method, endpoint)",
+          "legendFormat": "{{method}} {{endpoint}}"
+        }
+      ],
+      "description": "各端点每分钟请求数"
+    },
+    {
+      "title": "响应延迟 P50/P95/P99",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(api_response_time_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "P50 {{endpoint}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_response_time_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "P95 {{endpoint}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(api_response_time_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "P99 {{endpoint}}"
+        }
+      ],
+      "description": "API响应延迟分位数"
+    },
+    {
+      "title": "错误率",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(api_errors_total[5m])) by (error_type)",
+          "legendFormat": "{{error_type}}"
+        }
+      ],
+      "description": "按错误类型分类的错误率"
+    },
+    {
+      "title": "缓存命中率",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 4, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "cache_hits_total / (cache_hits_total + cache_misses_total) * 100"
+        }
+      ],
+      "description": "缓存命中率百分比"
+    },
+    {
+      "title": "活跃请求数",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 4, "x": 4, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(api_requests_total) - sum(api_requests_total offset 5m)"
+        }
+      ],
+      "description": "当前活跃请求数"
+    },
+    {
+      "title": "模型使用排行",
+      "type": "table",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(api_requests_total[1h])) by (backend))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "description": "最常用的Top 10模型"
+    }
+  ],
+  "tags": ["yyc3", "api", "gateway"]
+}

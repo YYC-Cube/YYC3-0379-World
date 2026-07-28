@@ -41,7 +41,6 @@ redis_client = Redis(
 # ── 缓存配置 ──────────────────────────────────────────────
 CACHE_TTL = 3600  # 默认TTL: 1小时
 CACHE_MAX_ENTRIES = 10000  # 最大缓存条目数
-CACHE_KEY_PREFIX = "llm_cache:"  # 缓存键前缀
 CACHE_INDEX_KEY = "llm_cache:index"  # 有序集合索引（用于LRU淘汰）
 CACHE_SIZE_KEY = "llm_cache:size"  # 当前缓存条目计数
 

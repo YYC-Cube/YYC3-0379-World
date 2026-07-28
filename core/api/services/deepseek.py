@@ -18,7 +18,7 @@ from app.utils.logger import logger
 
 
 _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
-_DEEPSEEK_KEY = getattr(settings, 'deepseek_api_key', '')
+_DEEPSEEK_KEY = settings.deepseek_api_key
 
 
 async def chat_completion(

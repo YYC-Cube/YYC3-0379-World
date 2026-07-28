@@ -156,7 +156,7 @@ check-env: ## 环境检查
 	@echo "$(GREEN)✅ 环境配置检查通过$(RESET)"
 
 # 项目状态
-status: ## 项目状态
+status: check-env ## 项目状态
 	@echo "$(BLUE)YYC³ 0379-world 项目状态$(RESET)"
 	@echo ""
 	@echo "$(GREEN)项目信息:$(RESET)"
@@ -195,7 +195,134 @@ version: ## 显示版本信息
 	@echo "Python: $$(python3 --version)"
 	@echo "Docker: $$(docker --version)"
 
-# 完整构建
+# ── 运维操作统一入口 ──────────────────────────────────────
+
+# 节点健康检查
+ops-health: ## 全节点健康检查
+	@echo "$(BLUE)[运维] 执行全节点健康检查...$(RESET)"
+	@bash scripts/health-check.sh 2>/dev/null || bash core/scripts/health-check.sh
+	@echo "$(GREEN)✅ 健康检查完成$(RESET)"
+
+# 数据库运维
+ops-db-backup: ## 数据库备份
+	@echo "$(BLUE)[运维] 备份数据库...$(RESET)"
+	@mkdir -p backups
+	@bash scripts/pg-failover.sh backup 2>/dev/null || bash core/scripts/yyc3_db_backup.sh
+	@echo "$(GREEN)✅ 数据库备份完成$(RESET)"
+
+ops-db-setup-master: ## 设置数据库主节点
+	@echo "$(BLUE)[运维] 设置 PostgreSQL 主节点...$(RESET)"
+	@bash scripts/pg-setup-master.sh
+	@echo "$(GREEN)✅ 主节点设置完成$(RESET)"
+
+ops-db-setup-slave: ## 设置数据库从节点
+	@echo "$(BLUE)[运维] 设置 PostgreSQL 从节点...$(RESET)"
+	@bash scripts/pg-setup-slave.sh
+	@echo "$(GREEN)✅ 从节点设置完成$(RESET)"
+
+ops-db-verify: ## 验证数据库复制状态
+	@echo "$(BLUE)[运维] 验证数据库复制...$(RESET)"
+	@bash scripts/pg-verify-replication.sh
+
+# 故障转移
+ops-failover: ## 手动触发故障转移
+	@echo "$(YELLOW)[运维] 触发故障转移...$(RESET)"
+	@bash scripts/pg-failover.sh
+	@bash scripts/test-failover.sh
+
+# 负载均衡
+ops-lb-setup: ## 设置负载均衡
+	@echo "$(BLUE)[运维] 配置负载均衡...$(RESET)"
+	@bash scripts/setup-load-balancer.sh
+
+ops-lb-verify: ## 验证负载均衡
+	@echo "$(BLUE)[运维] 验证负载均衡...$(RESET)"
+	@bash scripts/verify-load-balancer.sh
+
+# 配置同步
+ops-sync-config: ## 同步配置文件到所有节点
+	@echo "$(BLUE)[运维] 同步配置...$(RESET)"
+	@bash scripts/sync-config.sh
+
+ops-sync-all: ## 全量同步配置和模型挂载
+	@echo "$(BLUE)[运维] 全量同步...$(RESET)"
+	@bash scripts/sync-all-configs.sh
+
+# 模型管理
+ops-models-list: ## 列出所有可用模型
+	@echo "$(BLUE)[运维] 查询模型列表...$(RESET)"
+	@bash core/scripts/model-manager.sh list 2>/dev/null || echo "请直接访问 /v1/models"
+
+ops-models-start: ## 启动本地模型服务
+	@echo "$(BLUE)[运维] 启动本地模型...$(RESET)"
+	@bash core/scripts/start-local-models.sh
+
+# WireGuard 网络
+ops-wireguard-keys: ## 生成 WireGuard 密钥
+	@echo "$(BLUE)[运维] 生成 WireGuard 密钥...$(RESET)"
+	@bash core/config/wireguard/generate-keys.sh
+
+# 监控运维
+ops-monitoring-start: ## 启动监控栈
+	@echo "$(BLUE)[运维] 启动监控服务...$(RESET)"
+	@bash core/scripts/start-monitoring.sh
+
+# 网关测试
+ops-test-gateway: ## 测试网关 API（验证全链路）
+	@echo "$(BLUE)[运维] 测试网关 API...$(RESET)"
+	@$(PYTHON) tests/test_gateway_api.py
+
+ops-test-websocket: ## 测试 WebSocket 连接
+	@echo "$(BLUE)[运维] 测试 WebSocket...$(RESET)"
+	@$(PYTHON) scripts/test-websocket.py
+
+# 验证并修复项目完整
+ops-validate: ## 验证项目完整性（命名/结构/导入）
+	@echo "$(BLUE)[运维] 验证项目完整性...$(RESET)"
+	@$(PYTHON) scripts/tools/check_project_completeness.py
+	@$(PYTHON) scripts/tools/check_directory_structure.py
+	@$(PYTHON) scripts/tools/check_naming_convention.py
+	@$(PYTHON) scripts/tools/verify_imports.py
+	@echo "$(GREEN)✅ 验证完成$(RESET)"
+
+# 有序启动（按依赖顺序）
+ops-startup: ## 有序启动全栈服务（DB→Redis→Ollama→API→Monitor→LB）
+	@echo "$(BLUE)══════════════════════════════════════$(RESET)"
+	@echo "$(BLUE)  YYC³ 有序启动流程$(RESET)"
+	@echo "$(BLUE)══════════════════════════════════════$(RESET)"
+	@echo ""
+	@echo "$(YELLOW)[Step 1/7] 启动 PostgreSQL...$(RESET)"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_FILE) up -d postgres
+	@sleep 5
+	@echo ""
+	@echo "$(YELLOW)[Step 2/7] 启动 Redis...$(RESET)"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_FILE) up -d redis
+	@sleep 3
+	@echo ""
+	@echo "$(YELLOW)[Step 3/7] 启动 Ollama...$(RESET)"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_FILE) up -d ollama
+	@sleep 10
+	@echo ""
+	@echo "$(YELLOW)[Step 4/7] 启动 API Gateway...$(RESET)"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_FILE) up -d api
+	@sleep 5
+	@echo ""
+	@echo "$(YELLOW)[Step 5/7] 启动 Prometheus/Monitor...$(RESET)"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_FILE) up -d prometheus loki grafana
+	@sleep 3
+	@echo ""
+	@echo "$(YELLOW)[Step 6/7] 启动 HAProxy/LB...$(RESET)"
+	@$(DOCKER_COMPOSE) -f $(DOCKER_FILE) up -d haproxy
+	@sleep 2
+	@echo ""
+	@echo "$(YELLOW)[Step 7/7] 验证健康状态...$(RESET)"
+	@$(MAKE) ops-test-gateway
+	@echo ""
+	@echo "$(GREEN)✅ 全栈启动完成！$(RESET)"
+	@echo "$(BLUE)    API: http://localhost:8000$(RESET)"
+	@echo "$(BLUE)    Docs: http://localhost:8000/docs$(RESET)"
+
+# ── 完整构建 ──
 build: clean install lint test ## 完整构建（清理、安装、检查、测试）
 	@echo "$(GREEN)✅ 构建完成$(RESET)"
 

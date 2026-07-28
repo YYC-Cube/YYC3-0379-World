@@ -18,6 +18,7 @@
 # @copyright Copyright (c) 2026 YanYuCloudCube Team
 # @tags python,fastapi,api
 
+import logging
 import time
 from datetime import datetime
 from typing import List
@@ -34,8 +35,9 @@ from app.models import (
     PingResponse,
     UsageSummary,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import select
 
@@ -111,9 +113,54 @@ curl -X POST https://api.0379.world/v1/rag/search \\
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
+@app.on_event("startup")
+async def validate_critical_config():
+    """启动时校验关键配置，防止生产环境使用默认值"""
+    logger = logging.getLogger(__name__)
+
+    critical_checks = [
+        ("JWT_SECRET_KEY", settings.jwt_secret_key,
+         lambda v: v and v != "change_me_in_production"),
+        ("API_KEYS", settings.api_keys,
+         lambda v: bool(v)),
+        ("POSTGRES_PASSWORD", settings.db_password,
+         lambda v: v and v != "change_me_in_production"),
+        ("REDIS_PASSWORD", settings.redis_password,
+         lambda v: v and v != "change_me_in_production"),
+    ]
+
+    errors = []
+    warnings = []
+
+    for name, value, check in critical_checks:
+        if not check(value):
+            errors.append(name)
+
+    if errors:
+        msg = f"关键配置缺失或使用默认值: {', '.join(errors)}"
+        if settings.auth_enabled:
+            logger.critical(msg)
+            raise RuntimeError(msg)
+        else:
+            logger.warning(f"[非生产模式] {msg}")
+
+    # ── 非关键但建议配置的项 ──
+    if not settings.zhipu_api_key:
+        warnings.append("ZHIPU_API_KEY")
+    if not settings.deepseek_api_key:
+        warnings.append("DEEPSEEK_API_KEY")
+    if not settings.openai_api_key:
+        warnings.append("OPENAI_API_KEY")
+
+    if not errors and warnings:
+        logger.info(f"以下 API Key 未配置（按需忽略）: {', '.join(warnings)}")
+
+    logger.info("配置校验通过，服务启动正常")
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -138,49 +185,60 @@ async def health_check():
     """
     健康检查端点
 
-    返回系统状态、服务可用性、资源使用情况
+    返回系统状态、服务可用性、资源使用情况（并发检查）
     """
     from app.utils.metrics import metrics_manager
 
-    # 检查各服务状态
-    services = {}
+    async def _check_ollama():
+        try:
+            import httpx
 
-    # 检查Ollama
-    try:
-        import httpx
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get("http://localhost:11434/api/tags")
+                return {
+                    "status": "healthy" if resp.status_code == 200 else "unhealthy",
+                    "latency_ms": int(resp.elapsed.total_seconds() * 1000),
+                }
+        except Exception:
+            return {"status": "unreachable"}
 
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get("http://localhost:11434/api/tags")
-            services["ollama"] = {
-                "status": "healthy" if resp.status_code == 200 else "unhealthy",
-                "latency_ms": int(resp.elapsed.total_seconds() * 1000),
-            }
-    except Exception:
-        services["ollama"] = {"status": "unreachable"}
+    async def _check_redis():
+        try:
+            from app.cache import redis_client
 
-    # 检查智谱API（仅检查配置）
-    services["zhipu"] = {
-        "status": "configured" if settings.zhipu_api_key else "not_configured"
+            await redis_client.ping()
+            return {"status": "healthy"}
+        except Exception:
+            return {"status": "unreachable"}
+
+    async def _check_postgresql():
+        try:
+            from sqlalchemy import text as sa_text
+
+            async with async_session() as session:
+                await session.execute(sa_text("SELECT 1"))
+                return {"status": "healthy"}
+        except Exception:
+            return {"status": "unreachable"}
+
+    # 并发检查所有外部服务
+    import asyncio
+
+    ollama_result, redis_result, pg_result = await asyncio.gather(
+        _check_ollama(),
+        _check_redis(),
+        _check_postgresql(),
+        return_exceptions=True,
+    )
+
+    services = {
+        "ollama": ollama_result if not isinstance(ollama_result, BaseException) else {"status": "error"},
+        "zhipu": {
+            "status": "configured" if settings.zhipu_api_key else "not_configured",
+        },
+        "redis": redis_result if not isinstance(redis_result, BaseException) else {"status": "error"},
+        "postgresql": pg_result if not isinstance(pg_result, BaseException) else {"status": "error"},
     }
-
-    # 检查Redis
-    try:
-        from cache import redis_client
-
-        await redis_client.ping()
-        services["redis"] = {"status": "healthy"}
-    except Exception:
-        services["redis"] = {"status": "unreachable"}
-
-    # 检查PostgreSQL
-    try:
-        from sqlalchemy import text as sa_text
-
-        async with async_session() as session:
-            await session.execute(sa_text("SELECT 1"))
-            services["postgresql"] = {"status": "healthy"}
-    except Exception:
-        services["postgresql"] = {"status": "unreachable"}
 
     # 系统资源
     system = {
@@ -261,12 +319,80 @@ async def get_router_health():
     return model_router.get_node_stats()
 
 
+@app.get("/v1/model/type")
+async def get_model_type(model: str = Query(...)):
+    """
+    获取模型后端类型（用于 Traefik/HAProxy 的 GPU 感知路由）
+
+    返回:
+    - local_cpu: Ollama CPU 推理
+    - local_gpu: Ollama GPU 推理（DGX Spark）
+    - openai: OpenAI API
+    - zhipu: 智谱 AI API
+    - deepseek: DeepSeek API
+    - unknown: 未注册模型
+    """
+    try:
+        async with async_session() as session:
+            from app.db import ModelRegistry
+            from sqlalchemy import select
+
+            result = await session.execute(
+                select(ModelRegistry.backend_type, ModelRegistry.backend_name)
+                .where(ModelRegistry.id == model)
+                .where(ModelRegistry.enabled.is_(True))
+            )
+            row = result.first()
+            if row:
+                return {"model": model, "backend_type": row.backend_type, "backend_name": row.backend_name}
+    except Exception:
+        pass
+
+    # 回退：根据模型名前缀推断
+    if any(model.startswith(p) for p in ["glm-4", "zhipu:"]):
+        return {"model": model, "backend_type": "zhipu", "backend_name": model}
+    if any(model.startswith(p) for p in ["gpt-", "openai:"]):
+        return {"model": model, "backend_type": "openai", "backend_name": model}
+    if any(model.startswith(p) for p in ["deepseek-", "deepseek:"]):
+        return {"model": model, "backend_type": "deepseek", "backend_name": model}
+    if any(model.startswith(p) for p in ["llama", "codegeex", "qwen", "local:", "ollama:"]):
+        return {"model": model, "backend_type": "local_cpu", "backend_name": model}
+
+    return JSONResponse(status_code=404, content={"error": "Model not found", "model": model})
+
+
 @app.get("/v1/versions")
 async def get_api_versions():
     """获取所有API版本状态（current/deprecated/sunset）"""
     from app.middleware.versioning import VersioningMiddleware
 
     return VersioningMiddleware.get_version_info()
+
+
+# ── 默认模型配置 ──────────────────────────────────────────
+# 可通过数据库 model_registry 表动态扩展（Ollama模型）
+DEFAULT_MODELS = [
+    # 智谱GLM
+    ModelConfig(id="glm-4-flash", display_name="智谱GLM-4 Flash", backend="zhipu",
+                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.001),
+    ModelConfig(id="glm-4-plus", display_name="智谱GLM-4 Plus", backend="zhipu",
+                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.05),
+    # DeepSeek
+    ModelConfig(id="deepseek-chat", display_name="DeepSeek Chat", backend="deepseek",
+                enabled=True, max_tokens=64000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.001),
+    ModelConfig(id="deepseek-coder", display_name="DeepSeek Coder", backend="deepseek",
+                enabled=True, max_tokens=16000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.001),
+    # Ollama本地（默认）
+    ModelConfig(id="llama3.2", display_name="Llama 3.2 (本地)", backend="ollama",
+                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.0),
+    ModelConfig(id="codegeex4", display_name="CodeGeeX4 (本地)", backend="ollama",
+                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.0),
+    ModelConfig(id="qwen2.5", display_name="通义千问 2.5 (本地)", backend="ollama",
+                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.0),
+]
+
+# DB注册的默认Ollama模型ID（避免重复）
+_DEFAULT_OLLAMA_IDS = {"llama3.2", "codegeex4", "qwen2.5"}
 
 
 @app.get("/v1/models", response_model=List[ModelConfig])
@@ -276,85 +402,13 @@ async def list_models():
 
     支持的Provider：
     - zhipu: 智谱GLM（glm-4-flash, glm-4-plus）
+    - deepseek: DeepSeek（deepseek-chat, deepseek-coder）
     - ollama: 本地模型（llama3.2, codegeex4, qwen2.5等）
+    数据库动态注册的模型自动附加
     """
-    models = [
-        # 智谱GLM模型
-        ModelConfig(
-            id="glm-4-flash",
-            display_name="智谱GLM-4 Flash",
-            backend="zhipu",
-            enabled=True,
-            max_tokens=128000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.001,
-        ),
-        ModelConfig(
-            id="glm-4-plus",
-            display_name="智谱GLM-4 Plus",
-            backend="zhipu",
-            enabled=True,
-            max_tokens=128000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.05,
-        ),
-        # DeepSeek模型
-        ModelConfig(
-            id="deepseek-chat",
-            display_name="DeepSeek Chat",
-            backend="deepseek",
-            enabled=True,
-            max_tokens=64000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.001,
-        ),
-        ModelConfig(
-            id="deepseek-coder",
-            display_name="DeepSeek Coder",
-            backend="deepseek",
-            enabled=True,
-            max_tokens=16000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.001,
-        ),
-        # Ollama本地模型
-        ModelConfig(
-            id="llama3.2",
-            display_name="Llama 3.2 (本地)",
-            backend="ollama",
-            enabled=True,
-            max_tokens=128000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.0,
-        ),
-        ModelConfig(
-            id="codegeex4",
-            display_name="CodeGeeX4 (本地)",
-            backend="ollama",
-            enabled=True,
-            max_tokens=128000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.0,
-        ),
-        ModelConfig(
-            id="qwen2.5",
-            display_name="通义千问 2.5 (本地)",
-            backend="ollama",
-            enabled=True,
-            max_tokens=128000,
-            temperature=0.7,
-            top_p=0.9,
-            cost_per_1k_tokens=0.0,
-        ),
-    ]
+    models = list(DEFAULT_MODELS)
 
-    # 尝试从数据库加载更多Ollama模型
+    # 从数据库加载动态注册的Ollama模型
     try:
         async with async_session() as session:
             result = await session.execute(
@@ -363,17 +417,12 @@ async def list_models():
                 .where(ModelRegistry.backend_type == "ollama")
             )
             for row in result:
-                # 避免重复
-                if row.id not in ["llama3.2", "codegeex4", "qwen2.5"]:
+                if row.id not in _DEFAULT_OLLAMA_IDS:
                     models.append(
                         ModelConfig(
-                            id=row.id,
-                            display_name=row.display_name,
-                            backend="ollama",
-                            enabled=True,
-                            max_tokens=128000,
-                            temperature=0.7,
-                            top_p=0.9,
+                            id=row.id, display_name=row.display_name,
+                            backend="ollama", enabled=True,
+                            max_tokens=128000, temperature=0.7, top_p=0.9,
                             cost_per_1k_tokens=0.0,
                         )
                     )

@@ -44,7 +44,7 @@ class CacheManager:
 
     def _get_key(self, key: str) -> str:
         """生成缓存键"""
-        return f"cache:{key}"
+        return key
 
     async def get(self, key: str) -> Optional[Any]:
         """获取缓存"""

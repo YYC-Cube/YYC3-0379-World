@@ -28,7 +28,7 @@ from app.config import settings
 
 class HttpClient:
     """HTTP 连接池管理器"""
-    
+
     def __init__(
         self,
         timeout: float = 120.0,
@@ -42,20 +42,20 @@ class HttpClient:
             max_connections=max_connections,
             keepalive_expiry=keepalive_expiry
         )
-        
+
         self.client = httpx.AsyncClient(
             timeout=self.timeout,
             limits=self.limits,
-            http2=True,
+            http2=False,
             verify=True
         )
-        
+
         self.logger = logging.getLogger(__name__)
         self.logger.info(
             f"HTTP client initialized with max_connections={max_connections}, "
             f"max_keepalive_connections={max_keepalive_connections}"
         )
-    
+
     async def get(
         self,
         url: str,
@@ -68,7 +68,7 @@ class HttpClient:
             headers=headers,
             params=params
         )
-    
+
     async def post(
         self,
         url: str,
@@ -83,7 +83,7 @@ class HttpClient:
             json=json,
             data=data
         )
-    
+
     async def put(
         self,
         url: str,
@@ -98,7 +98,7 @@ class HttpClient:
             json=json,
             data=data
         )
-    
+
     async def delete(
         self,
         url: str,
@@ -109,16 +109,16 @@ class HttpClient:
             url,
             headers=headers
         )
-    
+
     async def close(self):
         """关闭连接池"""
         await self.client.aclose()
         self.logger.info("HTTP client closed")
-    
+
     async def __aenter__(self):
         """异步上下文管理器入口"""
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """异步上下文管理器出口"""
         await self.close()
