@@ -99,21 +99,40 @@ async def upload_document(
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
-    upload_dir = f"/tmp/knowledge_base/{knowledge_base_id}"
+    # 安全校验：文件名、类型、大小
+    safe_kb_id = knowledge_base_id.replace("/", "").replace("\\", "").replace("..", "")
+    safe_filename = os.path.basename(file.filename or "")
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="无效的文件名")
+
+    ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".md", ".txt", ".py", ".js", ".java", ".csv", ".json"}
+    file_ext = os.path.splitext(safe_filename)[1].lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file_ext}")
+
+    # 文件大小限制（10MB）
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="文件超过 10MB 大小限制")
+
+    upload_dir = f"/tmp/knowledge_base/{safe_kb_id}"
     os.makedirs(upload_dir, exist_ok=True)
 
-    file_path = os.path.join(upload_dir, file.filename)
+    file_path = os.path.join(upload_dir, safe_filename)
+    # 二次校验：确保最终路径在 upload_dir 内
+    if not os.path.realpath(file_path).startswith(os.path.realpath(upload_dir)):
+        raise HTTPException(status_code=400, detail="非法的文件路径")
     async with aiofiles.open(file_path, "wb") as out_file:
-        content = await file.read()
         await out_file.write(content)
 
     file_size = len(content)
-    file_type = os.path.splitext(file.filename)[1].lower()
+    file_type = file_ext
 
     doc = Document(
         id=str(uuid.uuid4()),
-        knowledge_base_id=knowledge_base_id,
-        title=file.filename,
+        knowledge_base_id=safe_kb_id,
+        title=safe_filename,
         source_type="upload",
         file_path=file_path,
         file_size=file_size,

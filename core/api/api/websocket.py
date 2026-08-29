@@ -24,28 +24,28 @@ router = APIRouter()
 
 class ConnectionManager:
     """WebSocket连接管理器"""
-    
+
     def __init__(self):
         self.active_connections: list[WebSocket] = []
-    
+
     async def connect(self, websocket: WebSocket):
         """接受新连接"""
         await websocket.accept()
         self.active_connections.append(websocket)
         logger.info(f"WebSocket连接建立，当前连接数: {len(self.active_connections)}")
-    
+
     def disconnect(self, websocket: WebSocket):
         """断开连接"""
         self.active_connections.remove(websocket)
         logger.info(f"WebSocket连接断开，当前连接数: {len(self.active_connections)}")
-    
+
     async def send_message(self, message: dict, websocket: WebSocket):
         """发送消息给指定连接"""
         try:
             await websocket.send_json(message)
         except Exception as e:
             logger.error(f"发送WebSocket消息失败: {e}")
-    
+
     async def broadcast(self, message: dict):
         """广播消息给所有连接"""
         for connection in self.active_connections:
@@ -65,17 +65,17 @@ async def websocket_chat(
 ):
     """
     WebSocket聊天接口 - 支持流式输出
-    
+
     连接方式：
     ws://localhost:8000/ws/chat?token=your_api_key
-    
+
     消息格式：
     {
         "model": "llama3.2",
         "messages": [{"role": "user", "content": "你好"}],
         "stream": true
     }
-    
+
     响应格式：
     {
         "event": "chunk",
@@ -86,7 +86,7 @@ async def websocket_chat(
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
-    
+
     try:
         if not verify_api_key(token):
             await websocket.close(code=4003, reason="Invalid API key")
@@ -95,26 +95,26 @@ async def websocket_chat(
         logger.error(f"WebSocket认证失败: {e}")
         await websocket.close(code=4003, reason="Authentication failed")
         return
-    
+
     await manager.connect(websocket)
-    
+
     try:
         while True:
             # 接收消息
             data = await websocket.receive_text()
-            
+
             try:
                 request = json.loads(data)
                 model = request.get("model", "llama3.2")
                 messages = request.get("messages", [])
                 stream = request.get("stream", True)
-                
+
                 # 发送开始事件
                 await manager.send_message({
                     "event": "start",
                     "data": {"model": model}
                 }, websocket)
-                
+
                 # 判断Provider类型
                 if model.startswith("zhipu:") or model in ["glm-4-flash", "glm-4-plus", "glm-4"]:
                     backend = zhipu
@@ -124,7 +124,7 @@ async def websocket_chat(
                     backend = ollama
                     backend_type = "ollama"
                     model_name = model
-                
+
                 # 调用模型（流式）
                 if stream and hasattr(backend, 'chat_completion_stream'):
                     # 流式输出
@@ -146,18 +146,18 @@ async def websocket_chat(
                         max_tokens=request.get("max_tokens"),
                         stream=False
                     )
-                    
+
                     await manager.send_message({
                         "event": "complete",
                         "data": response
                     }, websocket)
-                
+
                 # 发送结束事件
                 await manager.send_message({
                     "event": "done",
                     "data": {"model": model}
                 }, websocket)
-                
+
             except json.JSONDecodeError:
                 await manager.send_message({
                     "event": "error",
@@ -169,7 +169,7 @@ async def websocket_chat(
                     "event": "error",
                     "data": {"error": str(e)}
                 }, websocket)
-    
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
@@ -184,10 +184,10 @@ async def websocket_monitor(
 ):
     """
     WebSocket监控接口 - 实时推送系统状态
-    
+
     连接方式：
     ws://localhost:8000/ws/monitor?token=your_api_key
-    
+
     推送内容：
     - 模型状态
     - 请求统计
@@ -197,7 +197,7 @@ async def websocket_monitor(
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
-    
+
     try:
         if not verify_api_key(token):
             await websocket.close(code=4003, reason="Invalid API key")
@@ -206,19 +206,19 @@ async def websocket_monitor(
         logger.error(f"WebSocket认证失败: {e}")
         await websocket.close(code=4003, reason="Authentication failed")
         return
-    
+
     await manager.connect(websocket)
-    
+
     try:
         while True:
             # 每5秒推送一次监控数据
             from app.utils.metrics import metrics_manager
-            from datetime import datetime
-            
+            from datetime import datetime, timezone
+
             metrics = {
                 "event": "metrics",
                 "data": {
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "active_requests": metrics_manager.get_active_requests(),
                     "total_requests": metrics_manager.get_total_requests(),
                     "cache_hit_rate": metrics_manager.get_cache_hit_rate(),
@@ -234,10 +234,10 @@ async def websocket_monitor(
                     }
                 }
             }
-            
+
             await manager.send_message(metrics, websocket)
             await asyncio.sleep(5)
-    
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

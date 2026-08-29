@@ -22,12 +22,15 @@
 
 import httpx
 import json
+import os
 from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.utils import http_client
 
 _ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4"
-_ZHIPU_KEY = settings.zhipu_api_key
+def _get_zhipu_key() -> str:
+    """延迟读取智谱 API Key，支持运行时环境变量更新"""
+    return os.getenv("ZHIPU_API_KEY", "") or settings.zhipu_api_key
 
 
 async def chat_completion(
@@ -42,7 +45,7 @@ async def chat_completion(
     调用智谱 AI API 并返回 OpenAI 兼容的 JSON 格式
     """
     headers = {
-        "Authorization": f"Bearer {_ZHIPU_KEY}",
+        "Authorization": f"Bearer {_get_zhipu_key()}",
         "Content-Type": "application/json"
     }
 
@@ -117,7 +120,7 @@ async def chat_completion_stream(
         dict: 流式响应块
     """
     headers = {
-        "Authorization": f"Bearer {_ZHIPU_KEY}",
+        "Authorization": f"Bearer {_get_zhipu_key()}",
         "Content-Type": "application/json"
     }
 

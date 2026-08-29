@@ -13,7 +13,7 @@
 
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Set
 
 import jwt
@@ -74,7 +74,7 @@ auth_config = AuthConfig()
 security = HTTPBearer(auto_error=False)
 
 
-def generate_jwt_token(user_id: str, expires_hours: int = None) -> str:
+def generate_jwt_token(user_id: str, expires_hours: Optional[int] = None) -> str:
     """
     生成JWT令牌
 
@@ -86,12 +86,13 @@ def generate_jwt_token(user_id: str, expires_hours: int = None) -> str:
         JWT令牌字符串
     """
     expires_hours = expires_hours or auth_config.JWT_EXPIRATION_HOURS
-    expiration = datetime.utcnow() + timedelta(hours=expires_hours)
+    now = datetime.now(timezone.utc)
+    expiration = now + timedelta(hours=expires_hours)
 
     payload = {
         "user_id": user_id,
         "exp": expiration,
-        "iat": datetime.utcnow(),
+        "iat": now,
         "iss": "yyc3-gateway",
     }
 

@@ -20,7 +20,7 @@
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 import psutil
@@ -287,7 +287,7 @@ async def health_check():
 
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "2.0.0",
         "uptime_seconds": int(time.time() - START_TIME),
         "services": services,

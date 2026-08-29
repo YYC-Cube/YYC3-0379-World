@@ -51,8 +51,8 @@ COPY --from=builder /root/.local /root/.local
 # 更新 PATH
 ENV PATH=/root/.local/bin:$PATH
 
-# 复制应用代码
-COPY core/ /app/core/
+# 复制应用代码（core/api 映射为 app 包，与生产运行布局一致）
+COPY core/api/ /app/app/
 
 # 创建非 root 用户
 RUN useradd -m -u 1000 appuser && \
@@ -68,8 +68,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/v1/ping')" || exit 1
 
-# 启动命令（uvicorn 多 worker + 优雅关闭）
-CMD ["uvicorn", "core.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--log-level", "info"]
+# 启动命令（uvicorn 多 worker + 优雅关闭，与生产容器一致）
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--log-level", "info"]
 
 # ============================================
 # 阶段 4: 开发镜像
@@ -89,14 +89,14 @@ RUN pip install \
     mypy \
     ipython
 
-# 复制应用代码
-COPY . /app/
+# 复制应用代码（core/api 映射为 app 包，与生产布局一致）
+COPY core/api/ /app/app/
 
 # 暴露端口
 EXPOSE 8000
 
-# 开发模式启动命令
-CMD ["python", "core/api/main.py"]
+# 开发模式启动命令（uvicorn --reload 热重载）
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ============================================
 # 构建说明

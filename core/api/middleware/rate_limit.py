@@ -236,19 +236,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return response
 
+    # 可信反向代理（Traefik）来源 IP 集合——仅这些来源的 X-Forwarded-For 可被信任
+    TRUSTED_PROXIES = {
+        "100.126.132.112",  # ECS Traefik (Tailscale)
+        "100.65.172.88",    # NAS 本机 (Tailscale)
+        "127.0.0.1",
+        "::1",
+    }
+
     def _get_client_ip(self, request: Request) -> str:
-        """获取客户端 IP"""
-        forwarded = request.headers.get("X-Forwarded-For")
+        """获取客户端 IP（仅信任来自可信代理的转发头，防伪造绕过限流）"""
+        peer_ip = request.client.host if request.client else "unknown"
 
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        # 仅当直连来源是可信代理时才采信 X-Forwarded-For
+        if peer_ip in self.TRUSTED_PROXIES:
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                # 取最左侧真实客户端 IP（Traefik 按序追加）
+                return forwarded.split(",")[0].strip()
 
-        real_ip = request.headers.get("X-Real-IP")
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                return real_ip
 
-        if real_ip:
-            return real_ip
-
-        return request.client.host if request.client else "unknown"
+        return peer_ip
 
 
 rate_limit_middleware = RateLimitMiddleware()
