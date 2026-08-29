@@ -32,6 +32,7 @@ pgvector>=0.3.6
 tiktoken>=0.5.2
 aiofiles>=23.2.1
 numpy>=1.26.4
+psutil>=5.9.0
 
 # 文档解析（可选）
 PyMuPDF>=1.24.0
