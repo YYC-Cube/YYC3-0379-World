@@ -85,5 +85,12 @@ docs/
 *.temp
 .DS_Store
 
+# Cypress/Playwright 测试产物
+tests/e2e/cypress/screenshots/
+tests/e2e/cypress/videos/
+tests/e2e/reports/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+
 # GitHub Workflows (需要手动管理以避免 OAuth 权限问题)
 .github/workflows/*.yml
