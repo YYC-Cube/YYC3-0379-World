@@ -108,9 +108,47 @@ curl -X POST https://api.0379.world/v1/rag/search \\
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    servers=[
+        {"url": "https://api.0379.world", "description": "Production"},
+    ],
 )
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
+# P0: 补全 OpenAPI Security Scheme，让 Swagger UI 出现 Authorize 按钮
+from fastapi.openapi.utils import get_openapi
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        servers=app.servers,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "APIKey": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "YYC³ API Key 认证",
+        },
+        "Bearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "JWT Token 认证",
+        },
+    }
+    openapi_schema["security"] = [{"APIKey": []}, {"Bearer": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 @app.on_event("startup")

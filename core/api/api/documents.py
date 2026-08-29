@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/v1/documents", tags=["文档管理"])
+router = APIRouter(prefix="/v1/documents")
 
 
 class DocumentCreate(BaseModel):

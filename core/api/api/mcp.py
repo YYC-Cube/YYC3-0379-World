@@ -23,7 +23,7 @@ from app.middleware import auth_required
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/mcp", tags=["mcp"])
+router = APIRouter(prefix="/mcp")
 
 
 class MCPToolRequest(BaseModel):

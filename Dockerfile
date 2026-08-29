@@ -4,7 +4,7 @@
 # ============================================
 # 阶段 1: 基础镜像
 # ============================================
-FROM python:3.11-slim as base
+FROM python:3.11-slim AS base
 
 # 元数据
 LABEL maintainer="YanYuCloudCube Team <admin@0379.email>"
@@ -32,7 +32,7 @@ WORKDIR /app
 # ============================================
 # 阶段 2: 构建阶段
 # ============================================
-FROM base as builder
+FROM base AS builder
 
 # 复制依赖文件
 COPY requirements.txt .
@@ -43,7 +43,7 @@ RUN pip install --user -r requirements.txt
 # ============================================
 # 阶段 3: 生产镜像
 # ============================================
-FROM base as production
+FROM base AS production
 
 # 从构建阶段复制依赖
 COPY --from=builder /root/.local /root/.local
@@ -68,13 +68,13 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/v1/ping')" || exit 1
 
-# 启动命令
-CMD ["python", "core/api/main.py"]
+# 启动命令（uvicorn 多 worker + 优雅关闭）
+CMD ["uvicorn", "core.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--log-level", "info"]
 
 # ============================================
 # 阶段 4: 开发镜像
 # ============================================
-FROM base as development
+FROM base AS development
 
 # 安装开发依赖
 COPY requirements.txt .
@@ -101,7 +101,7 @@ CMD ["python", "core/api/main.py"]
 # ============================================
 # 构建说明
 # ============================================
-# 
+#
 # 构建生产镜像:
 #   docker build -t yyc3-api-world:latest --target production .
 #

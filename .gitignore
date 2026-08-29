@@ -81,6 +81,7 @@ docs/
 
 # 临时文件
 *.tmp
+.tmp_*
 *.temp
 .DS_Store
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/v1/knowledge-bases", tags=["知识库管理"])
+router = APIRouter(prefix="/v1/knowledge-bases")
 
 
 class KnowledgeBaseCreate(BaseModel):

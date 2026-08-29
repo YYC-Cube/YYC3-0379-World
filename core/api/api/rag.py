@@ -16,7 +16,7 @@ import time
 from app.db import async_session
 from app.services.rag_service import rag_service
 
-router = APIRouter(prefix="/v1/rag", tags=["RAG 检索"])
+router = APIRouter(prefix="/v1/rag")
 
 
 class SearchRequest(BaseModel):
@@ -163,16 +163,22 @@ async def ask_with_context(
 请提供准确、详细的回答，并在回答中引用相关的文档来源。"""
 
     from app.api.chat import chat_completion
-    from app.api.schemas import ChatCompletionRequest, Message
+    from app.api.schemas import CompletionRequest, Message
+    from starlette.requests import Request as StarletteRequest
 
-    chat_request = ChatCompletionRequest(
+    chat_request = CompletionRequest(
         model="glm-4-flash",
         messages=[Message(role="user", content=prompt)],
         temperature=0.7,
         max_tokens=2000,
+        top_p=None,
+        user_id=user_id,
+        stream=False,
     )
 
-    response = await chat_completion(chat_request, db)
+    # chat_completion 第二参数是 FastAPI Request，用于 metrics
+    fake_request = StarletteRequest(scope={"type": "http", "method": "POST", "headers": []})
+    response = await chat_completion(chat_request, fake_request)
 
     response_time_ms = int((time.time() - start_time) * 1000)
 
@@ -187,9 +193,15 @@ async def ask_with_context(
             db=db,
         )
 
+    answer = ""
+    if isinstance(response, dict):
+        answer = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+    else:
+        answer = str(response)
+
     return {
         "query": request.query,
-        "answer": response.choices[0].message.content,
+        "answer": answer,
         "sources": [
             {
                 "document_title": result["document_title"],
