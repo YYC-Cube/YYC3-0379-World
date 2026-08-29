@@ -22,6 +22,7 @@
 
 import os
 from datetime import datetime
+from typing import Optional
 
 from app.config import settings
 from pgvector.sqlalchemy import Vector
@@ -38,7 +39,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import Mapped, declarative_base, mapped_column, relationship
 
 Base = declarative_base()
 
@@ -52,25 +53,25 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 class ModelRegistry(Base):
     __tablename__ = "model_registry"
 
-    id = Column(String, primary_key=True)
-    display_name = Column(String, nullable=False)
-    backend_type = Column(String, nullable=False)
-    backend_name = Column(String, nullable=False)
-    enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    backend_type: Mapped[str] = mapped_column(String, nullable=False)
+    backend_name: Mapped[str] = mapped_column(String, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class UsageLog(Base):
     __tablename__ = "usage_log"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    model = Column(String, nullable=False)
-    backend_type = Column(String, nullable=False)
-    prompt_tokens = Column(Integer, default=0)
-    completion_tokens = Column(Integer, default=0)
-    total_tokens = Column(Integer, default=0)
-    user_id = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    backend_type: Mapped[str] = mapped_column(String, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_usage_log_model", "model"),
@@ -85,20 +86,22 @@ class KnowledgeBase(Base):
 
     __tablename__ = "knowledge_bases"
 
-    id = Column(String, primary_key=True)
-    name = Column(String(255), nullable=False)
-    description = Column(Text)
-    embedding_model = Column(String(50), default="embedding-3")
-    icon = Column(String(50), default="book")
-    background = Column(String(50), default="blue")
-    status = Column(String(20), default="active")
-    document_count = Column(Integer, default=0)
-    total_tokens = Column(Integer, default=0)
-    storage_size = Column(BigInteger, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    created_by = Column(String(255))
-    extra_metadata = Column("metadata", JSONB)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    embedding_model: Mapped[str] = mapped_column(String(50), default="embedding-3")
+    icon: Mapped[str] = mapped_column(String(50), default="book")
+    background: Mapped[str] = mapped_column(String(50), default="blue")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    document_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    storage_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(String(255))
+    extra_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
 
     documents = relationship(
         "Document", back_populates="knowledge_base", cascade="all, delete-orphan"
@@ -110,23 +113,25 @@ class Document(Base):
 
     __tablename__ = "documents"
 
-    id = Column(String, primary_key=True)
-    knowledge_base_id = Column(
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    knowledge_base_id: Mapped[str] = mapped_column(
         String, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
     )
-    title = Column(String(500), nullable=False)
-    source_type = Column(String(50), nullable=False)
-    source_url = Column(Text)
-    file_path = Column(Text)
-    file_size = Column(BigInteger)
-    file_type = Column(String(50))
-    status = Column(String(20), default="pending")
-    chunk_count = Column(Integer, default=0)
-    total_tokens = Column(Integer, default=0)
-    error_message = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    extra_metadata = Column("metadata", JSONB)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)
+    file_path: Mapped[Optional[str]] = mapped_column(Text)
+    file_size: Mapped[Optional[int]] = mapped_column(BigInteger)
+    file_type: Mapped[Optional[str]] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    extra_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
 
     knowledge_base = relationship("KnowledgeBase", back_populates="documents")
     chunks = relationship(
@@ -139,19 +144,19 @@ class DocumentChunk(Base):
 
     __tablename__ = "document_chunks"
 
-    id = Column(String, primary_key=True)
-    document_id = Column(
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    document_id: Mapped[str] = mapped_column(
         String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
-    knowledge_base_id = Column(
+    knowledge_base_id: Mapped[str] = mapped_column(
         String, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
     )
-    chunk_index = Column(Integer, nullable=False)
-    content = Column(Text, nullable=False)
-    embedding = Column(Vector(1536))
-    token_count = Column(Integer, default=0)
-    extra_metadata = Column("metadata", JSONB)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1536))
+    token_count: Mapped[int] = mapped_column(Integer, default=0)
+    extra_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     document = relationship("Document", back_populates="chunks")
 
@@ -161,16 +166,18 @@ class QAPair(Base):
 
     __tablename__ = "qa_pairs"
 
-    id = Column(String, primary_key=True)
-    knowledge_base_id = Column(
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    knowledge_base_id: Mapped[str] = mapped_column(
         String, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
     )
-    question = Column(Text, nullable=False)
-    answer = Column(Text, nullable=False)
-    question_embedding = Column(Vector(1536))
-    extra_metadata = Column("metadata", JSONB)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    question_embedding: Mapped[Optional[list]] = mapped_column(Vector(1536))
+    extra_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class SearchHistory(Base):
@@ -178,17 +185,17 @@ class SearchHistory(Base):
 
     __tablename__ = "search_history"
 
-    id = Column(String, primary_key=True)
-    knowledge_base_id = Column(
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    knowledge_base_id: Mapped[Optional[str]] = mapped_column(
         String, ForeignKey("knowledge_bases.id", ondelete="CASCADE")
     )
-    query = Column(Text, nullable=False)
-    query_embedding = Column(Vector(1536))
-    result_count = Column(Integer, default=0)
-    response_time_ms = Column(Integer)
-    model_used = Column(String(100))
-    user_id = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    query_embedding: Mapped[Optional[list]] = mapped_column(Vector(1536))
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+    response_time_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    model_used: Mapped[Optional[str]] = mapped_column(String(100))
+    user_id: Mapped[Optional[str]] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 async def init_db():
