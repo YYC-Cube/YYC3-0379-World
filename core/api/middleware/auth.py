@@ -52,6 +52,7 @@ class AuthConfig:
         "/v1/ping",
         "/v1/health",
         "/health",
+        "/healthz",
         "/metrics",
         "/docs",
         "/openapi.json",

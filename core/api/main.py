@@ -300,6 +300,20 @@ async def health_check():
     }
 
 
+@app.get("/healthz")
+async def healthz():
+    """轻量存活探针（供监控/负载均衡高频探活）
+
+    与 /health 的区别：不做外部服务依赖检查，仅确认进程存活，
+    开销极小，适合 Prometheus/Traefik/监控探活高频调用。
+    """
+    return {
+        "status": "alive",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": int(time.time() - START_TIME),
+    }
+
+
 @app.get("/v1/ping", response_model=PingResponse)
 async def ping():
     """健康检查端点"""
