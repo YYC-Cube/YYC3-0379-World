@@ -138,8 +138,7 @@ def main():
     prompts = [
         "A beautiful sunset over the ocean, waves gently rolling"
         " onto the beach, golden hour lighting",
-        "A serene mountain lake at sunrise, mist rising"
-        " from the water, peaceful atmosphere",
+        "A serene mountain lake at sunrise, mist rising" " from the water, peaceful atmosphere",
         "A futuristic city skyline at night, neon lights"
         " reflecting on wet streets, cyberpunk style",
     ]
