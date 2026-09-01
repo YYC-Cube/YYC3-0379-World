@@ -67,9 +67,7 @@ async def get_cached(key: str) -> dict | None:
         return None
 
 
-async def set_cached(
-    key: str, value: dict, ttl: int = CACHE_TTL, tags: List[str] | None = None
-):
+async def set_cached(key: str, value: dict, ttl: int = CACHE_TTL, tags: List[str] | None = None):
     """
     设置缓存，支持TTL过期和大小限制淘汰
 
@@ -201,9 +199,7 @@ async def _evict_if_needed():
                 pipe.delete(key)
                 pipe.zrem(CACHE_INDEX_KEY, key)
             await pipe.execute()
-            logger.info(
-                f"LRU evicted {len(old_keys)} cache entries (size was {current_size})"
-            )
+            logger.info(f"LRU evicted {len(old_keys)} cache entries (size was {current_size})")
     except Exception as e:
         logger.error(f"Cache eviction error: {e}")
 

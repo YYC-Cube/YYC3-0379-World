@@ -35,9 +35,7 @@ class ModelConfig(BaseModel):
     max_tokens: int = Field(default=4096, ge=1, le=128000, description="最大 Token 数")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="温度参数")
     top_p: Optional[float] = None
-    cost_per_1k_tokens: float = Field(
-        default=0.0, ge=0.0, description="每 1k Token 成本（USD）"
-    )
+    cost_per_1k_tokens: float = Field(default=0.0, ge=0.0, description="每 1k Token 成本（USD）")
 
 
 class ModelStat(BaseModel):

@@ -97,9 +97,7 @@ def generate_jwt_token(user_id: str, expires_hours: Optional[int] = None) -> str
         "iss": "yyc3-gateway",
     }
 
-    token = jwt.encode(
-        payload, auth_config.JWT_SECRET_KEY, algorithm=auth_config.JWT_ALGORITHM
-    )
+    token = jwt.encode(payload, auth_config.JWT_SECRET_KEY, algorithm=auth_config.JWT_ALGORITHM)
 
     return token
 

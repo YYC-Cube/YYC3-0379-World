@@ -23,8 +23,9 @@
 import json
 import logging
 import time
-from typing import Any, Optional, Dict, List
-from app.cache import get_cached, set_cached, delete_cached
+from typing import Any, Dict, List, Optional
+
+from app.cache import delete_cached, get_cached, set_cached
 
 
 class CacheManager:
@@ -33,12 +34,12 @@ class CacheManager:
     def __init__(self, default_ttl: int = 300):
         self.default_ttl = default_ttl
         self.stats = {
-            'hits': 0,
-            'misses': 0,
-            'errors': 0,
-            'sets': 0,
-            'deletes': 0,
-            'evictions': 0,
+            "hits": 0,
+            "misses": 0,
+            "errors": 0,
+            "sets": 0,
+            "deletes": 0,
+            "evictions": 0,
         }
         self.logger = logging.getLogger(__name__)
 
@@ -53,15 +54,15 @@ class CacheManager:
             value = await get_cached(cache_key)
 
             if value is not None:
-                self.stats['hits'] += 1
+                self.stats["hits"] += 1
                 self.logger.debug(f"Cache hit: {key}")
                 return value
 
-            self.stats['misses'] += 1
+            self.stats["misses"] += 1
             self.logger.debug(f"Cache miss: {key}")
             return None
         except Exception as e:
-            self.stats['errors'] += 1
+            self.stats["errors"] += 1
             self.logger.error(f"Cache get error: {e}")
             return None
 
@@ -85,11 +86,11 @@ class CacheManager:
             cache_key = self._get_key(key)
             effective_ttl = ttl if ttl is not None else self.default_ttl
             await set_cached(cache_key, value, ttl=effective_ttl, tags=tags)
-            self.stats['sets'] += 1
+            self.stats["sets"] += 1
             self.logger.debug(f"Cache set: {key}, ttl: {effective_ttl}s, tags: {tags}")
             return True
         except Exception as e:
-            self.stats['errors'] += 1
+            self.stats["errors"] += 1
             self.logger.error(f"Cache set error: {e}")
             return False
 
@@ -98,51 +99,52 @@ class CacheManager:
         try:
             cache_key = self._get_key(key)
             await delete_cached(cache_key)
-            self.stats['deletes'] += 1
+            self.stats["deletes"] += 1
             self.logger.debug(f"Cache delete: {key}")
             return True
         except Exception as e:
-            self.stats['errors'] += 1
+            self.stats["errors"] += 1
             self.logger.error(f"Cache delete error: {e}")
             return False
 
     async def invalidate_by_tags(self, tags: List[str]) -> int:
         """按标签批量失效缓存"""
         from app.cache import invalidate_by_tag
+
         total = 0
         for tag in tags:
             count = await invalidate_by_tag(tag)
             total += count
         if total > 0:
-            self.stats['evictions'] += total
+            self.stats["evictions"] += total
             self.logger.info(f"Invalidated {total} entries by tags: {tags}")
         return total
 
     def get_stats(self) -> Dict[str, Any]:
         """获取缓存统计"""
-        total = self.stats['hits'] + self.stats['misses']
-        hit_rate = self.stats['hits'] / total if total > 0 else 0.0
+        total = self.stats["hits"] + self.stats["misses"]
+        hit_rate = self.stats["hits"] / total if total > 0 else 0.0
 
         return {
-            'hits': self.stats['hits'],
-            'misses': self.stats['misses'],
-            'errors': self.stats['errors'],
-            'sets': self.stats['sets'],
-            'deletes': self.stats['deletes'],
-            'tag_evictions': self.stats['evictions'],
-            'total': total,
-            'hit_rate': round(hit_rate, 4),
+            "hits": self.stats["hits"],
+            "misses": self.stats["misses"],
+            "errors": self.stats["errors"],
+            "sets": self.stats["sets"],
+            "deletes": self.stats["deletes"],
+            "tag_evictions": self.stats["evictions"],
+            "total": total,
+            "hit_rate": round(hit_rate, 4),
         }
 
     def reset_stats(self):
         """重置缓存统计"""
         self.stats = {
-            'hits': 0,
-            'misses': 0,
-            'errors': 0,
-            'sets': 0,
-            'deletes': 0,
-            'evictions': 0,
+            "hits": 0,
+            "misses": 0,
+            "errors": 0,
+            "sets": 0,
+            "deletes": 0,
+            "evictions": 0,
         }
         self.logger.info("Cache stats reset")
 
@@ -156,6 +158,7 @@ async def cached(
     tags: Optional[List[str]] = None,
 ):
     """缓存装饰器"""
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             key = f"{key_prefix}:{hash(str(args) + str(kwargs))}"
@@ -168,5 +171,7 @@ async def cached(
             await cache_manager.set(key, result, ttl=ttl, tags=tags)
 
             return result
+
         return wrapper
+
     return decorator

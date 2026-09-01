@@ -23,9 +23,9 @@
 @tags: middleware,python,rate_limit,public
 """
 
+import hashlib
 import logging
 import time
-import hashlib
 from functools import wraps
 from typing import Callable, Dict, Optional, Tuple
 
@@ -191,9 +191,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     ):
         super().__init__(app)
         self.ip_limiter = ip_limiter or RateLimiter(max_requests=500, time_window=60)
-        self.user_limiter = user_limiter or RateLimiter(
-            max_requests=1000, time_window=60
-        )
+        self.user_limiter = user_limiter or RateLimiter(max_requests=1000, time_window=60)
         self.logger = logging.getLogger(__name__)
 
     async def dispatch(self, request: Request, call_next):
@@ -239,7 +237,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     # 可信反向代理（Traefik）来源 IP 集合——仅这些来源的 X-Forwarded-For 可被信任
     TRUSTED_PROXIES = {
         "100.126.132.112",  # ECS Traefik (Tailscale)
-        "100.65.172.88",    # NAS 本机 (Tailscale)
+        "100.65.172.88",  # NAS 本机 (Tailscale)
         "127.0.0.1",
         "::1",
     }
@@ -288,8 +286,7 @@ def rate_limit(max_requests: int = 100, time_window: int = 60):
 
             if not allowed:
                 logger.warning(
-                    f"Rate limit exceeded for IP: {client_ip} "
-                    f"in function: {func.__name__}"
+                    f"Rate limit exceeded for IP: {client_ip} " f"in function: {func.__name__}"
                 )
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,

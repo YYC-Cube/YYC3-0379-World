@@ -20,13 +20,14 @@
 @tags: middleware,python,versioning,api-management
 """
 
+import logging
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Awaitable, Callable, Dict, Optional, Set
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from typing import Optional, Dict, Set, Callable, Awaitable
-from datetime import datetime, date
-from dataclasses import dataclass
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VersionInfo:
     """API版本元数据"""
-    version: str                    # 版本号，如 "v1"
-    status: str                     # "current" | "deprecated" | "sunset"
-    deprecated_on: Optional[str] = None   # 废弃日期 ISO格式
-    sunset_on: Optional[str] = None       # 下线日期 ISO格式
-    successor: Optional[str] = None       # 后继版本，如 "v2"
+
+    version: str  # 版本号，如 "v1"
+    status: str  # "current" | "deprecated" | "sunset"
+    deprecated_on: Optional[str] = None  # 废弃日期 ISO格式
+    sunset_on: Optional[str] = None  # 下线日期 ISO格式
+    successor: Optional[str] = None  # 后继版本，如 "v2"
     deprecation_link: Optional[str] = None  # 迁移指南URL
 
 
@@ -93,17 +95,18 @@ class VersioningMiddleware(BaseHTTPMiddleware):
                     "successor": version_info.successor,
                     "migration_guide": version_info.deprecation_link,
                 },
-                headers={"Link": f'<{version_info.deprecation_link}>; rel="deprecation"'}
-                if version_info.deprecation_link else None,
+                headers=(
+                    {"Link": f'<{version_info.deprecation_link}>; rel="deprecation"'}
+                    if version_info.deprecation_link
+                    else None
+                ),
             )
 
         response = await call_next(request)
 
         # 为废弃版本添加标准响应头
         if version_info and version_info.status == "deprecated":
-            deprecation_value = (
-                version_info.deprecated_on or "true"
-            )
+            deprecation_value = version_info.deprecated_on or "true"
             response.headers["Deprecation"] = deprecation_value
 
             if version_info.sunset_on:

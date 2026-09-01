@@ -29,8 +29,9 @@ from typing import AsyncGenerator
 from app.api.schemas import CompletionRequest
 from app.db import log_usage
 from app.errors.handler import error_handler, with_retry
-from app.services import deepseek, ollama, zhipu
+from app.services import deepseek, ollama
 from app.services import openai as openai_service
+from app.services import zhipu
 from app.utils import (
     cache_manager,
     concurrency_limiter,
@@ -111,15 +112,11 @@ async def chat_completion(req: CompletionRequest, request: Request):
             e, context={"model": req.model, "operation": "backend_selection"}
         )
         metrics_manager.decrement_active_requests()
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
     # ── 流式分支 ──────────────────────────────────────────
     if req.stream:
-        return await _handle_stream(
-            req, backend, backend_name, backend_type, start_time
-        )
+        return await _handle_stream(req, backend, backend_name, backend_type, start_time)
 
     # ── 同步分支（带缓存） ────────────────────────────────
     return await _handle_sync(req, backend, backend_name, backend_type, start_time)
@@ -141,20 +138,14 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time):
 
         metrics_manager.record_cache_miss(req.model)
     except Exception as e:
-        error_response = await error_handler.handle(
-            e, context={"operation": "cache_check"}
-        )
+        error_response = await error_handler.handle(e, context={"operation": "cache_check"})
         metrics_manager.decrement_active_requests()
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
     async with concurrency_limiter.limit():
         backend_start_time = time.time()
         try:
-            response = await with_retry(max_retries=2, delay=1.0)(
-                backend.chat_completion
-            )(
+            response = await with_retry(max_retries=2, delay=1.0)(backend.chat_completion)(
                 model=backend_name,
                 messages=[m.dict() for m in req.messages],
                 max_tokens=req.max_tokens,
@@ -169,9 +160,7 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time):
             # Ollama失败时回退到智谱
             if backend is ollama:
                 try:
-                    response = await with_retry(max_retries=2, delay=1.0)(
-                        zhipu.chat_completion
-                    )(
+                    response = await with_retry(max_retries=2, delay=1.0)(zhipu.chat_completion)(
                         model="glm-4-flash",
                         messages=[m.dict() for m in req.messages],
                         max_tokens=req.max_tokens,
@@ -234,9 +223,7 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time):
 
         filtered_response, is_blocked = content_filter.filter_response(response)
         if is_blocked:
-            logger.warning(
-                f"Response blocked for model: {req.model}, user: {req.user_id}"
-            )
+            logger.warning(f"Response blocked for model: {req.model}, user: {req.user_id}")
 
         metrics_manager.record_request("POST", "/chat/completions", 200, backend_type)
         metrics_manager.record_response_time(
@@ -259,9 +246,7 @@ async def _handle_stream(req, backend, backend_name, backend_type, start_time):
 
     if not _has_stream_method(backend):
         # 后端不支持流式，降级为同步后包装
-        logger.warning(
-            f"Backend {backend_type} has no stream method, falling back to sync"
-        )
+        logger.warning(f"Backend {backend_type} has no stream method, falling back to sync")
 
         async def _fallback_stream():
             response = await backend.chat_completion(
@@ -272,9 +257,7 @@ async def _handle_stream(req, backend, backend_name, backend_type, start_time):
                 top_p=req.top_p,
                 stream=False,
             )
-            content = (
-                response.get("choices", [{}])[0].get("message", {}).get("content", "")
-            )
+            content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
             yield {
                 "id": response.get("id", ""),
                 "object": "chat.completion.chunk",
@@ -353,9 +336,7 @@ async def _handle_stream(req, backend, backend_name, backend_type, start_time):
             except Exception:
                 pass
 
-            metrics_manager.record_request(
-                "POST", "/chat/completions", 200, backend_type
-            )
+            metrics_manager.record_request("POST", "/chat/completions", 200, backend_type)
             metrics_manager.record_response_time(
                 "POST", "/chat/completions", time.time() - start_time, backend_type
             )

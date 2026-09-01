@@ -9,15 +9,15 @@
 
 import os
 import re
-from typing import List, Tuple
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
 import uuid
-import tiktoken
+from typing import List, Tuple
 
+import tiktoken
 from app.db import Document, DocumentChunk, KnowledgeBase
 from app.services.embedding import embedding_service
 from app.utils.logger import get_logger
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -146,9 +146,7 @@ class DocumentProcessor:
             chunks = self.chunk_text(text)
             logger.info(f"文档切片完成: {len(chunks)} 个片段")
 
-            kb_query = select(KnowledgeBase).where(
-                KnowledgeBase.id == doc.knowledge_base_id
-            )
+            kb_query = select(KnowledgeBase).where(KnowledgeBase.id == doc.knowledge_base_id)
             kb_result = await db.execute(kb_query)
             kb = kb_result.scalar_one_or_none()
 

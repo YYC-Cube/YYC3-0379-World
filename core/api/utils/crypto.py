@@ -20,21 +20,22 @@
 @tags: utils,python,crypto,public
 """
 
-import os
 import logging
-from cryptography.fernet import Fernet
+import os
 from typing import Optional
+
+from cryptography.fernet import Fernet
 
 
 class CryptoManager:
     """加密管理器"""
-    
+
     def __init__(self, encryption_key: Optional[str] = None):
         if encryption_key:
             self.key = encryption_key.encode()
         else:
-            self.key = os.environ.get('ENCRYPTION_KEY')
-            
+            self.key = os.environ.get("ENCRYPTION_KEY")
+
             if not self.key:
                 self.key = Fernet.generate_key()
                 logging.warning(
@@ -43,10 +44,10 @@ class CryptoManager:
                 )
             else:
                 self.key = self.key.encode()
-        
+
         self.fernet = Fernet(self.key)
         self.logger = logging.getLogger(__name__)
-    
+
     def encrypt(self, data: str) -> str:
         """加密数据"""
         try:
@@ -55,7 +56,7 @@ class CryptoManager:
         except Exception as e:
             self.logger.error(f"Encryption error: {e}")
             raise
-    
+
     def decrypt(self, encrypted_data: str) -> str:
         """解密数据"""
         try:
@@ -64,7 +65,7 @@ class CryptoManager:
         except Exception as e:
             self.logger.error(f"Decryption error: {e}")
             raise
-    
+
     def encrypt_dict(self, data: dict, keys: list) -> dict:
         """加密字典中的指定字段"""
         encrypted_data = data.copy()
@@ -72,7 +73,7 @@ class CryptoManager:
             if key in encrypted_data and encrypted_data[key]:
                 encrypted_data[key] = self.encrypt(str(encrypted_data[key]))
         return encrypted_data
-    
+
     def decrypt_dict(self, data: dict, keys: list) -> dict:
         """解密字典中的指定字段"""
         decrypted_data = data.copy()

@@ -20,14 +20,17 @@
 @tags: services,python,zhipu,api,public
 """
 
-import httpx
 import json
 import os
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+import httpx
 from app.config import settings
 from app.utils import http_client
 
 _ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4"
+
+
 def _get_zhipu_key() -> str:
     """延迟读取智谱 API Key，支持运行时环境变量更新"""
     return os.getenv("ZHIPU_API_KEY", "") or settings.zhipu_api_key
@@ -44,10 +47,7 @@ async def chat_completion(
     """
     调用智谱 AI API 并返回 OpenAI 兼容的 JSON 格式
     """
-    headers = {
-        "Authorization": f"Bearer {_get_zhipu_key()}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {_get_zhipu_key()}", "Content-Type": "application/json"}
 
     payload = {
         "model": model,
@@ -64,9 +64,7 @@ async def chat_completion(
 
     try:
         response = await http_client.post(
-            f"{_ZHIPU_BASE}/chat/completions",
-            headers=headers,
-            json=payload
+            f"{_ZHIPU_BASE}/chat/completions", headers=headers, json=payload
         )
         response.raise_for_status()
 
@@ -89,20 +87,21 @@ async def chat_completion(
             "created": raw.get("created", 0),
             "model": model,
             "choices": choices,
-            "usage": raw.get("usage", {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0
-            })
+            "usage": raw.get(
+                "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            ),
         }
     except httpx.HTTPStatusError as e:
         from app.utils.logger import logger
+
         logger.error(f"智谱 AI API 错误: {e.response.status_code} - {e.response.text}")
         raise
     except Exception as e:
         from app.utils.logger import logger
+
         logger.error(f"智谱 AI 未知错误: {str(e)}")
         from app.errors import APIError
+
         raise APIError(message="智谱 AI 服务异常", details={"error": str(e)})
 
 
@@ -119,10 +118,7 @@ async def chat_completion_stream(
     Yields:
         dict: 流式响应块
     """
-    headers = {
-        "Authorization": f"Bearer {_get_zhipu_key()}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {_get_zhipu_key()}", "Content-Type": "application/json"}
 
     payload = {
         "model": model,
@@ -140,10 +136,7 @@ async def chat_completion_stream(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
-                "POST",
-                f"{_ZHIPU_BASE}/chat/completions",
-                headers=headers,
-                json=payload
+                "POST", f"{_ZHIPU_BASE}/chat/completions", headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
 
@@ -175,21 +168,26 @@ async def chat_completion_stream(
                                     "object": "chat.completion.chunk",
                                     "created": chunk.get("created", 0),
                                     "model": model,
-                                    "choices": [{
-                                        "index": choice.get("index", 0),
-                                        "delta": delta,
-                                        "finish_reason": choice.get("finish_reason")
-                                    }]
+                                    "choices": [
+                                        {
+                                            "index": choice.get("index", 0),
+                                            "delta": delta,
+                                            "finish_reason": choice.get("finish_reason"),
+                                        }
+                                    ],
                                 }
                         except json.JSONDecodeError:
                             continue
 
     except httpx.HTTPStatusError as e:
         from app.utils.logger import logger
+
         logger.error(f"智谱 AI 流式API错误: {e.response.status_code} - {e.response.text}")
         raise
     except Exception as e:
         from app.utils.logger import logger
+
         logger.error(f"智谱 AI 流式输出错误: {str(e)}")
         from app.errors import APIError
+
         raise APIError(message="智谱 AI 流式服务异常", details={"error": str(e)})

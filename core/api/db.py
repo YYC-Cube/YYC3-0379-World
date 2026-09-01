@@ -134,9 +134,7 @@ class Document(Base):
     extra_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
 
     knowledge_base = relationship("KnowledgeBase", back_populates="documents")
-    chunks = relationship(
-        "DocumentChunk", back_populates="document", cascade="all, delete-orphan"
-    )
+    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
 
 
 class DocumentChunk(Base):

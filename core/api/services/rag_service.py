@@ -7,15 +7,15 @@
 # status: active
 # tags: [service],[rag],[retrieval]
 
-from typing import List, Optional, Dict, Any
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from app.db import DocumentChunk, KnowledgeBase, SearchHistory
 from app.services.embedding import embedding_service
 from app.utils.logger import get_logger
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -51,8 +51,7 @@ class RAGService:
 
         embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
-        sql = text(
-            """
+        sql = text("""
             SELECT
                 dc.id,
                 dc.document_id,
@@ -70,8 +69,7 @@ class RAGService:
             AND 1 - (dc.embedding <=> CAST(:embedding AS vector)) >= :threshold
             ORDER BY dc.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
-        """
-        )
+        """)
 
         result = await db.execute(
             sql,
@@ -125,15 +123,12 @@ class RAGService:
         Returns:
             检索结果列表
         """
-        semantic_results = await self.semantic_search(
-            query, knowledge_base_ids, top_k * 2, 0.5, db
-        )
+        semantic_results = await self.semantic_search(query, knowledge_base_ids, top_k * 2, 0.5, db)
 
         keywords = query.lower().split()
         keyword_results = []
 
-        keyword_sql = text(
-            """
+        keyword_sql = text("""
             SELECT
                 dc.id,
                 dc.document_id,
@@ -149,8 +144,7 @@ class RAGService:
             WHERE dc.knowledge_base_id = ANY(:kb_ids)
             AND dc.content ILIKE ANY(:keywords)
             LIMIT :limit
-        """
-        )
+        """)
 
         keyword_patterns = [f"%{kw}%" for kw in keywords]
         if db is None:
@@ -192,9 +186,7 @@ class RAGService:
                 result["similarity"] = 0.0
                 merged[chunk_id] = result
 
-        sorted_results = sorted(
-            merged.values(), key=lambda x: x["score"], reverse=True
-        )
+        sorted_results = sorted(merged.values(), key=lambda x: x["score"], reverse=True)
 
         return sorted_results[:top_k]
 

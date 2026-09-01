@@ -105,7 +105,18 @@ async def upload_document(
     if not safe_filename:
         raise HTTPException(status_code=400, detail="无效的文件名")
 
-    ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".md", ".txt", ".py", ".js", ".java", ".csv", ".json"}
+    ALLOWED_EXTENSIONS = {
+        ".pdf",
+        ".docx",
+        ".doc",
+        ".md",
+        ".txt",
+        ".py",
+        ".js",
+        ".java",
+        ".csv",
+        ".json",
+    }
     file_ext = os.path.splitext(safe_filename)[1].lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file_ext}")
@@ -151,9 +162,7 @@ async def upload_document(
 
 
 @router.post("", response_model=DocumentResponse, summary="创建文档记录")
-async def create_document(
-    doc_data: DocumentCreate, db: AsyncSession = Depends(async_session)
-):
+async def create_document(doc_data: DocumentCreate, db: AsyncSession = Depends(async_session)):
     """
     创建文档记录（用于 URL 或其他来源）
 
@@ -163,9 +172,7 @@ async def create_document(
     - **source_url**: 来源URL（可选）
     - **file_type**: 文件类型（可选）
     """
-    kb_query = select(KnowledgeBase).where(
-        KnowledgeBase.id == doc_data.knowledge_base_id
-    )
+    kb_query = select(KnowledgeBase).where(KnowledgeBase.id == doc_data.knowledge_base_id)
     kb_result = await db.execute(kb_query)
     kb = kb_result.scalar_one_or_none()
     if not kb:

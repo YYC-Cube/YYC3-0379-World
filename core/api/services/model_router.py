@@ -20,15 +20,16 @@
 @tags: router,loadbalancer,high-availability
 """
 
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
-from collections import deque
-from dataclasses import dataclass, field
-from enum import Enum
 import asyncio
 import logging
-import httpx
 import time
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Dict, List, Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class RoutingStrategy(Enum):
 @dataclass
 class RequestRecord:
     """单次请求记录，用于动态权重计算"""
+
     timestamp: float
     latency: float
     success: bool
@@ -70,9 +72,9 @@ class NodeInfo:
     total_requests: int = 0
     failed_requests: int = 0
     # ── v2.0 动态权重字段 ──
-    ewma_latency: float = 0.0          # EWMA平滑延迟（ms）
-    ewma_error_rate: float = 0.0       # EWMA平滑错误率
-    dynamic_weight: float = 1.0        # 计算得出的动态权重
+    ewma_latency: float = 0.0  # EWMA平滑延迟（ms）
+    ewma_error_rate: float = 0.0  # EWMA平滑错误率
+    dynamic_weight: float = 1.0  # 计算得出的动态权重
     recent_records: deque = field(default_factory=lambda: deque(maxlen=200))
     last_weight_update: float = field(default_factory=time.time)
 
@@ -98,7 +100,7 @@ class ModelRouter:
     # 健康检查间隔（秒）
     HEALTH_CHECK_INTERVAL = 15.0
     # 降级阈值
-    DEGRADED_ERROR_THRESHOLD = 0.15    # 错误率>15% → DEGRADED
+    DEGRADED_ERROR_THRESHOLD = 0.15  # 错误率>15% → DEGRADED
     DEGRADED_LATENCY_THRESHOLD = 5000  # 延迟>5s → DEGRADED
 
     def __init__(self, config: Optional[Dict] = None):
@@ -144,7 +146,8 @@ class ModelRouter:
     async def route_request(self, model: str, request: dict) -> str:
         async with self._lock:
             candidate_nodes = [
-                node_id for node_id, node_info in self.nodes.items()
+                node_id
+                for node_id, node_info in self.nodes.items()
                 if model in node_info.models
                 and node_info.status in (NodeStatus.HEALTHY, NodeStatus.DEGRADED)
             ]
@@ -208,6 +211,7 @@ class ModelRouter:
         # 加权随机选择（避免单节点过载）
         total = sum(weights.values())
         import random
+
         r = random.uniform(0, total)
         cumulative = 0.0
         for nid, w in weights.items():
@@ -235,12 +239,9 @@ class ModelRouter:
         error_rate = errors / len(recent)
 
         # EWMA平滑
-        node.ewma_latency = (
-            self.EWMA_ALPHA * avg_lat + (1 - self.EWMA_ALPHA) * node.ewma_latency
-        )
+        node.ewma_latency = self.EWMA_ALPHA * avg_lat + (1 - self.EWMA_ALPHA) * node.ewma_latency
         node.ewma_error_rate = (
-            self.EWMA_ALPHA * error_rate
-            + (1 - self.EWMA_ALPHA) * node.ewma_error_rate
+            self.EWMA_ALPHA * error_rate + (1 - self.EWMA_ALPHA) * node.ewma_error_rate
         )
 
         # 状态升降级
@@ -304,7 +305,9 @@ class ModelRouter:
         weights = {}
         for node_id in nodes:
             node = self.nodes[node_id]
-            weight = (node.capacity / (node.current_load + 1)) / (node.latency + 1) * node.success_rate
+            weight = (
+                (node.capacity / (node.current_load + 1)) / (node.latency + 1) * node.success_rate
+            )
             weights[node_id] = weight
         return max(weights.items(), key=lambda x: x[1])[0]
 
@@ -318,6 +321,7 @@ class ModelRouter:
 
     def _select_by_random(self, nodes: List[str]) -> str:
         import random
+
         return random.choice(nodes)
 
     # ── 健康检查 ──────────────────────────────────────────
@@ -341,7 +345,11 @@ class ModelRouter:
             measured = (time.monotonic() - start) * 1000
 
             if response.status_code == 200:
-                node.status = NodeStatus.HEALTHY if node.status != NodeStatus.DEGRADED else NodeStatus.DEGRADED
+                node.status = (
+                    NodeStatus.HEALTHY
+                    if node.status != NodeStatus.DEGRADED
+                    else NodeStatus.DEGRADED
+                )
                 node.latency = measured
                 node.last_check = datetime.now()
                 logger.debug(f"Node {node_id} healthy, latency: {measured:.0f}ms")

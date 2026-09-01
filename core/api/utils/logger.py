@@ -20,13 +20,13 @@
 @tags: utils,python,logger,public
 """
 
-import logging
 import json
+import logging
 import sys
-from logging.handlers import RotatingFileHandler
-from typing import Any, Dict, Optional
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 
 class StructuredLogger:
@@ -37,7 +37,7 @@ class StructuredLogger:
         name: str,
         log_dir: str = "logs",
         max_bytes: int = 10 * 1024 * 1024,
-        backup_count: int = 5
+        backup_count: int = 5,
     ):
         self.name = name
         self.logger = logging.getLogger(name)
@@ -52,15 +52,14 @@ class StructuredLogger:
         """设置日志处理器"""
 
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
 
         file_handler = RotatingFileHandler(
             self.log_dir / f"{self.name}.log",
             maxBytes=max_bytes,
             backupCount=backup_count,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.INFO)
@@ -72,51 +71,46 @@ class StructuredLogger:
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
 
-    def _format_log(
-        self,
-        level: str,
-        message: str,
-        **kwargs
-    ) -> str:
+    def _format_log(self, level: str, message: str, **kwargs) -> str:
         """格式化日志"""
         log_data = {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'level': level,
-            'logger': self.name,
-            'message': message,
-            **kwargs
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": level,
+            "logger": self.name,
+            "message": message,
+            **kwargs,
         }
         return json.dumps(log_data, ensure_ascii=False)
 
     def debug(self, message: str, **kwargs):
         """记录 DEBUG 级别日志"""
-        self.logger.debug(self._format_log('DEBUG', message, **kwargs))
+        self.logger.debug(self._format_log("DEBUG", message, **kwargs))
 
     def info(self, message: str, **kwargs):
         """记录 INFO 级别日志"""
-        self.logger.info(self._format_log('INFO', message, **kwargs))
+        self.logger.info(self._format_log("INFO", message, **kwargs))
 
     def warning(self, message: str, **kwargs):
         """记录 WARNING 级别日志"""
-        self.logger.warning(self._format_log('WARNING', message, **kwargs))
+        self.logger.warning(self._format_log("WARNING", message, **kwargs))
 
     def error(self, message: str, **kwargs):
         """记录 ERROR 级别日志"""
-        self.logger.error(self._format_log('ERROR', message, **kwargs))
+        self.logger.error(self._format_log("ERROR", message, **kwargs))
 
     def critical(self, message: str, **kwargs):
         """记录 CRITICAL 级别日志"""
-        self.logger.critical(self._format_log('CRITICAL', message, **kwargs))
+        self.logger.critical(self._format_log("CRITICAL", message, **kwargs))
 
     def exception(self, message: str, **kwargs):
         """记录异常日志"""
-        self.logger.exception(self._format_log('ERROR', message, **kwargs))
+        self.logger.exception(self._format_log("ERROR", message, **kwargs))
 
 
-logger = StructuredLogger('yyc3')
-api_logger = StructuredLogger('yyc3.api')
-db_logger = StructuredLogger('yyc3.db')
-cache_logger = StructuredLogger('yyc3.cache')
+logger = StructuredLogger("yyc3")
+api_logger = StructuredLogger("yyc3.api")
+db_logger = StructuredLogger("yyc3.db")
+cache_logger = StructuredLogger("yyc3.cache")
 
 
 def get_logger(name: str) -> logging.Logger:

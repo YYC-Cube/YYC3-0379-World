@@ -7,14 +7,14 @@
 # status: active
 # tags: [api],[rag],[retrieval]
 
-from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
-from pydantic import BaseModel, Field
 import time
+from typing import List, Optional
 
 from app.db import async_session
 from app.services.rag_service import rag_service
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/v1/rag")
 
@@ -85,9 +85,7 @@ async def search(
             db=db,
         )
     else:
-        raise HTTPException(
-            status_code=400, detail=f"不支持的检索类型: {request.search_type}"
-        )
+        raise HTTPException(status_code=400, detail=f"不支持的检索类型: {request.search_type}")
 
     response_time_ms = int((time.time() - start_time) * 1000)
 
@@ -147,9 +145,7 @@ async def ask_with_context(
 
     context_parts = []
     for i, result in enumerate(results, 1):
-        context_parts.append(
-            f"[文档{i}] {result['document_title']}\n{result['content']}\n"
-        )
+        context_parts.append(f"[文档{i}] {result['document_title']}\n{result['content']}\n")
 
     context = "\n".join(context_parts)
 

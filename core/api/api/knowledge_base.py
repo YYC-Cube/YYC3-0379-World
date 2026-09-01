@@ -164,9 +164,7 @@ async def delete_knowledge_base(kb_id: str, db: AsyncSession = Depends(async_ses
 
 
 @router.get("/{kb_id}/stats", summary="获取知识库统计信息")
-async def get_knowledge_base_stats(
-    kb_id: str, db: AsyncSession = Depends(async_session)
-):
+async def get_knowledge_base_stats(kb_id: str, db: AsyncSession = Depends(async_session)):
     """
     获取知识库的统计信息
 

@@ -20,11 +20,12 @@
 @tags: services,python,ollama,local,critical,public
 """
 
-import os
 import json
-import httpx
+import os
 import time
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+import httpx
 from app.config import settings
 
 _OLLAMA_ENDPOINTS = [
@@ -128,11 +129,7 @@ async def chat_completion_stream(
     for ep in _OLLAMA_ENDPOINTS:
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
-                    f"{ep}/api/chat",
-                    json=payload
-                ) as response:
+                async with client.stream("POST", f"{ep}/api/chat", json=payload) as response:
                     response.raise_for_status()
 
                     async for line in response.aiter_lines():
@@ -146,14 +143,20 @@ async def chat_completion_stream(
                                     "object": "chat.completion.chunk",
                                     "created": int(time.time()),
                                     "model": model,
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {
-                                            "role": message.get("role"),
-                                            "content": message.get("content", "")
-                                        },
-                                        "finish_reason": chunk.get("done_reason") if chunk.get("done") else None
-                                    }]
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {
+                                                "role": message.get("role"),
+                                                "content": message.get("content", ""),
+                                            },
+                                            "finish_reason": (
+                                                chunk.get("done_reason")
+                                                if chunk.get("done")
+                                                else None
+                                            ),
+                                        }
+                                    ],
                                 }
                             except json.JSONDecodeError:
                                 continue

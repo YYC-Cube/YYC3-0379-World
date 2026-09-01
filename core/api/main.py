@@ -157,14 +157,10 @@ async def validate_critical_config():
     logger = logging.getLogger(__name__)
 
     critical_checks = [
-        ("JWT_SECRET_KEY", settings.jwt_secret_key,
-         lambda v: v and v != "change_me_in_production"),
-        ("API_KEYS", settings.api_keys,
-         lambda v: bool(v)),
-        ("POSTGRES_PASSWORD", settings.db_password,
-         lambda v: v and v != "change_me_in_production"),
-        ("REDIS_PASSWORD", settings.redis_password,
-         lambda v: v and v != "change_me_in_production"),
+        ("JWT_SECRET_KEY", settings.jwt_secret_key, lambda v: v and v != "change_me_in_production"),
+        ("API_KEYS", settings.api_keys, lambda v: bool(v)),
+        ("POSTGRES_PASSWORD", settings.db_password, lambda v: v and v != "change_me_in_production"),
+        ("REDIS_PASSWORD", settings.redis_password, lambda v: v and v != "change_me_in_production"),
     ]
 
     errors = []
@@ -270,12 +266,18 @@ async def health_check():
     )
 
     services = {
-        "ollama": ollama_result if not isinstance(ollama_result, BaseException) else {"status": "error"},
+        "ollama": (
+            ollama_result if not isinstance(ollama_result, BaseException) else {"status": "error"}
+        ),
         "zhipu": {
             "status": "configured" if settings.zhipu_api_key else "not_configured",
         },
-        "redis": redis_result if not isinstance(redis_result, BaseException) else {"status": "error"},
-        "postgresql": pg_result if not isinstance(pg_result, BaseException) else {"status": "error"},
+        "redis": (
+            redis_result if not isinstance(redis_result, BaseException) else {"status": "error"}
+        ),
+        "postgresql": (
+            pg_result if not isinstance(pg_result, BaseException) else {"status": "error"}
+        ),
     }
 
     # 系统资源
@@ -396,7 +398,11 @@ async def get_model_type(model: str = Query(...)):
             )
             row = result.first()
             if row:
-                return {"model": model, "backend_type": row.backend_type, "backend_name": row.backend_name}
+                return {
+                    "model": model,
+                    "backend_type": row.backend_type,
+                    "backend_name": row.backend_name,
+                }
     except Exception:
         pass
 
@@ -425,22 +431,78 @@ async def get_api_versions():
 # 可通过数据库 model_registry 表动态扩展（Ollama模型）
 DEFAULT_MODELS = [
     # 智谱GLM
-    ModelConfig(id="glm-4-flash", display_name="智谱GLM-4 Flash", backend="zhipu",
-                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.001),
-    ModelConfig(id="glm-4-plus", display_name="智谱GLM-4 Plus", backend="zhipu",
-                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.05),
+    ModelConfig(
+        id="glm-4-flash",
+        display_name="智谱GLM-4 Flash",
+        backend="zhipu",
+        enabled=True,
+        max_tokens=128000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.001,
+    ),
+    ModelConfig(
+        id="glm-4-plus",
+        display_name="智谱GLM-4 Plus",
+        backend="zhipu",
+        enabled=True,
+        max_tokens=128000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.05,
+    ),
     # DeepSeek
-    ModelConfig(id="deepseek-chat", display_name="DeepSeek Chat", backend="deepseek",
-                enabled=True, max_tokens=64000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.001),
-    ModelConfig(id="deepseek-coder", display_name="DeepSeek Coder", backend="deepseek",
-                enabled=True, max_tokens=16000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.001),
+    ModelConfig(
+        id="deepseek-chat",
+        display_name="DeepSeek Chat",
+        backend="deepseek",
+        enabled=True,
+        max_tokens=64000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.001,
+    ),
+    ModelConfig(
+        id="deepseek-coder",
+        display_name="DeepSeek Coder",
+        backend="deepseek",
+        enabled=True,
+        max_tokens=16000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.001,
+    ),
     # Ollama本地（默认）
-    ModelConfig(id="llama3.2", display_name="Llama 3.2 (本地)", backend="ollama",
-                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.0),
-    ModelConfig(id="codegeex4", display_name="CodeGeeX4 (本地)", backend="ollama",
-                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.0),
-    ModelConfig(id="qwen2.5", display_name="通义千问 2.5 (本地)", backend="ollama",
-                enabled=True, max_tokens=128000, temperature=0.7, top_p=0.9, cost_per_1k_tokens=0.0),
+    ModelConfig(
+        id="llama3.2",
+        display_name="Llama 3.2 (本地)",
+        backend="ollama",
+        enabled=True,
+        max_tokens=128000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.0,
+    ),
+    ModelConfig(
+        id="codegeex4",
+        display_name="CodeGeeX4 (本地)",
+        backend="ollama",
+        enabled=True,
+        max_tokens=128000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.0,
+    ),
+    ModelConfig(
+        id="qwen2.5",
+        display_name="通义千问 2.5 (本地)",
+        backend="ollama",
+        enabled=True,
+        max_tokens=128000,
+        temperature=0.7,
+        top_p=0.9,
+        cost_per_1k_tokens=0.0,
+    ),
 ]
 
 # DB注册的默认Ollama模型ID（避免重复）
@@ -472,9 +534,13 @@ async def list_models():
                 if row.id not in _DEFAULT_OLLAMA_IDS:
                     models.append(
                         ModelConfig(
-                            id=row.id, display_name=row.display_name,
-                            backend="ollama", enabled=True,
-                            max_tokens=128000, temperature=0.7, top_p=0.9,
+                            id=row.id,
+                            display_name=row.display_name,
+                            backend="ollama",
+                            enabled=True,
+                            max_tokens=128000,
+                            temperature=0.7,
+                            top_p=0.9,
                             cost_per_1k_tokens=0.0,
                         )
                     )

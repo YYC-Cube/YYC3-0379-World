@@ -11,13 +11,14 @@
 @tags: api,python,websocket,streaming,critical
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from typing import Optional
-import json
 import asyncio
-from app.services import zhipu, ollama
-from app.utils.logger import logger
+import json
+from typing import Optional
+
 from app.middleware.auth import verify_api_key
+from app.services import ollama, zhipu
+from app.utils.logger import logger
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
 
@@ -59,10 +60,7 @@ manager = ConnectionManager()
 
 
 @router.websocket("/ws/chat")
-async def websocket_chat(
-    websocket: WebSocket,
-    token: Optional[str] = Query(None)
-):
+async def websocket_chat(websocket: WebSocket, token: Optional[str] = Query(None)):
     """
     WebSocket聊天接口 - 支持流式输出
 
@@ -110,10 +108,7 @@ async def websocket_chat(
                 stream = request.get("stream", True)
 
                 # 发送开始事件
-                await manager.send_message({
-                    "event": "start",
-                    "data": {"model": model}
-                }, websocket)
+                await manager.send_message({"event": "start", "data": {"model": model}}, websocket)
 
                 # 判断Provider类型
                 if model.startswith("zhipu:") or model in ["glm-4-flash", "glm-4-plus", "glm-4"]:
@@ -126,17 +121,14 @@ async def websocket_chat(
                     model_name = model
 
                 # 调用模型（流式）
-                if stream and hasattr(backend, 'chat_completion_stream'):
+                if stream and hasattr(backend, "chat_completion_stream"):
                     # 流式输出
                     async for chunk in backend.chat_completion_stream(
                         model=model_name,
                         messages=messages,
-                        temperature=request.get("temperature", 0.7)
+                        temperature=request.get("temperature", 0.7),
                     ):
-                        await manager.send_message({
-                            "event": "chunk",
-                            "data": chunk
-                        }, websocket)
+                        await manager.send_message({"event": "chunk", "data": chunk}, websocket)
                 else:
                     # 非流式输出
                     response = await backend.chat_completion(
@@ -144,31 +136,21 @@ async def websocket_chat(
                         messages=messages,
                         temperature=request.get("temperature", 0.7),
                         max_tokens=request.get("max_tokens"),
-                        stream=False
+                        stream=False,
                     )
 
-                    await manager.send_message({
-                        "event": "complete",
-                        "data": response
-                    }, websocket)
+                    await manager.send_message({"event": "complete", "data": response}, websocket)
 
                 # 发送结束事件
-                await manager.send_message({
-                    "event": "done",
-                    "data": {"model": model}
-                }, websocket)
+                await manager.send_message({"event": "done", "data": {"model": model}}, websocket)
 
             except json.JSONDecodeError:
-                await manager.send_message({
-                    "event": "error",
-                    "data": {"error": "Invalid JSON format"}
-                }, websocket)
+                await manager.send_message(
+                    {"event": "error", "data": {"error": "Invalid JSON format"}}, websocket
+                )
             except Exception as e:
                 logger.error(f"处理WebSocket消息失败: {e}")
-                await manager.send_message({
-                    "event": "error",
-                    "data": {"error": str(e)}
-                }, websocket)
+                await manager.send_message({"event": "error", "data": {"error": str(e)}}, websocket)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -178,10 +160,7 @@ async def websocket_chat(
 
 
 @router.websocket("/ws/monitor")
-async def websocket_monitor(
-    websocket: WebSocket,
-    token: Optional[str] = Query(None)
-):
+async def websocket_monitor(websocket: WebSocket, token: Optional[str] = Query(None)):
     """
     WebSocket监控接口 - 实时推送系统状态
 
@@ -212,8 +191,9 @@ async def websocket_monitor(
     try:
         while True:
             # 每5秒推送一次监控数据
-            from app.utils.metrics import metrics_manager
             from datetime import datetime, timezone
+
+            from app.utils.metrics import metrics_manager
 
             metrics = {
                 "event": "metrics",
@@ -223,16 +203,10 @@ async def websocket_monitor(
                     "total_requests": metrics_manager.get_total_requests(),
                     "cache_hit_rate": metrics_manager.get_cache_hit_rate(),
                     "models": {
-                        "ollama": {
-                            "status": "online",
-                            "latency_ms": 85
-                        },
-                        "zhipu": {
-                            "status": "online",
-                            "latency_ms": 120
-                        }
-                    }
-                }
+                        "ollama": {"status": "online", "latency_ms": 85},
+                        "zhipu": {"status": "online", "latency_ms": 120},
+                    },
+                },
             }
 
             await manager.send_message(metrics, websocket)

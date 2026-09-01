@@ -7,8 +7,9 @@
 # status: active
 # tags: [service],[embedding],[rag]
 
-import httpx
 from typing import List, Optional
+
+import httpx
 import numpy as np
 from app.config import settings
 from app.utils.logger import get_logger

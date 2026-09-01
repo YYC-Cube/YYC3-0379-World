@@ -20,9 +20,10 @@
 @tags: utils,python,http,public
 """
 
-import httpx
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+import httpx
 from app.config import settings
 
 
@@ -34,20 +35,17 @@ class HttpClient:
         timeout: float = 120.0,
         max_connections: int = 100,
         max_keepalive_connections: int = 20,
-        keepalive_expiry: float = 30.0
+        keepalive_expiry: float = 30.0,
     ):
         self.timeout = httpx.Timeout(timeout, read=timeout)
         self.limits = httpx.Limits(
             max_keepalive_connections=max_keepalive_connections,
             max_connections=max_connections,
-            keepalive_expiry=keepalive_expiry
+            keepalive_expiry=keepalive_expiry,
         )
 
         self.client = httpx.AsyncClient(
-            timeout=self.timeout,
-            limits=self.limits,
-            http2=False,
-            verify=True
+            timeout=self.timeout, limits=self.limits, http2=False, verify=True
         )
 
         self.logger = logging.getLogger(__name__)
@@ -60,55 +58,34 @@ class HttpClient:
         self,
         url: str,
         headers: Optional[Dict[str, str]] = None,
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
     ) -> httpx.Response:
         """发送 GET 请求"""
-        return await self.client.get(
-            url,
-            headers=headers,
-            params=params
-        )
+        return await self.client.get(url, headers=headers, params=params)
 
     async def post(
         self,
         url: str,
         headers: Optional[Dict[str, str]] = None,
         json: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> httpx.Response:
         """发送 POST 请求"""
-        return await self.client.post(
-            url,
-            headers=headers,
-            json=json,
-            data=data
-        )
+        return await self.client.post(url, headers=headers, json=json, data=data)
 
     async def put(
         self,
         url: str,
         headers: Optional[Dict[str, str]] = None,
         json: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> httpx.Response:
         """发送 PUT 请求"""
-        return await self.client.put(
-            url,
-            headers=headers,
-            json=json,
-            data=data
-        )
+        return await self.client.put(url, headers=headers, json=json, data=data)
 
-    async def delete(
-        self,
-        url: str,
-        headers: Optional[Dict[str, str]] = None
-    ) -> httpx.Response:
+    async def delete(self, url: str, headers: Optional[Dict[str, str]] = None) -> httpx.Response:
         """发送 DELETE 请求"""
-        return await self.client.delete(
-            url,
-            headers=headers
-        )
+        return await self.client.delete(url, headers=headers)
 
     async def close(self):
         """关闭连接池"""
@@ -125,8 +102,5 @@ class HttpClient:
 
 
 http_client = HttpClient(
-    timeout=120.0,
-    max_connections=100,
-    max_keepalive_connections=20,
-    keepalive_expiry=30.0
+    timeout=120.0, max_connections=100, max_keepalive_connections=20, keepalive_expiry=30.0
 )

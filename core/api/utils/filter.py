@@ -20,9 +20,9 @@
 @tags: utils,python,filter,public
 """
 
-import re
 import logging
-from typing import List, Tuple, Optional
+import re
+from typing import List, Optional, Tuple
 
 
 class ContentFilter:
@@ -41,75 +41,75 @@ class ContentFilter:
         self.logger = logging.getLogger(__name__)
 
         self.filter_stats = {
-            'filtered': 0,
-            'blocked': 0,
-            'passed': 0,
+            "filtered": 0,
+            "blocked": 0,
+            "passed": 0,
         }
 
     def _load_sensitive_words(self) -> List[str]:
         """加载中英文敏感词列表"""
         # ── 英文敏感词 ──
         en_words = [
-            'password',
-            'pwd',
-            'secret',
-            'token',
-            'api_key',
-            'apikey',
-            'private_key',
-            'privatekey',
-            'credit_card',
-            'creditcard',
-            'ssn',
-            'social_security',
-            'bank_account',
-            'bankaccount',
-            'routing_number',
-            'cvv',
-            'pin_code',
-            'auth_code',
-            'access_key',
-            'secret_key',
-            'master_key',
-            'ssh_key',
-            'ssh-privatekey',
-            'jwt_secret',
-            'session_id',
-            'sessionid',
-            'csrf_token',
-            'csrf-token',
-            'bearer',
-            'authorization',
+            "password",
+            "pwd",
+            "secret",
+            "token",
+            "api_key",
+            "apikey",
+            "private_key",
+            "privatekey",
+            "credit_card",
+            "creditcard",
+            "ssn",
+            "social_security",
+            "bank_account",
+            "bankaccount",
+            "routing_number",
+            "cvv",
+            "pin_code",
+            "auth_code",
+            "access_key",
+            "secret_key",
+            "master_key",
+            "ssh_key",
+            "ssh-privatekey",
+            "jwt_secret",
+            "session_id",
+            "sessionid",
+            "csrf_token",
+            "csrf-token",
+            "bearer",
+            "authorization",
         ]
         # ── 中文敏感词 ──
         cn_words = [
-            '密码',
-            '登录密码',
-            '支付密码',
-            '交易密码',
-            '身份证',
-            '身份证号',
-            '身份证号码',
-            '手机号',
-            '手机号码',
-            '联系电话',
-            '银行卡',
-            '银行卡号',
-            '信用卡',
-            '信用卡号',
-            '验证码',
-            '短信验证码',
-            '登录凭证',
-            '授权码',
-            '私钥',
-            '密钥',
-            'API密钥',
-            'API秘钥',
-            '访问密钥',
-            '秘密密钥',
-            '令牌',
-            '会话ID',
-            '会话标识',
+            "密码",
+            "登录密码",
+            "支付密码",
+            "交易密码",
+            "身份证",
+            "身份证号",
+            "身份证号码",
+            "手机号",
+            "手机号码",
+            "联系电话",
+            "银行卡",
+            "银行卡号",
+            "信用卡",
+            "信用卡号",
+            "验证码",
+            "短信验证码",
+            "登录凭证",
+            "授权码",
+            "私钥",
+            "密钥",
+            "API密钥",
+            "API秘钥",
+            "访问密钥",
+            "秘密密钥",
+            "令牌",
+            "会话ID",
+            "会话标识",
         ]
         return en_words + cn_words
 
@@ -182,9 +182,7 @@ class ContentFilter:
             ),
         ]
 
-    def filter_content(
-        self, content: str, mask_char: str = '*'
-    ) -> Tuple[str, bool]:
+    def filter_content(self, content: str, mask_char: str = "*") -> Tuple[str, bool]:
         """过滤敏感内容
 
         Args:
@@ -210,11 +208,11 @@ class ContentFilter:
                     mask_char * 4,  # 统一替换为 ****
                     filtered_content,
                 )
-                self.filter_stats['filtered'] += len(matches)
+                self.filter_stats["filtered"] += len(matches)
 
                 if len(matches) > 3:
                     is_blocked = True
-                    self.filter_stats['blocked'] += 1
+                    self.filter_stats["blocked"] += 1
 
         # 2. 正则模式检测
         for name, regex, replacement in self.regex_patterns:
@@ -222,39 +220,37 @@ class ContentFilter:
                 # 仅计数，不替换
                 matches = re.findall(regex, filtered_content)
                 if matches:
-                    self.filter_stats['filtered'] += len(matches)
+                    self.filter_stats["filtered"] += len(matches)
                 continue
 
             pattern = re.compile(regex)
             matches = pattern.findall(filtered_content)
             if matches:
                 filtered_content = pattern.sub(replacement, filtered_content)
-                self.filter_stats['filtered'] += len(matches)
+                self.filter_stats["filtered"] += len(matches)
                 if len(matches) > 2:
                     is_blocked = True
-                    self.filter_stats['blocked'] += 1
+                    self.filter_stats["blocked"] += 1
 
         if not is_blocked:
-            self.filter_stats['passed'] += 1
+            self.filter_stats["passed"] += 1
 
         return filtered_content, is_blocked
 
-    def filter_response(
-        self, response: dict, mask_char: str = '*'
-    ) -> Tuple[dict, bool]:
+    def filter_response(self, response: dict, mask_char: str = "*") -> Tuple[dict, bool]:
         """过滤响应内容"""
-        if not response or 'choices' not in response:
+        if not response or "choices" not in response:
             return response, False
 
         is_blocked = False
 
-        for choice in response['choices']:
-            if 'message' in choice and 'content' in choice['message']:
+        for choice in response["choices"]:
+            if "message" in choice and "content" in choice["message"]:
                 filtered_content, blocked = self.filter_content(
-                    choice['message']['content'], mask_char
+                    choice["message"]["content"], mask_char
                 )
 
-                choice['message']['content'] = filtered_content
+                choice["message"]["content"] = filtered_content
 
                 if blocked:
                     is_blocked = True
@@ -268,9 +264,9 @@ class ContentFilter:
     def reset_stats(self):
         """重置过滤统计"""
         self.filter_stats = {
-            'filtered': 0,
-            'blocked': 0,
-            'passed': 0,
+            "filtered": 0,
+            "blocked": 0,
+            "passed": 0,
         }
         self.logger.info("Content filter stats reset")
 

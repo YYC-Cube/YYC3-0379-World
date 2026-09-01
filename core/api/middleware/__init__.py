@@ -11,15 +11,15 @@
 @tags: middleware,python,core,public
 """
 
+from .auth import AuthConfig, AuthMiddleware, auth_required
 from .rate_limit import RateLimitMiddleware, rate_limit
-from .auth import AuthMiddleware, AuthConfig, auth_required
 from .versioning import VersioningMiddleware
 
 __all__ = [
-    'RateLimitMiddleware',
-    'rate_limit',
-    'AuthMiddleware',
-    'AuthConfig',
-    'auth_required',
-    'VersioningMiddleware',
+    "RateLimitMiddleware",
+    "rate_limit",
+    "AuthMiddleware",
+    "AuthConfig",
+    "auth_required",
+    "VersioningMiddleware",
 ]
