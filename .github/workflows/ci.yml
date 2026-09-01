@@ -1,0 +1,220 @@
+name: YYC3 CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  # 允许手动触发
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ==================== 代码质量检查 ====================
+  lint:
+    name: 代码质量检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black mypy isort
+          pip install -r requirements.txt
+
+      - run: black --check --line-length=100 core/
+      - run: isort --check-only --diff core/
+      - run: flake8 core/ --max-line-length=100 --exclude=__pycache__,migrations
+      - run: mypy core/ --ignore-missing-imports
+
+  # ==================== 单元测试 ====================
+  test:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: yyc3_gpt_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: 运行单元测试
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASSWORD: test_password
+          DB_NAME: yyc3_gpt_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          AUTH_ENABLED: "false"
+        run: pytest tests/ -v --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ==================== 安全检查 ====================
+  security:
+    name: 安全扫描
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: 安装安全工具
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety bandit
+          pip install -r requirements.txt
+
+      - name: Safety 依赖漏洞扫描
+        run: safety check --file requirements.txt --json
+        continue-on-error: true
+
+      - name: Bandit 代码安全扫描
+        run: bandit -r core/ -f json -o bandit-report.json || true
+
+      - name: 上传安全报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: bandit-report.json
+
+  # ==================== 构建镜像（仅 main 分支） ====================
+  build:
+    name: 构建镜像
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 提取镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/yyc3-api
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ secrets.DOCKER_USERNAME != '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==================== 部署到生产环境（NAS 网关） ====================
+  deploy:
+    name: 部署生产环境
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 部署到 NAS 网关
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            ssh yyc3-45 "cd /Volume2/yyc3-33 && git pull origin main"
+            ssh yyc3-45 "cd /Volume2/yyc3-33 && docker compose up -d --build gateway"
+            echo "NAS Gateway 重建完成"
+
+      - name: 全链路健康验证
+        run: |
+          echo "等待服务启动..."
+          sleep 20
+          ENDPOINTS=(
+            "https://api.0379.world/healthz"
+            "https://api.0379.world/v1/ping"
+            "https://api.0379.world/health"
+          )
+          PASS=0
+          FAIL=0
+          for ep in "${ENDPOINTS[@]}"; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$ep" 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "PASS  $ep [$STATUS]"
+              PASS=$((PASS + 1))
+            else
+              echo "FAIL  $ep [$STATUS]"
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          echo ""
+          echo "结果: $PASS 通过, $FAIL 失败"
+          [ "$FAIL" -eq 0 ] || exit 1
