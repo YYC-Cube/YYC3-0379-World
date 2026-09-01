@@ -27,7 +27,7 @@ asyncpg>=0.29.0
 prometheus-fastapi-instrumentator>=7.0.0
 
 # 知识库系统依赖
-pgvector>=0.3.6
+pgvector>=0.5.0
 tiktoken>=0.5.2
 aiofiles>=23.2.1
 numpy>=1.26.4
