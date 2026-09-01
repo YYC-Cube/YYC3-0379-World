@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false, reportArgumentType=false
 """
 YYC³ CogVideoX-5B 视频生成示例
 快速开始使用视频生成模型
@@ -138,7 +139,8 @@ def main():
     prompts = [
         "A beautiful sunset over the ocean, waves gently rolling"
         " onto the beach, golden hour lighting",
-        "A serene mountain lake at sunrise, mist rising" " from the water, peaceful atmosphere",
+        "A serene mountain lake at sunrise, mist rising"
+        " from the water, peaceful atmosphere",
         "A futuristic city skyline at night, neon lights"
         " reflecting on wet streets, cyberpunk style",
     ]

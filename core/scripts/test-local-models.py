@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: reportMissingImports=false
 """
 YYC³ 本地AI模型测试脚本
 快速测试 CogAgent-9B 和 CogVideoX-5B 是否正常工作
