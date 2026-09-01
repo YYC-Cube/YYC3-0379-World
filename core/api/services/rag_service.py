@@ -8,13 +8,12 @@
 # tags: [service],[rag],[retrieval]
 
 import uuid
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.db import DocumentChunk, KnowledgeBase, SearchHistory
+from app.db import SearchHistory
 from app.services.embedding import embedding_service
 from app.utils.logger import get_logger
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)

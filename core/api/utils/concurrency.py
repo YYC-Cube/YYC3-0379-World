@@ -23,7 +23,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 class ConcurrencyLimiter:

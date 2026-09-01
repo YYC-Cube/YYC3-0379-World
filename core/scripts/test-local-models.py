@@ -5,7 +5,6 @@ YYC³ 本地AI模型测试脚本
 """
 
 import os
-import sys
 
 
 def test_cogagent():
@@ -42,7 +41,7 @@ def test_cogagent():
 
         print("\n3. 测试对话...")
         response, _ = model.chat(tokenizer, "你好，请用一句话介绍你自己", history=[])
-        print(f"   用户: 你好，请用一句话介绍你自己")
+        print("   用户: 你好，请用一句话介绍你自己")
         print(f"   AI: {response}")
         print("   ✓ 对话测试成功")
 

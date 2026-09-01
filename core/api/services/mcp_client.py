@@ -21,8 +21,6 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logging.basicConfig(level=logging.INFO)
@@ -211,8 +209,6 @@ class MCPClient:
 
     async def list_available_tools(self) -> Dict[str, Any]:
         """列出所有可用的MCP工具"""
-        tools = []
-
         # 为每个工具生成描述
         tool_descriptions = {
             # 文件系统工具

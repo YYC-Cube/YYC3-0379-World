@@ -22,7 +22,7 @@
 
 import logging
 import re
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 
 class ContentFilter:
@@ -177,7 +177,9 @@ class ContentFilter:
             # ── IP 地址（内网） ──
             (
                 "内网IP",
-                r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b",
+                r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+                r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+                r"|192\.168\.\d{1,3}\.\d{1,3})\b",
                 "内网IP[已脱敏]",
             ),
         ]

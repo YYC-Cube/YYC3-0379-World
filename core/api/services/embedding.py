@@ -7,7 +7,7 @@
 # status: active
 # tags: [service],[embedding],[rag]
 
-from typing import List, Optional
+from typing import List
 
 import httpx
 import numpy as np

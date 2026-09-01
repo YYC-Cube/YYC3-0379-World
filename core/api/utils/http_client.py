@@ -24,7 +24,6 @@ import logging
 from typing import Any, Dict, Optional
 
 import httpx
-from app.config import settings
 
 
 class HttpClient:

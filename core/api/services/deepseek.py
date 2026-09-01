@@ -10,7 +10,6 @@
 """
 
 import json
-import time
 from typing import Any, Dict, List, Optional
 
 import httpx

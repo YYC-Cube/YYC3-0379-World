@@ -11,8 +11,4 @@
 @tags: init,python,services,public
 """
 
-from app.services.deepseek import chat_completion as deepseek_chat
-from app.services.ollama import chat_completion as ollama_chat
-from app.services.zhipu import chat_completion as zhipu_chat
-
 __all__ = ["zhipu", "ollama", "deepseek"]

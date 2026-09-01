@@ -22,12 +22,10 @@ YYC3 统一模型网关 - MCP工具集成实现
 支持智谱AI MCP工具
 """
 
-import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import httpx
 from app.config import settings
-from pydantic import BaseModel, Field
 
 # ==============================
 # 智谱AI MCP工具服务

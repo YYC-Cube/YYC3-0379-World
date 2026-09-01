@@ -136,17 +136,20 @@ def main():
 
     # 示例提示词
     prompts = [
-        "A beautiful sunset over the ocean, waves gently rolling onto the beach, golden hour lighting",
-        "A serene mountain lake at sunrise, mist rising from the water, peaceful atmosphere",
-        "A futuristic city skyline at night, neon lights reflecting on wet streets, cyberpunk style",
+        "A beautiful sunset over the ocean, waves gently rolling"
+        " onto the beach, golden hour lighting",
+        "A serene mountain lake at sunrise, mist rising"
+        " from the water, peaceful atmosphere",
+        "A futuristic city skyline at night, neon lights"
+        " reflecting on wet streets, cyberpunk style",
     ]
 
     # 批量生成
     for i, prompt in enumerate(prompts):
-        print(f"\n[{i+1}/{len(prompts)}] 生成视频...")
-        output = generator.generate(
+        print(f"\n[{i + 1}/{len(prompts)}] 生成视频...")
+        generator.generate(
             prompt=prompt,
-            output_path=f"outputs/video_{i+1}.mp4",
+            output_path=f"outputs/video_{i + 1}.mp4",
             num_frames=49,
             num_inference_steps=50,
             guidance_scale=6.0,

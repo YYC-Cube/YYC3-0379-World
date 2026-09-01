@@ -3,8 +3,6 @@
 YYC³ Code Agent - 基于 CodeGeeX4 的智能代码助手
 """
 
-import os
-
 from langchain_ollama import ChatOllama
 
 

@@ -5,12 +5,11 @@ YYC³ 模型服务管理器
 """
 
 import json
-import os
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import psutil
 
@@ -30,7 +29,7 @@ class ModelServiceManager:
             try:
                 with open(self.status_file, "r") as f:
                     self.services = json.load(f)
-            except:
+            except Exception:
                 self.services = {}
         else:
             self.services = {}
@@ -39,7 +38,7 @@ class ModelServiceManager:
             try:
                 with open(self.pid_file, "r") as f:
                     self.pids = json.load(f)
-            except:
+            except Exception:
                 self.pids = {}
         else:
             self.pids = {}
@@ -58,7 +57,7 @@ class ModelServiceManager:
         """检查进程是否存在"""
         try:
             return psutil.pid_exists(pid)
-        except:
+        except Exception:
             return False
 
     def start_model(self, model_name: str, port: Optional[int] = None):
@@ -106,7 +105,7 @@ class ModelServiceManager:
             return False
 
         if success:
-            print(f"✅ 模型服务已启动")
+            print("✅ 模型服务已启动")
         return success
 
     def detect_model_type(self, model_path: Path) -> str:
@@ -136,7 +135,7 @@ class ModelServiceManager:
 
                 # 默认为对话模型
                 return "chat"
-            except:
+            except Exception:
                 pass
 
         # 检查是否有 diffusers 配置
@@ -179,7 +178,7 @@ while True:
         query = input("\\n用户: ")
         if query.lower() in ['exit', 'quit']:
             break
-        
+
         response, history = model.chat(tokenizer, query, history=[])
         print(f"AI: {{response}}")
     except KeyboardInterrupt:
@@ -211,7 +210,7 @@ while True:
                 self.save_status()
                 return True
             else:
-                print(f"❌ 模型启动失败")
+                print("❌ 模型启动失败")
                 return False
 
         except Exception as e:
@@ -222,7 +221,7 @@ while True:
         """启动视频模型服务"""
         print("⚠️  视频模型服务暂不支持后台运行")
         print("   请使用脚本直接运行:")
-        print(f"   python3 cogvideox_generator.py")
+        print("   python3 cogvideox_generator.py")
         return False
 
     def start_ollama_model(self, model_name: str) -> bool:
@@ -251,7 +250,7 @@ while True:
                 self.save_status()
                 return True
             else:
-                print(f"❌ Ollama 模型启动失败")
+                print("❌ Ollama 模型启动失败")
                 return False
 
         except Exception as e:
@@ -289,7 +288,7 @@ while True:
                     process.kill()
                     process.wait()
 
-                print(f"✅ 模型服务已停止")
+                print("✅ 模型服务已停止")
             else:
                 print(f"⚠️  进程不存在 (PID: {pid})")
 
@@ -328,10 +327,10 @@ while True:
                 self.services[model_name] = "paused"
                 self.save_status()
 
-                print(f"✅ 模型服务已暂停")
+                print("✅ 模型服务已暂停")
                 return True
             else:
-                print(f"⚠️  进程不存在")
+                print("⚠️  进程不存在")
                 return False
 
         except Exception as e:
@@ -366,10 +365,10 @@ while True:
                 self.services[model_name] = "running"
                 self.save_status()
 
-                print(f"✅ 模型服务已恢复")
+                print("✅ 模型服务已恢复")
                 return True
             else:
-                print(f"⚠️  进程不存在")
+                print("⚠️  进程不存在")
                 return False
 
         except Exception as e:
@@ -419,14 +418,14 @@ while True:
             if model_path.is_dir() and not model_path.name.startswith("."):
                 name = model_path.name
                 status = self.services.get(name, "stopped")
-                pid = self.pids.get(name, "N/A")
+                _ = self.pids.get(name, "N/A")
 
                 # 计算大小
                 try:
                     size = sum(f.stat().st_size for f in model_path.rglob("*") if f.is_file())
                     size_gb = size / (1024**3)
                     size_str = f"{size_gb:.2f} GB"
-                except:
+                except Exception:
                     size_str = "未知"
 
                 # 状态图标

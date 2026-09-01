@@ -8,7 +8,6 @@
 # tags: [service],[document-processor],[rag]
 
 import os
-import re
 import uuid
 from typing import List, Tuple
 
@@ -16,7 +15,7 @@ import tiktoken
 from app.db import Document, DocumentChunk, KnowledgeBase
 from app.services.embedding import embedding_service
 from app.utils.logger import get_logger
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)

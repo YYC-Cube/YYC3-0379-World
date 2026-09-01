@@ -23,7 +23,7 @@
 import logging
 from typing import Optional
 
-from prometheus_client import Counter, Gauge, Histogram, Info
+from prometheus_client import Counter, Gauge, Histogram
 
 
 class MetricsManager:
