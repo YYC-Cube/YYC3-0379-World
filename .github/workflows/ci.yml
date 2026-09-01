@@ -36,7 +36,7 @@ jobs:
           pip install -r requirements.txt
 
       - run: black --check --line-length=100 core/
-      - run: isort --check-only --diff core/
+      - run: isort --check-only --diff --profile black core/
       - run: flake8 core/ --max-line-length=100 --exclude=__pycache__,migrations
       - run: mypy core/ --ignore-missing-imports
 
