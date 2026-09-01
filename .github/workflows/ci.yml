@@ -150,12 +150,15 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/login-action@v3
+      - name: Docker Hub 登录（可选）
+        if: secrets.DOCKER_USERNAME != ''
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: 提取镜像标签
+        if: secrets.DOCKER_USERNAME != ''
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -164,14 +167,14 @@ jobs:
             type=sha,prefix=
             type=ref,event=branch
 
-      - name: 构建并推送
+      - name: 构建镜像
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: ${{ secrets.DOCKER_USERNAME != '' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ secrets.DOCKER_USERNAME != '' && steps.meta.outputs.tags || '' }}
+          labels: ${{ secrets.DOCKER_USERNAME != '' && steps.meta.outputs.labels || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
