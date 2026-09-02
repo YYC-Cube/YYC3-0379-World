@@ -1,6 +1,8 @@
 # YYC³ DGX Spark GB10 双机推理部署 · 模型部署闭环最佳指导文档
 
-> **文档版本**: v1.3.1 | **生成日期**: 2026-09-02
+> **文档版本**: v1.3.2 | **生成日期**: 2026-09-02
+> **v1.3.2 变更（Phase D 改道）**: ① **NIM 区域封锁实测**：NVIDIA 自 2025-02-15 拒绝中国 IP 下载 NIM 镜像/模型（`nvcr.io/nim/*` 与 `nimevents/*` 双双 DENIED；**非 NIM 的 nvcr 拉取不受影响**，pytorch:26.07 即为实证）；替代官方渠道为中国 NIM 合作伙伴（catalog.ngc.nvidia.com/china-nim-distributors，需用户决策开户）。② **双钥匙分工实测**：NGC 钥→`ngc` CLI 目录查询 ✓；NVIDIA Build 钥→`nvcr.io docker login` ✓（已双机配置，运行钥落 `~/nvidia-workbench/.nim-env` 600）。③ **旗舰路径改道为主线**：ModelScope 官方原仓 `deepseek-ai/DeepSeek-V4-Flash`（FP8 原生，与 NAS 副本同规格：46 分片/≈160GB/1M ctx）直下实测 26MB/s → vLLM TP=2 双机分片（80GB/rank）。④ NAS 模型库已重组为厂商子目录（`data/DeepSeek/`、`data/Qwen/`…），历史文档路径需 +1 层。
+> **文档版本(历史)**: v1.3.1 | **生成日期**: 2026-09-02
 > **v1.3.1 变更（实况校准）**: ① NGC 旧凭据**实测失效**（ngc 403 / docker DENIED）——Phase D 前置明确为"需用户提供新 NVIDIA KEY"；② `yyc3-101-projects` 实为**空骨架**（Agent 代码真身在 N2 `~/yyc3-102-projects`）——§15.4 构建上下文修正为 N2；③ `nvidia-workbench` 真身定性为**12 类 NVIDIA 官方开源库策展**（含 TensorRT-LLM/TransformerEngine/NCCL 源码，每类带目录映射表），宿主 `~/nccl/build`=2.28.9（历史死锁版）留档；④ 双机 `YYC3-专属文档` 各自完整，N2 另有 `DGX-Cluster-Docs` 五卷运维库
 > **文档版本(历史)**: v1.3.0 | **生成日期**: 2026-09-02
 > **v1.3 变更**: 新增 §十五「官方镜像优先执行方案」——确立**所有部署以 NVIDIA/DockerHub 官方镜像为准绳、杜绝直接部署在宿主机系统**的铁律；结合 2026-09-02 Day1 执行实录（NCCL 2.30.7 门禁通过 / TP=2 ray 双机上线 / 镜像通道全通）给出容器化迁移四阶段方案；**同时废止 fix-n2.sh 第 2 步的 systemd 化方向**（改为容器化，详见 §15.4）
@@ -697,8 +699,19 @@ RUN pip install ray
 
 ### 15.6 Phase D · NIM 旗舰（NGC 钥轮换后）
 
-**前置（v1.3.1 实测）**：现存 NGC 凭据已失效——`ngc registry image info` 返回 403、`docker pull nvcr.io/nvidia/nemotron` 返回 DENIED（即旧文档中待轮换之钥）。**需用户提供新 NVIDIA NGC API Key**（用户已确认可提供）。
-拿到新钥后：双机 `docker login nvcr.io`（$oauthtoken + 新钥）+ `/opt/ngccli/ngc config set`（N2）→ `nvcr.io/nimevents/deepseek-v4-flash`（§9.3 编排）或 NGC NIM 目录版（`nvcr.io/nim/*`，经 `/opt/ngccli/ngc registry image list` 检索）→ TP=2 切换旗舰，27B 降位备选。**不阻塞 A-C 阶段。**
+**v1.3.2 改道（NIM 区域封锁后的主线）**：
+
+```
+路线一（主）: ModelScope FP8 原仓 → vLLM TP=2   ← 已启动，实测 26MB/s
+  N2: docker run ... modelscope download deepseek-ai/DeepSeek-V4-Flash --local_dir ~/models/DeepSeek-V4-Flash
+  完成后 QSFP 同步 N1（160GB ≈ 3 分钟）
+  内存规划: N1 停 tp2-27B(腾42G) / N2 停三组件(腾31G) → 双机各 ~90G → 80GB/rank + KV 可行
+  vLLM 参数: --tensor-parallel-size 2 --kv-cache-dtype fp8 --max-model-len 131072(1M 按需降)
+  组件归位: 三组件按 §15.3 Phase A 容器化后重布（不回宿主机）
+路线二（备）: 中国 NIM 合作伙伴渠道（需用户开户决策）→ NVFP4 NIM 容器
+```
+
+钥匙落位（已完成）：双机 `docker login nvcr.io`（Build 钥）✓ ｜ N2 `~/.ngc/config`（NGC 钥，ngc 目录查询可用）✓ ｜ 运行钥 `~/nvidia-workbench/.nim-env`（600，禁入 git）✓
 
 ### 15.7 执行顺序与依赖（关键路径 2.5 天）
 
