@@ -41,7 +41,7 @@ memory-profiler>=0.61.0
 
 # 代码格式化
 isort>=5.12.0
-autopep8>=2.0.0
+autopep8>=2.3.2
 
 # 调试工具
 debugpy>=1.6.0
