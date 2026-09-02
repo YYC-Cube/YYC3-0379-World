@@ -1,7 +1,7 @@
 # YYC³ DGX Spark GB10 双机推理部署 · 模型部署闭环最佳指导文档
 
 > **文档版本**: v1.4.2 | **生成日期**: 2026-09-02
-> **v1.4.2**: 新增 **§19 DeepSeek-V4-Flash TP=2 落地 Runbook**（前置检查实测结论 + Phase 0 已完成：旗舰 159.6GB 经 QSFP 196 秒同步 N1 规范路径，46/46 分片核验）
+> **v1.4.2**: 新增 **§19 DeepSeek-V4-Flash TP=2 落地 Runbook**——**✅ 全程已执行成功（2026-09-02 16:00）**：Phase 0 旗舰 159.6GB/QSFP 196s 同步 → Phase 1 双机腾挪 116G/116G → dsv4-head/worker 上线 → **N1:8001 `deepseek-v4-flash` TP=2 服务中**（双机内存对称 96G/96G，chat 验证连贯输出）。踩坑追加：容器内 pip ray 须配清华源（默认源 N1 可卡死 9 分钟）
 > **文档版本(历史)**: v1.4.1 | **生成日期**: 2026-09-02
 > **v1.4.1 勘误**: ① §17 GLM-5.3-Flash 体量**算错修正**：FP8 全量为 **328GB**（下载实测口径，320B 参数 ×1B），**超双机 242G——FP8 不能直跑 TP=2**，正确路径 = NVFP4/INT4 量化（~170G → 85G/机 ✓，走 §八 TRT-LLM 量化产线）或等官方低比特版；② 模型真身路径勘误：设备模型资产在 `~/yyc3-{101,102}-projects/models/`（N1 含 20 款主库 + **GLM-5.3-Flash 328G venv 稳传下载中**），非 `~/models/`（后者为 Day1 临时下载区）；③ 新增 venv-modelscope 下载规范（双节点已建，docs 两份说明）；④ v1.3.1 "yyc3-101-projects 空骨架"结论**撤回**
 > **文档版本(历史)**: v1.4.0 | **生成日期**: 2026-09-02
@@ -868,6 +868,18 @@ N1 head:  vllm serve /model --tensor-parallel-size 2 --distributed-executor-back
 N2 worker: ray start --address=10.100.168.2:6379 --block
 # ③ 验收: /v1/models + chat + 双机内存对称 + QSFP 流量
 ```
+
+### 19.3-bis 执行结果留档（2026-09-02 16:00）
+
+| 项 | 结果 |
+|----|------|
+| 服务 | **N1 :8001 `deepseek-v4-flash`**（vLLM TP=2 ray，max-len 64K，KV FP8，prefix-cache） |
+| 容器 | dsv4-head(N1, 含 ray head :6379 + serve) / dsv4-worker(N2, --block) |
+| 资源 | 双机对称 96G/121G（util 0.72 上限） |
+| 验证 | /v1/models ✓；chat 连贯中文生成 316 tokens ✓；QSFP 跨机张量并行 ✓ |
+| 暂离服务 | N2 三组件（:8100/8101/8102 已 stop，恢复=`sudo systemctl start yyc3-embedding yyc3-reranker yyc3-memory`，但需先腾挪旗舰 KV） |
+| 回退 | `docker rm -f dsv4-head dsv4-worker` → 恢复三组件 或 重建 27B TP2（§3.3） |
+| 附加坑 | 容器 pip 默认源卡死 → 脚本已内置 `-i https://pypi.tuna.tsinghua.edu.cn/simple` |
 
 ### 19.4 后续衔接
 
