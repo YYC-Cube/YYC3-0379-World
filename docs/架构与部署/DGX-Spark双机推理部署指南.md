@@ -1,7 +1,8 @@
 # YYC³ DGX Spark GB10 双机推理部署 · 模型部署闭环最佳指导文档
 
-> **文档版本**: v1.3.0 | **生成日期**: 2026-09-02
-> **仓库同步说明**: 本文件与旧工作区 `YYC3-DGX-Spark/YYC3-DGX-Spark-双机推理部署-模型部署闭环-最佳指导文档.md` 同源维护（v1.3 起以本仓库为准）。
+> **文档版本**: v1.3.1 | **生成日期**: 2026-09-02
+> **v1.3.1 变更（实况校准）**: ① NGC 旧凭据**实测失效**（ngc 403 / docker DENIED）——Phase D 前置明确为"需用户提供新 NVIDIA KEY"；② `yyc3-101-projects` 实为**空骨架**（Agent 代码真身在 N2 `~/yyc3-102-projects`）——§15.4 构建上下文修正为 N2；③ `nvidia-workbench` 真身定性为**12 类 NVIDIA 官方开源库策展**（含 TensorRT-LLM/TransformerEngine/NCCL 源码，每类带目录映射表），宿主 `~/nccl/build`=2.28.9（历史死锁版）留档；④ 双机 `YYC3-专属文档` 各自完整，N2 另有 `DGX-Cluster-Docs` 五卷运维库
+> **文档版本(历史)**: v1.3.0 | **生成日期**: 2026-09-02
 > **v1.3 变更**: 新增 §十五「官方镜像优先执行方案」——确立**所有部署以 NVIDIA/DockerHub 官方镜像为准绳、杜绝直接部署在宿主机系统**的铁律；结合 2026-09-02 Day1 执行实录（NCCL 2.30.7 门禁通过 / TP=2 ray 双机上线 / 镜像通道全通）给出容器化迁移四阶段方案；**同时废止 fix-n2.sh 第 2 步的 systemd 化方向**（改为容器化，详见 §15.4）
 > **文档版本(历史)**: v1.2.0 | **生成日期**: 2026-08-30
 > **v1.1 变更**: 双机 NVIDIA 高速互联线已实现互联（2026-08-30 确认）——主推方案由 A 方案（HTTP 分工）切换为 **B 方案（NIM TP=2 张量并行）**，NCCL `all_reduce_perf` 冒烟测试成为唯一剩余门禁
@@ -671,13 +672,16 @@ docker run -d --name yyc3-memory --restart unless-stopped -p 8102:8000   -v /hom
 自研代码 = 官方基底薄封装（一次 Dockerfile，双机通用）：
 
 ```dockerfile
-# deploy/agents/Dockerfile —— FROM 官方 python:3.11-slim（daocloud 已落地）
+# ⚠️ v1.3.1 修正：Agent/治理代码真身在 **N2** ~/yyc3-102-projects/
+# （yyc3-101-projects 为空骨架：checkpoints/config/data/logs 均空）
+# → 构建上下文 = N2；N1 仅作分发目标（QSFP）
+# deploy/agents/Dockerfile —— FROM 官方 python:3.11-slim（daocloud 已双机落地）
 FROM python:3.11-slim
 WORKDIR /app
-COPY yyc3-102-projects/requirements-agents.txt .   # 或逐包 pip install
+COPY requirements-agents.txt .          # 由 yyc3-family-ai-agents 依赖整理生成
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements-agents.txt
-COPY yyc3-102-projects/yyc3-family-ai-agents/ ./agents/
-COPY yyc3-102-projects/governance_hub.py .
+COPY yyc3-family-ai-agents/ ./agents/
+COPY governance_hub.py .
 ```
 
 编排 `deploy/agents/docker-compose.yml`：governance(:25700) + 8×agent（env 同原 systemd 模板：VLLM_ENDPOINT 指向 TP=2 的 :8001）+ `restart: unless-stopped` 开机自启等价于 systemd。构建产物经 QSFP 分发。
@@ -693,7 +697,8 @@ RUN pip install ray
 
 ### 15.6 Phase D · NIM 旗舰（NGC 钥轮换后）
 
-`docker login nvcr.io`（新钥）→ `nvcr.io/nimevents/deepseek-v4-flash`（§9.3 编排）或 NGC NIM 目录版（`nvcr.io/nim/deepseek-ai/...`，经 `/opt/ngccli` 检索）→ TP=2 切换旗舰，27B 降位备选。**此为唯一依赖用户动作（钥轮换）的阶段，不阻塞 A-C。**
+**前置（v1.3.1 实测）**：现存 NGC 凭据已失效——`ngc registry image info` 返回 403、`docker pull nvcr.io/nvidia/nemotron` 返回 DENIED（即旧文档中待轮换之钥）。**需用户提供新 NVIDIA NGC API Key**（用户已确认可提供）。
+拿到新钥后：双机 `docker login nvcr.io`（$oauthtoken + 新钥）+ `/opt/ngccli/ngc config set`（N2）→ `nvcr.io/nimevents/deepseek-v4-flash`（§9.3 编排）或 NGC NIM 目录版（`nvcr.io/nim/*`，经 `/opt/ngccli/ngc registry image list` 检索）→ TP=2 切换旗舰，27B 降位备选。**不阻塞 A-C 阶段。**
 
 ### 15.7 执行顺序与依赖（关键路径 2.5 天）
 
