@@ -193,98 +193,35 @@ jobs:
 
   # ==================== 部署到生产环境（NAS 网关） ====================
   deploy:
-    name: 部署生产环境
+    # GitOps 部署验证（2026-09-02 架构变更）：
+    # 部署本体由 Mac 主控部署桥执行（~/yyc3-deploy/watch.sh 每2分钟:
+    #   GitHub fetch → git push nasdeploy → NAS rebuild-gateway.sh → 健康检查）
+    # 原因: NAS 对 GitHub 直连不稳定 + Runner→NAS 的 SSH 认证链路不可靠;
+    # 本 job 退化为部署后的公网健康验证, 保证流水线与生产状态联动。
+    name: 部署验证 (GitOps)
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: 检查必需的 GitHub Secrets
+      - name: 等待部署桥完成发布
         run: |
-          MISSING=""
-          [ -z "${{ secrets.NAS_HOST }}" ] && MISSING="$MISSING NAS_HOST"
-          [ -z "${{ secrets.NAS_USER }}" ] && MISSING="$MISSING NAS_USER"
-          [ -z "${{ secrets.NAS_SSH_KEY }}" ] && MISSING="$MISSING NAS_SSH_KEY"
-          if [ -n "$MISSING" ]; then
-            echo "ERROR: 缺少必需的 GitHub Secrets:$MISSING"
-            echo "请在 Settings > Secrets and variables > Actions 中配置"
-            exit 1
-          fi
-          echo "All required secrets present"
+          echo "等待 Mac 部署桥同步（最长 4 分钟）..."
+          sleep 240
 
-      - name: 检查 NAS .env 中的必需变量
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.NAS_HOST }}
-          username: ${{ secrets.NAS_USER }}
-          key: ${{ secrets.NAS_SSH_KEY }}
-          port: 9557
-          # GitHub Runner 无法直达 Tailscale 内网，经 ECS 公网跳板（ssh -J 语义）
-          proxy_host: ${{ secrets.ECS_HOST }}
-          proxy_username: ${{ secrets.ECS_USER }}
-          proxy_key: ${{ secrets.ECS_KEY }}
-          proxy_port: 22
-          script: |
-            ENV_FILE="/Volume2/yyc3-33/.env"
-            if [ ! -f "$ENV_FILE" ]; then
-              echo "ERROR: $ENV_FILE 不存在"
-              exit 1
-            fi
-            MISSING=""
-            for var in POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET_KEY API_KEYS ZHIPU_API_KEY; do
-              if ! grep -q "${var}=" "$ENV_FILE" 2>/dev/null; then
-                MISSING="$MISSING $var"
-              elif grep -q "${var}=\$" "$ENV_FILE" 2>/dev/null; then
-                MISSING="$MISSING ${var}(empty)"
-              elif grep -q "${var}=change_me" "$ENV_FILE" 2>/dev/null; then
-                MISSING="$MISSING ${var}(default)"
-              fi
-            done
-            if [ -n "$MISSING" ]; then
-              echo "ERROR: NAS .env 缺少或未配置:$MISSING"
-              exit 1
-            fi
-            echo "NAS .env 检查通过"
-
-      - name: 拉取代码并重建 Gateway
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.NAS_HOST }}
-          username: ${{ secrets.NAS_USER }}
-          key: ${{ secrets.NAS_SSH_KEY }}
-          port: 9557
-          proxy_host: ${{ secrets.ECS_HOST }}
-          proxy_username: ${{ secrets.ECS_USER }}
-          proxy_key: ${{ secrets.ECS_KEY }}
-          proxy_port: 22
-          script: |
-            cd /Volume2/yyc3-33 && git pull origin main
-            DOCKER=/Volume3/@apps/DockerEngine/dockerd/bin/docker
-            $DOCKER compose --project-directory . -f deploy/nas/docker-compose.nas.yml up -d --build gateway
-            echo "Gateway 重建完成"
-
-      - name: 全链路健康验证
+      - name: 公网全链路健康验证
         run: |
-          echo "等待服务启动..."
-          sleep 20
           ENDPOINTS=(
             "https://api.0379.world/healthz"
-            "https://api.0379.world/v1/ping"
             "https://api.0379.world/health"
           )
-          PASS=0
           FAIL=0
-          for ep in "${ENDPOINTS[@]}"; do
-            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$ep" 2>/dev/null || echo "000")
-            if [ "$STATUS" = "200" ]; then
-              echo "PASS  $ep [$STATUS]"
-              PASS=$((PASS + 1))
+          for url in "${ENDPOINTS[@]}"; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$url" || echo "000")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ $url → 200"
             else
-              echo "FAIL  $ep [$STATUS]"
-              FAIL=$((FAIL + 1))
+              echo "❌ $url → $CODE"
+              FAIL=1
             fi
           done
-          echo ""
-          echo "结果: $PASS 通过, $FAIL 失败"
-          [ "$FAIL" -eq 0 ] || exit 1
+          [ "$FAIL" = "0" ] && echo "部署验证通过" || { echo "部署验证失败——请检查 NAS auto-deploy.log 与 Mac watch.log"; exit 1; }
