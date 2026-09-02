@@ -869,6 +869,18 @@ N2 worker: ray start --address=10.100.168.2:6379 --block
 # ③ 验收: /v1/models + chat + 双机内存对称 + QSFP 流量
 ```
 
+### 19.3-ter 重启排障实录（2026-09-03，四轮根因链 · 已固化 V4 脚本）
+
+> 场景：旗舰被干净停机后重启失败。**deploy/dgx/dsv4_head.sh 与 dsv4_worker.sh（V4 定稿版）已入仓**。
+
+| 轮 | 现象 | 根因 | 修正 |
+|----|------|------|------|
+| 1 | docker start 挂载失败 | 启动脚本放 `/tmp` 被系统清理，bind 源丢失 | **脚本锚定 `/home/yyc3/dsv4_*.sh`**（容器配置含挂载路径，删脚本=容器报废） |
+| 2-3 | ActorHandle 跨会话崩溃 / worker GCS 60s 超时 | ray 集群节点自报 IP=主网卡以太网 → torch rendezvous `tcp://192.168.3.x:100`（`VLLM_HOST_IP` 在 ray 后端**不生效**） | **`ray start --node-ip-address 10.100.168.x`** → rendezvous/全部 ray 流量锁 QSFP |
+| 4 | `Free memory 79.1G < 87.6G(util 0.72)` | 凌晨会话重启了 N2 三组件服务（33G GPU） | `sudo systemctl stop && disable yyc3-{embedding,reranker,memory}`（yyc3 用户免密 sudo ✓，disable 防复发） |
+
+**重启标准序列（V4 定稿）**：N1 `docker start dsv4-head` → 等 `ss -tln | grep 6379` → N2 `docker start dsv4-worker` → ~7 分钟 startup complete → 验收 :8001。并行大流量下载（GLM 117MB/s）与引擎初始化会抢 NVMe/网络，**冷启动窗口暂停 hf 下载更稳**。
+
 ### 19.3-bis 执行结果留档（2026-09-02 16:00）
 
 | 项 | 结果 |

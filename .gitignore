@@ -97,3 +97,4 @@ tests/e2e/playwright-report/
 tests/e2e/test-results/
 
 # GitHub Workflows 已纳入版本控制
+docs/MiniMax-H3/
