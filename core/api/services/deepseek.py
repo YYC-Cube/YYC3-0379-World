@@ -16,7 +16,12 @@ import httpx
 from app.config import settings
 from app.utils.logger import logger
 
-_DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+
+def _base() -> str:
+    """基址外部化（settings.deepseek_base_url，默认=原硬编码）"""
+    return settings.deepseek_base_url
+
+
 _DEEPSEEK_KEY = settings.deepseek_api_key
 
 
@@ -46,10 +51,14 @@ async def chat_completion(
         from app.errors import APIError
 
         raise APIError(
-            message="DeepSeek API Key未配置", details={"error": "请配置DEEPSEEK_API_KEY环境变量"}
+            message="DeepSeek API Key未配置",
+            details={"error": "请配置DEEPSEEK_API_KEY环境变量"},
         )
 
-    headers = {"Authorization": f"Bearer {_DEEPSEEK_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_DEEPSEEK_KEY}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -67,7 +76,7 @@ async def chat_completion(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
-                f"{_DEEPSEEK_BASE}/chat/completions", headers=headers, json=payload
+                f"{_base()}/chat/completions", headers=headers, json=payload
             )
 
             response.raise_for_status()
@@ -105,10 +114,14 @@ async def chat_completion_stream(
         from app.errors import APIError
 
         raise APIError(
-            message="DeepSeek API Key未配置", details={"error": "请配置DEEPSEEK_API_KEY环境变量"}
+            message="DeepSeek API Key未配置",
+            details={"error": "请配置DEEPSEEK_API_KEY环境变量"},
         )
 
-    headers = {"Authorization": f"Bearer {_DEEPSEEK_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_DEEPSEEK_KEY}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -126,7 +139,7 @@ async def chat_completion_stream(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
-                "POST", f"{_DEEPSEEK_BASE}/chat/completions", headers=headers, json=payload
+                "POST", f"{_base()}/chat/completions", headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
 

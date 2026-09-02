@@ -27,7 +27,12 @@ import httpx
 from app.config import settings
 from app.utils import http_client
 
-_OPENAI_BASE = "https://api.openai.com/v1"
+
+def _base() -> str:
+    """基址外部化（settings.openai_base_url，默认=原硬编码）"""
+    return settings.openai_base_url
+
+
 _OPENAI_KEY = settings.openai_api_key
 
 
@@ -44,7 +49,10 @@ async def chat_completion(
 
     注意：stream参数仅为接口兼容，流式请求请使用 chat_completion_stream()
     """
-    headers = {"Authorization": f"Bearer {_OPENAI_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_OPENAI_KEY}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -59,9 +67,7 @@ async def chat_completion(
     if top_p:
         payload["top_p"] = top_p
 
-    response = await http_client.post(
-        f"{_OPENAI_BASE}/chat/completions", headers=headers, json=payload
-    )
+    response = await http_client.post(f"{_base()}/chat/completions", headers=headers, json=payload)
     response.raise_for_status()
     return response.json()
 
@@ -79,7 +85,10 @@ async def chat_completion_stream(
     Yields:
         dict: 统一格式的流式响应块 (chat.completion.chunk)
     """
-    headers = {"Authorization": f"Bearer {_OPENAI_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_OPENAI_KEY}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -97,7 +106,7 @@ async def chat_completion_stream(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
-                "POST", f"{_OPENAI_BASE}/chat/completions", headers=headers, json=payload
+                "POST", f"{_base()}/chat/completions", headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
 

@@ -45,3 +45,4 @@ autopep8>=2.0.0
 
 # 调试工具
 debugpy>=1.6.0
+respx>=0.21.0

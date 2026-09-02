@@ -29,15 +29,28 @@ class Settings(BaseSettings):
 
     ollama_host: str = "host.docker.internal"
     ollama_port: int = 11434
+    ollama_backup_host: str = ""  # 第二台 Ollama（如 DGX N1），留空禁用
     ollama_models: str = "/mnt/models"
 
     openai_api_key: str = ""
     zhipu_api_key: str = ""
     deepseek_api_key: str = ""
 
+    # ── 云适配器基址外部化（默认值=原硬编码，缺 env 行为不变）──
+    zhipu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    openai_base_url: str = "https://api.openai.com/v1"
+
+    # ── 上游池：通用 OpenAI 兼容上游（vLLM/NIM/SGLang/Ollama兼容）──
+    # JSON 数组，元素 schema 见 .env.example「上游池」段；为空数组时路由退回旧三段式
+    openai_compatible_upstreams: str = "[]"
+    # 灰度开关：False 时 chat 路由完全走旧逻辑（云前缀+Ollama 兜底）
+    router_enabled: bool = True
+
     prometheus_multiproc_dir: str = "/tmp/prometheus_multiproc"
 
-    host_ip: str = "10.200.0.2"
+    # 旧拓扑遗留字段（历史默认 10.200.0.2 已废弃，保留字段兼容 env）
+    host_ip: str = ""
     host_ip_suffix: str = "2"
 
     db_host: str = "postgres"

@@ -18,6 +18,25 @@ from typing import Optional
 from app.middleware.auth import verify_api_key
 from app.services import ollama, zhipu
 from app.utils.logger import logger
+
+
+def _upstream_snapshot() -> dict:
+    """上游池实时快照（真实 EWMA/熔断状态）；空池时返回云后端在线占位"""
+    from app.services.upstream_registry import registry
+
+    if not registry.upstreams:
+        return {"cloud": {"status": "online", "latency_ms": 0}}
+    return {
+        u.name: {
+            "status": u.breaker_state,
+            "latency_ms": round(u.ewma_latency, 1),
+            "error_rate": round(u.ewma_error_rate, 4),
+            "load": u.current_load,
+        }
+        for u in registry.upstreams.values()
+    }
+
+
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
@@ -200,10 +219,7 @@ async def websocket_monitor(websocket: WebSocket, token: Optional[str] = Query(N
                     "active_requests": metrics_manager.get_active_requests(),
                     "total_requests": metrics_manager.get_total_requests(),
                     "cache_hit_rate": metrics_manager.get_cache_hit_rate(),
-                    "models": {
-                        "ollama": {"status": "online", "latency_ms": 85},
-                        "zhipu": {"status": "online", "latency_ms": 120},
-                    },
+                    "models": _upstream_snapshot(),
                 },
             }
 

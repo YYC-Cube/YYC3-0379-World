@@ -28,7 +28,10 @@ import httpx
 from app.config import settings
 from app.utils import http_client
 
-_ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4"
+
+def _base() -> str:
+    """基址外部化（settings.zhipu_base_url，默认=原硬编码）"""
+    return settings.zhipu_base_url
 
 
 def _get_zhipu_key() -> str:
@@ -47,7 +50,10 @@ async def chat_completion(
     """
     调用智谱 AI API 并返回 OpenAI 兼容的 JSON 格式
     """
-    headers = {"Authorization": f"Bearer {_get_zhipu_key()}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_get_zhipu_key()}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -64,7 +70,7 @@ async def chat_completion(
 
     try:
         response = await http_client.post(
-            f"{_ZHIPU_BASE}/chat/completions", headers=headers, json=payload
+            f"{_base()}/chat/completions", headers=headers, json=payload
         )
         response.raise_for_status()
 
@@ -118,7 +124,10 @@ async def chat_completion_stream(
     Yields:
         dict: 流式响应块
     """
-    headers = {"Authorization": f"Bearer {_get_zhipu_key()}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_get_zhipu_key()}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -136,7 +145,7 @@ async def chat_completion_stream(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
-                "POST", f"{_ZHIPU_BASE}/chat/completions", headers=headers, json=payload
+                "POST", f"{_base()}/chat/completions", headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
 

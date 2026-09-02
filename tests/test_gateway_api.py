@@ -1,195 +1,290 @@
 #!/usr/bin/env python3
 """
 @file test_gateway_api.py
-@description YYC³ Gateway API 核心测试用例 - 为前端集成验证铺路
-@author YanYuCloudCube Team <admin@0379.email>
-@version 1.0.0
-@date 2026-04-08
-@tags [test,gateway,api,五维九曲]
+@description 网关标准 pytest——TestClient + respx 全 mock，零网络依赖
+@author: YanYuCloudCube Team <admin@0379.email>
+@version: 2.0.0
+@date: 2026-09-03
+@tags [test,gateway,api,router,breaker]
+
+覆盖：健康检查、认证、三段式路由（云前缀/上游池/Ollama 兜底）、
+上游降级链、备用地址切换、熔断摘除、响应头契约、观测端点。
 """
 
-import requests
 import json
+import os
 import sys
-from datetime import datetime
 
-GATEWAY_BASE = "https://api.0379.world"
-TIMEOUT = 30
-
-class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    RESET = '\033[0m'
-
-def log_test(name: str, passed: bool, detail: str = ""):
-    status = f"{Colors.GREEN}✅ PASS{Colors.RESET}" if passed else f"{Colors.RED}❌ FAIL{Colors.RESET}"
-    print(f"  {status} {name}")
-    if detail:
-        print(f"         {Colors.BLUE}{detail}{Colors.RESET}")
-
-def test_health():
-    """测试 Gateway 健康检查"""
-    print(f"\n{Colors.YELLOW}=== 1. Health Check ==={Colors.RESET}")
-    try:
-        resp = requests.get(f"{GATEWAY_BASE}/health", timeout=TIMEOUT, verify=True)
-        passed = resp.status_code == 200 and resp.json().get("status") == "healthy"
-        log_test("GET /health", passed, f"status={resp.status_code}")
-        return passed
-    except Exception as e:
-        log_test("GET /health", False, str(e))
-        return False
-
-def test_root():
-    """测试根路径"""
-    print(f"\n{Colors.YELLOW}=== 2. Root Endpoint ==={Colors.RESET}")
-    try:
-        resp = requests.get(f"{GATEWAY_BASE}/", timeout=TIMEOUT)
-        data = resp.json()
-        passed = "message" in data and "version" in data
-        log_test("GET /", passed, f"version={data.get('version', 'N/A')}")
-        return passed
-    except Exception as e:
-        log_test("GET /", False, str(e))
-        return False
-
-def test_models():
-    """测试模型列表"""
-    print(f"\n{Colors.YELLOW}=== 3. Models List ==={Colors.RESET}")
-    try:
-        resp = requests.get(f"{GATEWAY_BASE}/v1/models", timeout=TIMEOUT)
-        data = resp.json()
-        models = data.get("data", [])
-        passed = resp.status_code == 200 and len(models) > 0
-        
-        free_models = [m for m in models if m.get("pricing_type") == "free"]
-        ollama_models = [m for m in models if m.get("provider") == "ollama"]
-        
-        log_test("GET /v1/models", passed, f"total={len(models)}, free={len(free_models)}, ollama={len(ollama_models)}")
-        
-        if passed:
-            print(f"\n  {Colors.BLUE}可用模型:{Colors.RESET}")
-            for m in models[:5]:
-                pricing = "🆓" if m.get("pricing_type") == "free" else "💰"
-                print(f"    {pricing} {m['id']:20s} [{m['provider']:8s}] {m.get('name', 'N/A')}")
-            if len(models) > 5:
-                print(f"    ... 还有 {len(models)-5} 个模型")
-        
-        return passed
-    except Exception as e:
-        log_test("GET /v1/models", False, str(e))
-        return False
-
-def test_chat_completion():
-    """测试聊天补全 (使用免费模型)"""
-    print(f"\n{Colors.YELLOW}=== 4. Chat Completion (Free Model) ==={Colors.RESET}")
-    
-    test_cases = [
-        ("glm-4-flash", "智谱 GLM-4 Flash"),
-        ("llama3.2", "Ollama Llama3.2 (本地)"),
+# ── 环境必须在 import app 之前就位 ──────────────────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core", "api"))
+_POOL = json.dumps(
+    [
+        {
+            "name": "flagship",
+            "base_url": "http://flagship.test:8001",
+            "models": ["deepseek-v4-flash", "deepseek-v4*"],
+            "priority": 1,
+            "weight": 100,
+        },
+        {
+            "name": "backup",
+            "base_url": "http://backup.test:8001",
+            "models": ["deepseek-v4-flash"],
+            "priority": 5,
+            "weight": 50,
+        },
     ]
-    
-    results = []
-    for model_id, model_name in test_cases:
-        try:
-            payload = {
-                "model": model_id,
-                "messages": [{"role": "user", "content": "请用一句话介绍 YYC³ 项目"}],
-                "max_tokens": 100,
-                "temperature": 0.7
-            }
-            
-            start_time = datetime.now()
-            resp = requests.post(
-                f"{GATEWAY_BASE}/v1/chat/completions",
-                json=payload,
-                timeout=TIMEOUT
-            )
-            elapsed = (datetime.now() - start_time).total_seconds()
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                passed = len(content) > 0
-                log_test(f"POST /v1/chat/completions ({model_name})", passed, 
-                        f"time={elapsed:.2f}s, tokens={len(content)}")
-                if passed:
-                    print(f"         响应: {content[:80]}...")
-            else:
-                log_test(f"POST /v1/chat/completions ({model_name})", False, 
-                        f"status={resp.status_code}")
-                passed = False
-            
-            results.append(passed)
-        except Exception as e:
-            log_test(f"POST /v1/chat/completions ({model_name})", False, str(e)[:50])
-            results.append(False)
-    
-    return any(results)
-
-def test_mcp_tools():
-    """测试 MCP 工具列表"""
-    print(f"\n{Colors.YELLOW}=== 5. MCP Tools ==={Colors.RESET}")
-    try:
-        resp = requests.get(f"{GATEWAY_BASE}/v1/mcp/tools", timeout=TIMEOUT)
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            tools = data.get("tools", [])
-            passed = len(tools) > 0
-            log_test("GET /v1/mcp/tools", passed, f"tools_count={len(tools)}")
-            
-            if passed:
-                print(f"\n  {Colors.BLUE}可用工具:{Colors.RESET}")
-                for t in tools[:5]:
-                    print(f"    🔧 {t.get('name', 'unknown'):20s} - {t.get('description', 'N/A')[:40]}")
-        else:
-            log_test("GET /v1/mcp/tools", False, f"status={resp.status_code}")
-            passed = False
-        
-        return passed
-    except Exception as e:
-        log_test("GET /v1/mcp/tools", False, str(e))
-        return False
-
-def main():
-    print(f"\n{Colors.BLUE}{'='*60}{Colors.RESET}")
-    print(f"{Colors.BLUE}  YYC³ Gateway API 核心测试{Colors.RESET}")
-    print(f"  时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  目标: {GATEWAY_BASE}")
-    print(f"{Colors.BLUE}{'='*60}{Colors.RESET}")
-    
-    results = {
-        "Health Check": test_health(),
-        "Root Endpoint": test_root(),
-        "Models List": test_models(),
-        "Chat Completion": test_chat_completion(),
-        "MCP Tools": test_mcp_tools(),
+)
+os.environ.update(
+    {
+        "API_KEYS": "test-key-1",
+        "JWT_SECRET_KEY": "pytest-only-secret",
+        "POSTGRES_PASSWORD": "pytest-only-pg",
+        "REDIS_PASSWORD": "pytest-only-redis",
+        "AUTH_ENABLED": "true",
+        "OPENAI_COMPATIBLE_UPSTREAMS": _POOL,
     }
-    
-    print(f"\n{Colors.BLUE}{'='*60}{Colors.RESET}")
-    print(f"{Colors.BLUE}  测试结果汇总{Colors.RESET}")
-    print(f"{Colors.BLUE}{'='*60}{Colors.RESET}")
-    
-    passed = sum(1 for v in results.values() if v)
-    total = len(results)
-    
-    for name, result in results.items():
-        status = f"{Colors.GREEN}✅{Colors.RESET}" if result else f"{Colors.RED}❌{Colors.RESET}"
-        print(f"  {status} {name}")
-    
-    score = int((passed / total) * 100)
-    grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D"
-    
-    print(f"\n  {Colors.YELLOW}通过率: {passed}/{total} ({score}%) - 等级: {grade}{Colors.RESET}")
-    
-    if score >= 80:
-        print(f"\n  {Colors.GREEN}🎉 API 就绪，可以开始前端集成！{Colors.RESET}")
-    else:
-        print(f"\n  {Colors.RED}⚠️ API 存在问题，需要修复后再进行前端集成{Colors.RESET}")
-    
-    return 0 if score >= 80 else 1
+)
 
-if __name__ == "__main__":
-    sys.exit(main())
+import asyncio  # noqa: E402
+
+import httpx  # noqa: E402
+import pytest  # noqa: E402
+import respx  # noqa: E402
+from app.main import app  # noqa: E402
+from app.services.upstream_registry import registry  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as c:
+        yield c
+
+
+def _auth():
+    return {"X-API-Key": "test-key-1"}
+
+
+def _chat_body(model="deepseek-v4-flash"):
+    return {
+        "model": model,
+        "messages": [{"role": "user", "content": "用一句话介绍你自己"}],
+        "stream": False,
+        "max_tokens": 32,
+        "user_id": "pytest",
+    }
+
+
+def _upstream_ok(content="你好，旗舰在线", model="deepseek-v4-flash"):
+    return {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 6, "total_tokens": 11},
+    }
+
+
+# ── 基础：健康与认证 ────────────────────────────────────────
+
+
+def test_health_no_auth(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+
+
+def test_chat_requires_auth(client):
+    r = client.post("/v1/chat/completions", json=_chat_body())
+    assert r.status_code in (401, 403)
+
+
+def test_chat_bad_key(client):
+    r = client.post(
+        "/v1/chat/completions", json=_chat_body(), headers={"X-API-Key": "wrong"}
+    )
+    assert r.status_code in (401, 403)
+
+
+# ── 路由：上游池 ────────────────────────────────────────────
+
+
+@respx.mock
+def test_chat_upstream_pool_route(client):
+    """旗舰模型 → 上游池 flagship，响应头披露服务者"""
+    route = respx.post("http://flagship.test:8001/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_upstream_ok())
+    )
+    r = client.post("/v1/chat/completions", json=_chat_body(), headers=_auth())
+    assert r.status_code == 200, r.text
+    assert route.called
+    body = r.json()
+    assert body["choices"][0]["message"]["content"] == "你好，旗舰在线"
+    assert r.headers.get("x-yyc3-upstream") == "flagship"
+    assert "x-yyc3-degraded" not in r.headers
+
+
+@respx.mock
+def test_chat_unknown_model_falls_to_ollama(client):
+    """未匹配上游池的模型 → Ollama 兜底（mock Ollama 地址）"""
+    from app.config import settings
+
+    ollama_url = f"http://{settings.ollama_host}:{settings.ollama_port}/api/chat"
+    respx.post(ollama_url).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "message": {"role": "assistant", "content": "local"},
+                "done_reason": "stop",
+                "prompt_eval_count": 1,
+                "eval_count": 1,
+            },
+        )
+    )
+    r = client.post(
+        "/v1/chat/completions",
+        json=_chat_body(model="some-unknown-model"),
+        headers=_auth(),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "local"
+
+
+# ── 降级链与备用地址 ────────────────────────────────────────
+
+
+@respx.mock
+def test_degraded_chain_and_header(client):
+    """旗舰 500 → 降级到 backup，X-YYC3-Degraded 披露失败链"""
+    registry.load_from_env()  # 确保池为 _POOL
+    respx.post("http://flagship.test:8001/v1/chat/completions").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    ok = respx.post("http://backup.test:8001/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_upstream_ok(content="backup served"))
+    )
+    r = client.post("/v1/chat/completions", json=_chat_body(), headers=_auth())
+    assert r.status_code == 200, r.text
+    assert ok.called
+    assert r.headers.get("x-yyc3-degraded") == "flagship"
+
+
+@respx.mock
+def test_fallback_url_address_switch(client):
+    """base_url 失败 → 同一上游 fallback_url 接管（QSFP 主 / Tailscale 备语义）"""
+    try:
+        from app.config import settings as _settings
+
+        _settings.openai_compatible_upstreams = json.dumps(
+            [
+                {
+                    "name": "solo",
+                    "base_url": "http://primary.test:8001",
+                    "fallback_url": "http://secondary.test:8001",
+                    "models": ["deepseek-v4-flash"],
+                    "priority": 1,
+                }
+            ]
+        )
+        registry.load_from_env()
+        respx.post("http://primary.test:8001/v1/chat/completions").mock(
+            return_value=httpx.Response(502, text="primary down")
+        )
+        ok = respx.post("http://secondary.test:8001/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json=_upstream_ok(content="via secondary"))
+        )
+        r = client.post("/v1/chat/completions", json=_chat_body(), headers=_auth())
+        assert r.status_code == 200, r.text
+        assert ok.called
+    finally:
+        from app.config import settings as _settings
+
+        _settings.openai_compatible_upstreams = _POOL
+        registry.load_from_env()
+
+
+# ── 熔断器 ──────────────────────────────────────────────────
+
+
+@respx.mock
+def test_circuit_breaker_opens_and_falls_back():
+    """旗舰连续失败 3 次 → 熔断 OPEN → select 直选 backup，旗舰不再被打"""
+    registry.load_from_env()
+    flag = registry.upstreams["flagship"]
+    flag.breaker_state = "closed"
+    flag.consecutive_failures = 0
+
+    fail = respx.post("http://flagship.test:8001/v1/chat/completions").mock(
+        return_value=httpx.Response(500, text="breaker test")
+    )
+    respx.post("http://backup.test:8001/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_upstream_ok())
+    )
+
+    # 三次请求：每次旗舰 500 被记录，backup 兜底成功且带降级头
+    with TestClient(app) as c:
+        for i in range(3):
+            body = _chat_body()
+            body["messages"][0]["content"] = f"breaker probe {i}"
+            r = c.post(
+                "/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"}
+            )
+            assert r.status_code == 200, r.text
+            assert r.headers.get("x-yyc3-degraded") == "flagship"
+    assert flag.consecutive_failures == 3
+    assert flag.breaker_state == "open"
+
+    # 熔断摘除后：select 直接落到 backup 层，旗舰零请求、无降级头
+    fail.calls.clear()
+    with TestClient(app) as c:
+        body = _chat_body()
+        body["messages"][0]["content"] = "post-breaker probe"
+        r = c.post(
+            "/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"}
+        )
+        assert r.status_code == 200, r.text
+    assert not fail.called, "熔断摘除后不应再请求旗舰"
+    assert r.headers.get("x-yyc3-degraded") is None
+    assert r.headers.get("x-yyc3-upstream") == "backup"
+
+    # 半开探测：时间窗过后 available 放行
+    import app.services.upstream_registry as ur
+
+    flag.breaker_opened_at -= ur.BREAKER_OPEN_SECONDS + 1
+    assert registry.available(flag) is True
+    # 还原
+    flag.breaker_state = "closed"
+    flag.consecutive_failures = 0
+
+
+# ── 观测端点 ────────────────────────────────────────────────
+
+
+def test_router_stats_has_pool(client):
+    r = client.get("/v1/router/stats", headers=_auth())
+    assert r.status_code == 200
+    data = r.json()
+    assert "upstream_pool" in data
+    names = {u["name"] for u in data["upstream_pool"]}
+    assert {"flagship", "backup"} <= names
+
+
+def test_models_list_includes_upstream(client):
+    r = client.get("/v1/models", headers=_auth())
+    assert r.status_code == 200
+    ids = [m["id"] for m in r.json()]
+    assert "deepseek-v4-flash" in ids
+
+
+def test_models_stats_real_ewma(client):
+    r = client.get("/v1/models/stats", headers=_auth())
+    assert r.status_code == 200
+    by_id = {m["model_id"]: m for m in r.json()}
+    assert "flagship" in by_id  # 上游池真实数据（DB 不可达也不影响）

@@ -14,7 +14,7 @@ PROJECT_VERSION := 1.0.0
 
 # Docker 相关
 DOCKER_COMPOSE := docker-compose
-DOCKER_FILE := core/database/docker/docker-compose.stable.yml
+DOCKER_FILE := core/database/docker/docker-compose.yml
 
 # 颜色输出
 BLUE := \033[0;34m
