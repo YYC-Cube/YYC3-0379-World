@@ -260,7 +260,8 @@ jobs:
           proxy_port: 22
           script: |
             cd /Volume2/yyc3-33 && git pull origin main
-            docker compose up -d --build gateway
+            DOCKER=/Volume3/@apps/DockerEngine/dockerd/bin/docker
+            $DOCKER compose --project-directory . -f deploy/nas/docker-compose.nas.yml up -d --build gateway
             echo "Gateway 重建完成"
 
       - name: 全链路健康验证
