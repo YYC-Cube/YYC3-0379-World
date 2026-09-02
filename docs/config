@@ -1,0 +1,112 @@
+cat > ~/.ssh/config <<'EOF'
+# =============================================
+# YYC³ 统一 SSH 配置 - 全球化版   2026-07-04
+# =============================================
+# 🌐 所有内网设备已同时支持 Tailscale 外网访问
+# ────────────────────────────────────────────
+
+# 控制枢纽 MacBook M4 Max (主开发机)
+Host yyc3-22
+    HostName 192.168.3.22      # 仅内网，一般不需外连
+    User yanyu
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ NVIDIA DGX Spark-1 (双机互联-节点1)
+Host yyc3-101
+    HostName 100.65.64.49      # Tailscale IP (内外网通用)
+    User yyc3-101
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ NVIDIA DGX Spark-2 (双机互联-节点2)
+Host yyc3-102
+    HostName 100.76.167.103    # Tailscale IP (内外网通用)
+    User yyc3-102
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ 设备 #55 (局域网节点) — 暂未加入 Tailscale，保留内网
+Host yyc3-55
+    HostName 192.168.3.55
+    User yanyu
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ 设备 #66 - 华为 MateBook Pro (测试机)
+Host yyc3-66
+    HostName 192.168.3.66
+    User hw
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🗄️本机  NAS 服务器 (存储服务)
+Host yyc3-45
+    HostName 100.65.172.88
+    User YYC3
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 9557
+
+# 💻 iMac M4 (辅助开发)
+Host yyc3-77
+    HostName 100.98.206.18     # Tailscale IP
+    User my
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ 设备 #88 (局域网节点)
+Host yyc3-88
+    HostName 100.87.172.34     # Tailscale IP
+    User my
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ 设备 #99 (局域网节点)
+Host yyc3-99
+    HostName 100.110.193.29    # Tailscale IP
+    User my
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# ☁ 云服务器矩阵 (公网 IP，不变)
+# ────────────────────────────────────────────
+
+# 阿里云 ECS #33 (主控服务器)
+Host yyc3-33
+    HostName 100.126.132.112    # Tailscale IP
+    User root
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 阿里云 ECS #202 (备用服务器)
+Host yyc3-202
+    HostName 47.94.135.202
+    User root
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    Port 22
+
+# 🖥️ NVIDIA DGX Spark-1 (互联统一用户)
+Host yyc3-n1
+    HostName 100.65.64.49      # Tailscale IP
+    User yyc3
+    IdentityFile ~/.ssh/yyc3_dgx
+    Port 22
+
+# 🖥️ NVIDIA DGX Spark-2 (互联统一用户)
+Host yyc3-n2
+    HostName 100.76.167.103    # Tailscale IP
+    User yyc3
+    IdentityFile ~/.ssh/yyc3_dgx
+    Port 22
+EOF

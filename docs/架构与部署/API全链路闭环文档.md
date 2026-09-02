@@ -2,9 +2,9 @@
 file: YYC3-API-全链路闭环文档.md
 description: YYC3-0379-World 生产级 API 全链路闭环文档
 author: YanYuCloudCube Team <admin@0379.email>
-version: v1.0.0
+version: v1.1.0
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-03
 status: active
 tags: [api],[full-link],[production],[closed-loop]
 category: documentation
@@ -12,9 +12,13 @@ category: documentation
 
 # YYC3-0379-World API 全链路闭环文档
 
-> **版本**: v1.0.0 | **生成日期**: 2026-08-30
+> **版本**: v1.1.0 | **更新日期**: 2026-09-03（原 v1.0.0 2026-08-30）
 > **网关版本**: v2.0.0 | **生产域名**: `https://api.0379.world`
 > **文档定位**: 面向开发、测试、运维三团队的单一事实来源 (Single Source of Truth)
+>
+> **v1.1 实况改版要点（2026-09-03 基线）**：
+> ① **推理底座已换代**——双 DGX 经 NCCL 2.30.7 门禁后，**DeepSeek-V4-Flash（284B MoE/A13B）TP=2 双机张量并行服务在 N1:8001 上线**（QSFP 210Gbps 链路，双机内存对称 96G/121G，64K ctx）；
+> ② 部署链已 GitOps 化（Mac 部署桥自动同步，见 §9.5）；③ RAG 组件三件套处于"旗舰独占期暂离"（恢复=容器化 §9.6）；④ 网关代码五缺陷（路由死代码/上游硬编码/4 端点缺失/观测假数据）仍未修——**本文档所有"规划态"均以《Gateway代码分析与落地方案》A 线为准绳**；⑤ 新模型三路在途（GLM-5.3-Flash 306G/Qwen3.8-Flash-Next 131 分片/MiniMax-H3-NF4 视频生成，hf-mirror 通道 29-117MB/s）。
 
 ---
 
@@ -155,6 +159,18 @@ Request
 
 ### 3.1 模型总览
 
+**生产实况层（2026-09-03，v1.1 新增）**：
+
+| 层 | 模型 | 端点 | 状态 |
+|----|------|------|------|
+| **旗舰推理** | deepseek-v4-flash（TP=2 双机） | `http://100.65.64.49:8001/v1`（QSFP 内网 10.100.168.2:8001） | ✅ 服务中（启动/回退命令见《双机推理部署指南》§19） |
+| 轻量层 | NAS Ollama 系 | `:11434` | ✅ |
+| 云端兜底 | 智谱/DeepSeek/OpenAI | 公网 | ✅（注意 ZHIPU_KEY 曾过期，启动校验会拦截） |
+| RAG 三件套 | Qwen3-Embedding/Reranker-8B、ChromaDB | `:8100/:8101/:8102` | ⏸ 旗舰独占期暂离（恢复=容器化，指南 §15.3） |
+| 在途 | GLM-5.3-Flash（多模态旗舰候选）/ Qwen3.8-Flash-Next（轻旗舰降级位）/ MiniMax-H3-NF4（视频生成） | — | ⬇ hf-mirror 下载中（N1 projects/models） |
+
+**注册表模型（Gateway DB 视角，历史层）**：
+
 | 后端类型 | 模型 ID | 显示名称 | 上下文长度 | 成本/1K tokens | 部署位置 |
 | --------- | --------- | --------- | ----------- | --------------- | --------- |
 | **zhipu** | `glm-4-flash` | 智谱 GLM-4 Flash | 128K | $0.001 | 云端 API |
@@ -213,6 +229,8 @@ Request
   ├─ ollama:* / local:*                              → ollama 后端 (指定模型名)
   └─ 其他                                            → ollama 后端 (默认回退)
 ```
+
+> ⚠️ **v1.1 实况注记**：以上为**设计行为**。当前网关代码（chat.py:53-87）为模型名前缀**硬编码匹配**，EWMA 智能路由算法（model_router.py）完整但未接线，`/v1/router/stats` 返回硬编码数据——修复排期见《Gateway代码分析与落地方案》A 线 P1；**旗舰 :8001 接入网关依赖该线完成**（upstream pool 配置化）。
 
 **GPU 感知路由**: 通过 `/v1/model/type` 端点可查询模型后端类型 (`local_cpu` / `local_gpu` / `zhipu` / `deepseek` / `openai`)，供 Traefik/HAProxy 做智能分流。
 
@@ -636,6 +654,11 @@ curl http://100.65.172.88:8000/health
 | `AUTH_ENABLED` | 是否启用认证 | `true` |
 | `JWT_EXPIRATION_HOURS` | JWT 过期时间 | `24` |
 
+### 9.4-bis 部署实况（v1.1）：GitOps 自动部署已取代手工流程
+
+> 2026-09-02 起生效：`git push main` → CI 五段验证 → **Mac 部署桥**（~/yyc3-deploy/watch.sh，每 2 分钟对比 NAS HEAD）→ `git push ssh://YYC3@100.65.172.88:9557/Volume2/yyc3-33` → NAS `rebuild-gateway.sh` 重建+健康检查 → 公网终验。本节 9.1-9.3 的手工命令保留为**应急通道**。
+> 运维红线：① NAS sshd 有防暴力惩罚机制（高频连接会被间歇拒认，自动化连接须 ≥60s 间隔）；② 旗舰 TP=2 启停按《双机推理部署指南》§19（head 先起 worker 后起；`/tmp` 会被清理，启动脚本已锚定 `/home/yyc3/dsv4_*.sh`）；③ NAS→GitHub 直连不稳定，部署一律走 Mac 桥。
+
 ### 9.4 Docker 镜像构建
 
 ```
@@ -747,9 +770,36 @@ ssh yyc3-45 "docker logs --tail 50 -f 0379-world-gateway-1"                     
 
 ---
 
+## 十一、实况落地行动清单（v1.1 · 2026-09-03，衔接全链路）
+
+> 排序原则：每一项都让"公网用户 → DGX 旗舰"近一步；前两项是阻断项。
+
+| # | 行动 | 现状→目标 | 依赖 | 验收 |
+|---|------|-----------|------|------|
+| **1** | **A 线 P0：网关上游配置化 + 测试地基** | 上游硬编码/测试打生产 → env 驱动 + pytest 零网络 | 无（纯代码，1-2 天） | mock 上游进 `/v1/models`；`make test` 绿 |
+| **2** | **A 线 P1：智能路由接线 + 熔断降级** | 前缀硬编码 → upstream pool 接入 **N1:8001 旗舰**（QSFP 主/Tailscale 备双地址） | #1 | 公网 chat 经网关落 deepseek-v4-flash；kill 旗舰 30s 切降级 |
+| 3 | RAG 三件套容器化恢复 | 旗舰独占期暂离 → vLLM 容器 serve Embedding/Reranker + ChromaDB 官方镜像（:8100/8101/8102 复用） | 旗舰 KV 限额调整或错峰 | `/v1/embeddings` 全链路通 |
+| 4 | 4 缺失端点补齐（A 线 P2） | embeddings/rerank/asr/ocr 不存在 → 代理端点 | #1 | 7 端点契约齐 |
+| 5 | Agents 容器化上线 | 代码模型无关（VLLM_ENDPOINT）→ compose 起 8 Agent+治理，env 指向 :8001 | #2 | :25600-07/:25700 健康 |
+| 6 | ECS 网关副本双活 | 单 NAS 网关 → ECS 同源副本（部署桥扩展） | #1 | Traefik 双上游 |
+| 7 | 新模型注册 | GLM-5.3-Flash（量化后 TP=2 升级位）/ Qwen3.8-Flash-Next（轻旗舰降级位）/ MiniMax-H3-NF4（**新增视频生成端点** `/v1/videos` 候选） | 下载完成+量化 | 各自冒烟 |
+| 8 | 观测真实化 | stats/monitor 假数据 → 真实 EWMA + Grafana | #2 | 面板出真数 |
+
+**旗舰运维速查（衔接 §9.4-bis）**：
+```bash
+# 启动（顺序敏感）
+ssh yyc3@100.65.64.49 'docker start dsv4-head'   # 等 ~80s
+ssh yyc3@100.76.167.103 'docker start dsv4-worker'
+# 验收
+curl http://100.65.64.49:8001/v1/models          # → deepseek-v4-flash
+# 停机（干净关停）
+ssh yyc3@100.65.64.49 'docker stop dsv4-head' && ssh yyc3@100.76.167.103 'docker stop dsv4-worker'
+# 注意：容器 /tmp 不持久——启动脚本已锚定 ~/dsv4_head.sh(脚本在 /home/yyc3)，误删脚本会导致 docker start 挂载失败（2026-09-03 实测踩坑）
+```
+
 > **文档维护**: YanYuCloudCube Team <admin@0379.email>
-> **最后验证**: 2026-08-30
-> **下次审核建议**: 2026-09-30
+> **最后验证**: 2026-09-03（v1.1 实况基线：公网 200 · 旗舰 TP=2 · CI GitOps 绿）
+> **下次审核建议**: 2026-09-30 或 A 线 P1 合入时
 
 **YanYuCloudCube** - 言启象限 | 语枢未来
 **YYC3-0379-World** - v2.0.0 Production API Gateway
