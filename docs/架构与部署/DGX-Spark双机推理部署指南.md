@@ -1,6 +1,8 @@
 # YYC³ DGX Spark GB10 双机推理部署 · 模型部署闭环最佳指导文档
 
-> **文档版本**: v1.4.1 | **生成日期**: 2026-09-02
+> **文档版本**: v1.4.2 | **生成日期**: 2026-09-02
+> **v1.4.2**: 新增 **§19 DeepSeek-V4-Flash TP=2 落地 Runbook**（前置检查实测结论 + Phase 0 已完成：旗舰 159.6GB 经 QSFP 196 秒同步 N1 规范路径，46/46 分片核验）
+> **文档版本(历史)**: v1.4.1 | **生成日期**: 2026-09-02
 > **v1.4.1 勘误**: ① §17 GLM-5.3-Flash 体量**算错修正**：FP8 全量为 **328GB**（下载实测口径，320B 参数 ×1B），**超双机 242G——FP8 不能直跑 TP=2**，正确路径 = NVFP4/INT4 量化（~170G → 85G/机 ✓，走 §八 TRT-LLM 量化产线）或等官方低比特版；② 模型真身路径勘误：设备模型资产在 `~/yyc3-{101,102}-projects/models/`（N1 含 20 款主库 + **GLM-5.3-Flash 328G venv 稳传下载中**），非 `~/models/`（后者为 Day1 临时下载区）；③ 新增 venv-modelscope 下载规范（双节点已建，docs 两份说明）；④ v1.3.1 "yyc3-101-projects 空骨架"结论**撤回**
 > **文档版本(历史)**: v1.4.0 | **生成日期**: 2026-09-02
 > **v1.4 变更**: 新增 **§17 2026-09 开源模型版图与最优矩阵**——按用户要求**忽略设备存量资产**，基于最新发布的 DeepSeek-V4 / GLM-5.3 / Qwen3.8 系（含 2026-08-26 新发 GLM-5.3-Flash、2026-08-02 Qwen3.8-Max）重做选型；结合 NIM 138 报告 + Hub 官方技术，给出 TP=2 主模型 / RAG 全链路 / yyc3-family-ai-agents 的最佳适配；新增 **§18 API 生产部署建议**（基于 YYC3-0379-World 网关代码库实况）
@@ -826,3 +828,47 @@ SLA 映射（千行 <200ms 类轻请求可指 Qwen3.8-Flash-Next 降级位；伯
 阶段2(受控): 开放注册，60 req/min/用户 限流（现有配置），双活网关
 阶段3(生产): 智能路由 EWMA 全量 + Qwen3.8-Flash-Next 降级位常驻，SLA 看板公开
 ```
+
+
+---
+
+## 十九、DeepSeek-V4-Flash TP=2 落地 Runbook（v1.4.2 · 执行中）
+
+### 19.1 前置检查实测结论（2026-09-02 15:00）
+
+| 检查项 | N1 | N2 | 判定 |
+|--------|----|----|------|
+| 磁盘 | 2.9T ✓ | 2.8T ✓ | ✅ |
+| 旗舰权重 | **159.6G 已落位**（~/yyc3-101-projects/models/DeepSeek-V4-Flash，46/46 分片，QSFP 196s） | 149G（~/models/，46/46） | ✅ 双机就绪 |
+| vllm 镜像+ray 模式 | ✓ | ✓ | ✅（§3.3 已验证） |
+| NCCL ≥2.30 | pytorch:26.07 ✓ | 同 | ✅（门禁已过） |
+| QSFP | 0.087ms | 0.385ms | ✅ |
+| 内存 | 64G→**停 tp2-head 后 ~106G** | 46G→**停 tp2-worker+三组件后 ~121G** | ⚠️ 需腾挪（Phase 1） |
+| 8001 现状 | **空闲**（tp2-27b serve 已自亡，容器空转占内存） | — | 停掉即回收 |
+
+### 19.2 内存编排（FP8 159.6G → 80G/rank + KV）
+
+```
+N1: 停 tp2-head(回收42G) → [旗舰 rank0 80G + KV(util 0.72≈87G)] + 系统/沙箱 ≈ 97G/121G ✓
+N2: 停 tp2-worker(42G) + 三组件(33G) → [旗舰 rank1 87G] + 系统 ≈ 97G/121G ✓
+⚠️ 旗舰独占期：:8100/8101/8102 组件链暂离（现无生产调用方）；恢复方案=§15.3 容器化后限量归位
+    或旗舰验证完成后调低 max-len/util 腾挪
+```
+
+### 19.3 Phase 1 切换序列（可逆：全部 docker start/systemctl start 对偶回退）
+
+```bash
+# ① 腾内存（tp2-27b serve 已死零影响；三组件暂离）
+N1: docker rm -f tp2-head
+N2: docker rm -f tp2-worker && sudo systemctl stop yyc3-embedding yyc3-reranker yyc3-memory
+# ② 起 DSV4 TP=2（head 先，worker 后——ray 模式，pip ray 容器内装）
+N1 head:  vllm serve /model --tensor-parallel-size 2 --distributed-executor-backend ray
+          --max-model-len 65536 --gpu-memory-utilization 0.72 --kv-cache-dtype fp8
+          --trust-remote-code --enable-prefix-caching --port 8001   (NCCL 三参数照 §3.1)
+N2 worker: ray start --address=10.100.168.2:6379 --block
+# ③ 验收: /v1/models + chat + 双机内存对称 + QSFP 流量
+```
+
+### 19.4 后续衔接
+
+Phase 2 = 三组件容器化归位（§15.3）+ agents env 切 :8001（§17.3 两行改动）；Phase 3 = GLM-5.3-Flash 量化线（328G 下载完成后 §八产线）。
