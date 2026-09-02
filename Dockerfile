@@ -38,7 +38,9 @@ FROM base AS builder
 COPY requirements.txt .
 
 # 安装 Python 依赖
-RUN pip install --user -r requirements.txt
+# PIP_INDEX_URL 可在构建时注入（NAS/ECS 国内环境走清华源）
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --user -i $PIP_INDEX_URL -r requirements.txt
 
 # ============================================
 # 阶段 3: 生产镜像
@@ -78,7 +80,7 @@ FROM base AS development
 
 # 安装开发依赖
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -i ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} -r requirements.txt
 
 # 安装开发工具
 RUN pip install \
