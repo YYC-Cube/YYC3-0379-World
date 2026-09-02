@@ -1,6 +1,8 @@
 # YYC³ DGX Spark GB10 双机推理部署 · 模型部署闭环最佳指导文档
 
-> **文档版本**: v1.3.2 | **生成日期**: 2026-09-02
+> **文档版本**: v1.4.0 | **生成日期**: 2026-09-02
+> **v1.4 变更**: 新增 **§17 2026-09 开源模型版图与最优矩阵**——按用户要求**忽略设备存量资产**，基于最新发布的 DeepSeek-V4 / GLM-5.3 / Qwen3.8 系（含 2026-08-26 新发 GLM-5.3-Flash、2026-08-02 Qwen3.8-Max）重做选型；结合 NIM 138 报告 + Hub 官方技术，给出 TP=2 主模型 / RAG 全链路 / yyc3-family-ai-agents 的最佳适配；新增 **§18 API 生产部署建议**（基于 YYC3-0379-World 网关代码库实况）
+> **文档版本(历史)**: v1.3.2 | **生成日期**: 2026-09-02
 > **v1.3.2 变更（Phase D 改道）**: ① **NIM 区域封锁实测**：NVIDIA 自 2025-02-15 拒绝中国 IP 下载 NIM 镜像/模型（`nvcr.io/nim/*` 与 `nimevents/*` 双双 DENIED；**非 NIM 的 nvcr 拉取不受影响**，pytorch:26.07 即为实证）；替代官方渠道为中国 NIM 合作伙伴（catalog.ngc.nvidia.com/china-nim-distributors，需用户决策开户）。② **双钥匙分工实测**：NGC 钥→`ngc` CLI 目录查询 ✓；NVIDIA Build 钥→`nvcr.io docker login` ✓（已双机配置，运行钥落 `~/nvidia-workbench/.nim-env` 600）。③ **旗舰路径改道为主线**：ModelScope 官方原仓 `deepseek-ai/DeepSeek-V4-Flash`（FP8 原生，与 NAS 副本同规格：46 分片/≈160GB/1M ctx）直下实测 26MB/s → vLLM TP=2 双机分片（80GB/rank）。④ NAS 模型库已重组为厂商子目录（`data/DeepSeek/`、`data/Qwen/`…），历史文档路径需 +1 层。
 > **文档版本(历史)**: v1.3.1 | **生成日期**: 2026-09-02
 > **v1.3.1 变更（实况校准）**: ① NGC 旧凭据**实测失效**（ngc 403 / docker DENIED）——Phase D 前置明确为"需用户提供新 NVIDIA KEY"；② `yyc3-101-projects` 实为**空骨架**（Agent 代码真身在 N2 `~/yyc3-102-projects`）——§15.4 构建上下文修正为 N2；③ `nvidia-workbench` 真身定性为**12 类 NVIDIA 官方开源库策展**（含 TensorRT-LLM/TransformerEngine/NCCL 源码，每类带目录映射表），宿主 `~/nccl/build`=2.28.9（历史死锁版）留档；④ 双机 `YYC3-专属文档` 各自完整，N2 另有 `DGX-Cluster-Docs` 五卷运维库
@@ -732,3 +734,92 @@ C 可与 A 并行（独立容器域）
 
 > 完整记录见仓库 `docs/2026-09-02-全链路执行总结报告.md`。本节仅存要点索引：
 > NCCL 门禁通过（2.30.7，16GB 压力不复现）→ TP=2 解锁 ｜ QSFP 传输模式（模型 30.9GB/29.4s、镜像 20GB 校验一致）｜ N2 三组件零 sudo 自愈（hf-mirror 三参数）｜ CI/CD GitOps 闭环（Mac 部署桥）｜ NAS sshd 间歇拒绝根因 = TOS 防暴力惩罚（自动化连接须 ≥60s 限频）｜ 安全四项执行。
+
+
+---
+
+## 十七、2026-09 开源模型版图与最优矩阵（v1.4 · 忽略存量资产重选）
+
+> 选型基准日 2026-09-02：2026 上半年开源生态重组为 **Flash 层**（~97% 参数休眠的万亿级 MoE 配方：DeepSeek-V4-Flash / GLM-5.3-Flash / Qwen3.8-Flash-Next）。硬约束：双机 242GB UMA 总量、FP8 权重须 ≤200GB、TP=2 后每机 ≤100GB 留 KV 余量。
+
+### 17.1 主模型候选矩阵（TP=2 双机张量并行）
+
+| 模型（发布日/许可） | 总参/激活 | 上下文 | FP8 体量 | TP=2 分片 | 双机可部署 | 定位 |
+|---------------------|-----------|--------|----------|-----------|------------|------|
+| **DeepSeek-V4-Flash**（2026-04/MIT） | 284B / A13B | 1M | 149GB | ~75G/机 | ✅（权重已在 N2） | **主力编码/智能体**——启动即用 |
+| **GLM-5.3-Flash**（2026-08-26/MIT）🆕 | 320B / A18B | **1M + 原生多模态** | ~165GB | ~83G/机 | ✅（ModelScope 可下） | **推荐升级位**：中文+多模态+最新 |
+| Qwen3.8-397B-A17B（2026-08 系） | 397B / A17B | 262K~1M | ~200GB | 100G/机 | ⚠️ 紧（KV 需限长） | 大 MoE 备选 |
+| Qwen3.8-Flash-Next | ~176B / ~A6B | — | ~90GB | 45G/机 | ✅ 宽松 | 轻旗舰（高并发低成本） |
+| Qwen3.8-Max（2.4T，2026-08-02 开放权重） | 2.4T | 1M | 2.4TB | ✗ | ❌ 超双机容量 | 排除（云端专用） |
+| DeepSeek-V4-Pro（1.6T/A49B） | 1.6T | 512K | 1.6TB | ✗ | ❌ | 排除 |
+
+**主模型执行结论**：
+1. **立即可上**：DeepSeek-V4-Flash FP8（149G 已落 N2，46/46 分片核验）→ §15.6 路线一 TP=2
+2. **升级路线**：GLM-5.3-Flash（8/26 新发，MIT，**原生多模态替代独立 VLM** + 1M ctx + Z.ai 中文优势）——ModelScope 同源可下（`zai-org/GLM-5.3-Flash`），下载 165G 后同模式切换；多模态能力并入主模型可省一条独立 VLM 链
+3. **双活搭配建议**：主力 DeepSeek-V4-Flash（编码/智能体）+ 备选 GLM-5.3-Flash（中文/多模态任务）轮换常驻；Qwen3.8-Flash-Next 作高并发降级位
+
+### 17.2 RAG 全链路（2026-09 版图校准）
+
+| 层 | 首选 | 依据（最新实测/榜单） | 落位 |
+|----|------|----------------------|------|
+| 嵌入 | **Qwen3-Embedding-8B** | 开源第一：MTEB 多语 70.58，100+ 语言**含代码**，指令感知架构（NV-Embed-v2 英文 72.31 但 7.85B/CC-BY-NC 非商用⚠️） | N2 :8100（已部署✓，v1.3 §15.3 容器化继承） |
+| 重排 | **Qwen3-Reranker-8B**（备选 bge-reranker-v2-m3 轻量） | 与嵌入同构指令感知；生产实测 bge-v2-m3 有场景优势，A/B 验证 | N2 :8101 ✓ |
+| 文档解析 | nemotron-ocr-v2（NIM 云 API）/ paddleocr（本地） | NIM 报告 ★★★★★；本地中文备选 | NIM API（区域封锁不影响 API 调用） |
+| 向量库 | ChromaDB（轻量）/ Milvus（N1 镜像已备） | 按量升级路径 | :8102 → Milvus |
+| 生成 | 主模型 TP=2（:8001） | — | N1 |
+| 安全 | Nemotron-3.5-Content-Safety + NIM 云端 jailbreak/pii | 守护三层管线 | N1/云 |
+
+### 17.3 yyc3-family-ai-agents 最佳适配（代码实况 2026-09-02）
+
+**代码实况**（N2 `~/yyc3-102-projects/yyc3-family-ai-agents/`）：8×Flask Agent（agent_server.py 通用薄壳）+ governance_hub.py（SQLite 独立 :25700）+ docker-compose（python:3.12-slim 基底）——**全部模型调用走 `VLLM_ENDPOINT`（OpenAI 兼容）+ `VLLM_MODEL` 两个环境变量**，天然模型无关。
+
+**适配结论**（换主模型零代码改动）：
+```yaml
+# docker-compose.yml 全局替换两个 env 即切 TP=2 旗舰：
+VLLM_ENDPOINT: http://10.100.168.2:8001/v1     # N1 TP=2 服务（QSFP 主链路）
+VLLM_MODEL: deepseek-ai/DeepSeek-V4-Flash       # 或 GLM-5.3-Flash
+# 治理中枢不动（无模型依赖）；8 Agent 容器化部署照 v1.3 §15.4
+```
+SLA 映射（千行 <200ms 类轻请求可指 Qwen3.8-Flash-Next 降级位；伯乐已绑 :8100/:8101；守护绑安全管线）。
+
+---
+
+## 十八、API 生产部署建议（基于 YYC3-0379-World 代码库实况）
+
+> 前提实况：Gateway v2.0.0 生产运行（NAS，api.0379.world 200）；CI 五段绿 + Mac 部署桥 GitOps 已闭环；《Gateway代码分析》五发现（路由死代码/上游硬编码/契约缺 4/测试虚设/观测假数据）待 A 线修复。
+
+### 18.1 生产拓扑（推荐终态）
+
+```
+公网 → ECS Traefik(443) → [NAS Gateway 主 ↔ ECS Gateway 副本]（同镜像双活）
+        → 智能路由层（A 线 P1 实装后）
+          ├→ N1 :8001 TP=2 旗舰（DeepSeek-V4-Flash → GLM-5.3-Flash 轮换）
+          ├→ N2 :8100/8101 RAG 组件（容器化后）
+          ├→ N2 :25600-07 + :25700 Agent/治理（容器化后）
+          └→ 云 API 兜底
+```
+
+### 18.2 上线前必办（阻断项，按序）
+
+1. **A 线 P0**（1-2 天）：上游配置化 + 测试地基（详见《Gateway代码分析与落地方案》）——不改则双 DGX 上游接不进网关
+2. **A 线 P1**（3-5 天）：路由接线 + 熔断降级——**这是"TP=2 集群可用性=网关路由质量"（ADR-4 教训）的落地件**
+3. 安全组三件套（已达标✓）：rate-limit/fail2ban/401
+
+### 18.3 生产规范（建议）
+
+| 域 | 建议 |
+|----|------|
+| 版本 | 网关镜像 tag 固化（禁 latest）；模型切换走 .env+重启，双活期间新版本先 NAS 后 ECS |
+| 可观测 | A 线 P1-4 真实化后接 Grafana；当前勿信 /v1/models/stats（硬编码） |
+| 容量 | TP=2 旗舰并发基线 32 路（§十二验收口径）；P95 首 token <50ms 达标后开放放量 |
+| 灾备 | NAS↔ECS 网关双活（Mac 桥部署 ECS 副本）；DGX 任一节点故障→路由摘除（熔断）；NAS sshd 限频 ≥60s（TOS 惩罚机制） |
+| 密钥 | .nim-env/NGC 双钥已落位；轮换周期 90 天；禁入 git |
+| 契约 | 对外 7 端点（chat/models/embeddings/rerank/ocr/asr/health）以 A 线 P2 为准；Agent 层仅暴露 :25700 治理白名单 |
+
+### 18.4 分阶段放量
+
+```
+阶段1(内测): api.0379.world → TP=2 旗舰 + RAG 组件，API Key 白名单 10 个，观测一周
+阶段2(受控): 开放注册，60 req/min/用户 限流（现有配置），双活网关
+阶段3(生产): 智能路由 EWMA 全量 + Qwen3.8-Flash-Next 降级位常驻，SLA 看板公开
+```
