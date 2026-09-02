@@ -1,0 +1,67 @@
+# N2 · 旗舰推理机编排（yyc3-102）
+# 依据: docs/架构与部署/DGX-Spark双机推理部署指南.md §9.1
+# 用法: docker compose -f deploy/dgx/docker-compose-n2.yml up -d
+version: "3.8"
+
+services:
+  # 旗舰推理 — DeepSeek-V4-Flash NVFP4（101 实战参数）
+  deepseek-nim:
+    image: nvcr.io/nimevents/deepseek-v4-flash:latest
+    container_name: deepseek-main
+    restart: unless-stopped
+    shm_size: "16gb"
+    environment:
+      - NIM_NVFP4_ENABLE=true
+      - NIM_MAX_MODEL_LEN=1000000
+      - NIM_TENSOR_PARALLEL_SIZE=1 # A 方案单机；B 方案改 2（见 docker-compose-dgx-tp2.yml）
+    ports:
+      - "8000:8000"
+    volumes:
+      - /mnt/yyc3_hd/data/DeepSeek-V4-Flash-NVFP4:/models:ro
+      - ~/.cache/nim:/opt/nim/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 多模态推理 — Qwen3.5-122B-A10B（SGLang RadixAttention，Hub g03）
+  qwen-vl:
+    image: lmsysorg/sglang:latest
+    restart: unless-stopped
+    command: >
+      python3 -m sglang.launch_server
+      --model-path /models/Qwen3.5-122B-A10B
+      --port 30000
+    ports:
+      - "30000:30000"
+    volumes:
+      - /mnt/yyc3_hd/data/Qwen/Qwen3.5-122B-A10B:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 高频轻量编码 — Qwen3-Coder-30B-A3B-Q4（Hub g01 容器化）
+  ollama-coder:
+    image: ollama/ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-coder:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ollama-coder:

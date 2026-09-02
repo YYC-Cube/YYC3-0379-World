@@ -1,0 +1,39 @@
+# B 方案 · NIM TP=2 张量并行编排（主推——官方集群 YanYuCloud 已就绪）
+# 依据: docs/架构与部署/DGX-Spark双机推理部署指南.md §9.3
+#
+# ⚠️ 前置门禁: 先运行 deploy/dgx/scripts/verify-dgx-cluster.sh
+#    其中 NCCL all_reduce_perf 必须通过（GB10 历史 UMA int32 根因复测），
+#    通过方可启用本编排；挂起则维持 ADR-4，退回 §9.1/§9.2 服务级分工（HTTP）。
+#
+# 每机一份，仅 rank 不同：
+#   N1 (yyc3-101): RANK=0
+#   N2 (yyc3-102): RANK=1
+# 启动: RANK=0 docker compose -f deploy/dgx/docker-compose-dgx-tp2.yml up -d
+# 顺序: 先起 rank=0 等 29500 监听 → 再起 rank=1 → 双机 curl :8000/v1/models 验证
+# 回滚: 任一异常秒退 TP=1（改用 docker-compose-n2.yml 单机编排）
+version: "3.8"
+
+services:
+  deepseek-node:
+    image: nvcr.io/nimevents/deepseek-v4-flash:latest
+    container_name: deepseek-tp2-rank${RANK:-0}
+    restart: "no"
+    shm_size: "16gb"
+    environment:
+      - NIM_TENSOR_PARALLEL_SIZE=2
+      - NIM_TENSOR_PARALLEL_RANK=${RANK:-0}
+      - NIM_MASTER_ADDR=10.100.168.2 # 主节点 QSFP 地址（N1=rank0）
+      - NIM_MASTER_PORT=29500
+      - NIM_NVFP4_ENABLE=true
+      - NCCL_SOCKET_IFNAME=enp1s0f0np0 # 绑定 QSFP 高速互联网卡
+      - NCCL_IB_HCA=mlx5_0 # ConnectX-7 RoCE
+      - NCCL_NET_GDR_LEVEL=5 # GPUDirect RDMA 全开
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

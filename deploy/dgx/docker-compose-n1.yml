@@ -1,0 +1,111 @@
+# N1 · 组件服务机编排（yyc3-101）
+# 依据: docs/架构与部署/DGX-Spark双机推理部署指南.md §9.2 + §10 RAG 六层
+# 用法: docker compose -f deploy/dgx/docker-compose-n1.yml up -d
+version: "3.8"
+
+services:
+  # OCR 文档解析（101 RAG compose 实战参数）
+  nemotron-ocr:
+    image: nvcr.io/nimevents/nemotron-ocr-v2:latest
+    restart: unless-stopped
+    environment:
+      - OCR_BATCH_SIZE=16
+      - OCR_TABLE_EXTRACT=true
+    ports:
+      - "8001:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 嵌入/重排双件套（TEI，组件端口对齐 YYC³ 现网 8100/8101）
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:latest # ARM64
+    restart: unless-stopped
+    command: --model-id /models/Qwen3-Embedding-8B --port 8100
+    ports:
+      - "8100:8100"
+    volumes:
+      - /mnt/yyc3_hd/data/Qwen/Qwen3-Embedding-8B:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    restart: unless-stopped
+    command: --model-id /models/Qwen3-Reranker-8B --port 8101
+    ports:
+      - "8101:8101"
+    volumes:
+      - /mnt/yyc3_hd/data/Qwen/Qwen3-Reranker-8B:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 安全审核（nemotron 系，Hub g28）
+  safety:
+    image: nvcr.io/nvidia/nemotron:latest
+    restart: unless-stopped
+    ports:
+      - "8103:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 中文 ASR（parakeet NIM）
+  asr:
+    image: nvcr.io/nim/parakeet-ctc-0.6b-zh-cn:latest
+    restart: unless-stopped
+    ports:
+      - "8004:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 轻量路由 LLM
+  router-llm:
+    image: ollama/ollama
+    restart: unless-stopped
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-router:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 监控面板（Hub g14）
+  dashboard:
+    image: nvidia/dgx-dashboard:latest
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  ollama-router:
