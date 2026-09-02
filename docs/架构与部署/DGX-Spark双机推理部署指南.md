@@ -1,6 +1,9 @@
 # YYC³ DGX Spark GB10 双机推理部署 · 模型部署闭环最佳指导文档
 
-> **文档版本**: v1.2.0 | **生成日期**: 2026-08-30
+> **文档版本**: v1.3.0 | **生成日期**: 2026-09-02
+> **仓库同步说明**: 本文件与旧工作区 `YYC3-DGX-Spark/YYC3-DGX-Spark-双机推理部署-模型部署闭环-最佳指导文档.md` 同源维护（v1.3 起以本仓库为准）。
+> **v1.3 变更**: 新增 §十五「官方镜像优先执行方案」——确立**所有部署以 NVIDIA/DockerHub 官方镜像为准绳、杜绝直接部署在宿主机系统**的铁律；结合 2026-09-02 Day1 执行实录（NCCL 2.30.7 门禁通过 / TP=2 ray 双机上线 / 镜像通道全通）给出容器化迁移四阶段方案；**同时废止 fix-n2.sh 第 2 步的 systemd 化方向**（改为容器化，详见 §15.4）
+> **文档版本(历史)**: v1.2.0 | **生成日期**: 2026-08-30
 > **v1.1 变更**: 双机 NVIDIA 高速互联线已实现互联（2026-08-30 确认）——主推方案由 A 方案（HTTP 分工）切换为 **B 方案（NIM TP=2 张量并行）**，NCCL `all_reduce_perf` 冒烟测试成为唯一剩余门禁
 > **v1.2 变更**: **官方向导集群配置完成并全套通过（2026-08-30 截图证据）**——NVIDIA 集群向导 SSH Setup 12/12 ✓、网络性能实测 **210.76 Gbps**（阈值 >180 Gbps，117% 超额）、"Your cluster is ready!" 集群 **YanYuCloud**（2 devices, direct connection）正式就绪
 > **适用范围**: yyc3-101 (N1) + yyc3-102 (N2) 双 DGX Spark GB10 推理集群
@@ -124,14 +127,11 @@ ssh 10.100.168.2 hostname    # 双向均应免密直连
 iperf3 -c 10.100.168.2 && nvidia-smi topo -m
 ```
 
-### 5.2 NCCL 留档测试（Hub g35 —— TP=2 部署前最终确认）
+### 5.2 NCCL 留档测试（Hub g35 —— TP=2 部署前最终确认，预期通过 ✅）
 
-> ✅ **门禁已通过（2026-09-02 双机实测留档，DP-2 决策：B 方案 TP=2 正式解锁）**
-> 测试环境：N1 rank0 + N2 rank1 各起 `nvcr.io/nvidia/pytorch:26.07-py3`（**NCCL 2.30.7+cuda13.3**），`--network host` + QSFP `enp1s0f0np0`，MASTER=10.100.168.2:29511。
-> 结果：双端 `init OK` → small(64MB)/mid(1GB) all_reduce OK → **16GB 大缓冲映射 + all_reduce OK（历史 int32 溢出场景不复现）**，双端 `ALL_DONE`，EXIT=0。
-> **根因修正**：2026-08-10 定档的"永久架构约束"实为 **NCCL 2.28.9 版本缺陷，2.30.7 已修复**。ADR-4（服务级分工）降级为"NCCL<2.29 环境兼容形态"；TP=2 部署的**推理容器必须捆绑 NCCL ≥2.30**（26.07 基镜像为准），宿主机 NCCL 版本不构成阻塞。
+> 官方向导的网络性能检测（210.76 Gbps > 180 Gbps 阈值）已验证**链路层**就绪；本测试目的为 **NCCL 集合通信层留档**，预期通过。
 >
-> ⚠️ 历史根因警示（留档）：GB10 双机 121GB×2 UMA 对称虚拟地址超出 int32 范围，触发 `malloc -24,805,113,728 bytes`（NCCL 2.28.9 时代实测）。原决策记录见 2026-08-10 架构审核报告（设备侧 `~/YYC3-专属文档/`）。
+> ⚠️ **历史根因警示（2026-08-10 架构审核报告定档，设备侧 `~/YYC3-专属文档/` 有原件）**：GB10 双机 121GB×2 UMA 对称虚拟地址**超出 int32 范围**，触发 `malloc -24,805,113,728 bytes`，当时定性为"永久架构约束、无官方修复"，并据此采纳 **ADR-4：放弃 NCCL TP=2，双机一律服务级分工 + HTTP**。官方向导 210.76 Gbps 证明的是链路健康，**不推翻**该根因。因此本测试若通过（说明 NVIDIA 已在 NCCL/DGX OS 层修复），方可启用 §9.3 TP=2；若仍挂起，维持 ADR-4，A 方案（HTTP 分工）就是终态而非过渡——高可用架构见配套《YYC3-高可用API架构闭环-最佳指导文档.md》。
 
 ```bash
 # NCCL 带宽冒烟（预期：无挂起，all_reduce 带宽接近 200Gbps 量级）
@@ -613,3 +613,104 @@ curl http://<host>:8000/v1/models; watch -n 1 nvidia-smi
 > **YYC³ AI Family** | 言启象限 · 语枢未来
 > 文档管理员: YYC³ 总指挥 | 2026-08-30
 > 🌹 人从众曌众从人 · 亦师亦友亦伯乐
+
+
+---
+
+## 十五、官方镜像优先执行方案（v1.3 · 2026-09-02）
+
+> **铁律**：所有服务一律运行于官方容器（nvcr.io NVIDIA 官方 / DockerHub 官方镜像，DockerHub 经 daocloud 镜像源）；自研代码仅允许以官方镜像为基底做**薄封装**（FROM + 少量 pip/代码）；**禁止在宿主机 systemd 直跑业务进程**（现有 4 个 yyc3-*.service 全部属迁移对象）。
+
+### 15.1 现状违规清单（2026-09-02 盘点）
+
+| 违规项 | 位置 | 现状 | 迁移目标 |
+|--------|------|------|----------|
+| yyc3-embedding.service | N2 宿主机 systemd + llama-factory-env python | 运行中 :8100 | 官方 `vllm/vllm-openai` serve embedding（§15.3-A） |
+| yyc3-reranker.service | 同上 | 运行中 :8101 | 官方 vllm serve reranker（--task score） |
+| yyc3-memory.service | 同上 | 运行中 :8102 | 官方 `chromadb/chroma` 容器 + 数据卷迁移 |
+| yyc3-node.service | N2 宿主机 | 崩溃循环（手册 §8.2 已知问题） | 直接停用（无对应业务） |
+| 治理中枢 + 8 Agent | N2 未部署（fix-n2.sh 原计划 systemd 化） | — | **改容器化**：python:3.11-slim 官方基底薄封装（§15.4） |
+| TP=2 ray | 双机容器运行时 `pip install ray` | 可用但每次重启重装 | 薄封装镜像 `yyc3/vllm-ray`（FROM vllm/vllm-openai，§15.5） |
+
+### 15.2 镜像与权重获取通道（Day1 实测全通）
+
+| 通道 | 用途 | 实测 |
+|------|------|------|
+| `nvcr.io` 直拉 | NVIDIA 官方（pytorch/NIM/TRT-LLM） | ~40MB/s ✅ |
+| `docker.m.daocloud.io/library/<img>` | DockerHub 官方镜像源（双机已 tag 等价） | ✅（python:3.11-slim 已双机落地） |
+| QSFP 直传（§16 模式） | 双机互传镜像/模型（tar + socket 管道） | 20GB 镜像 / 30.9GB 模型均验证 ✅ |
+| `HF_ENDPOINT=https://hf-mirror.com` + `HF_HUB_DISABLE_XET=1`（新 CLI `hf download`） | 模型权重下载 | 31GB 双模型验证 ✅ |
+| NAS SMB（Tailscale） | 仅冷数据/小文件（~2MB/s，禁用于加载） | ⚠️ 限用 |
+
+### 15.3 Phase A · N2 三组件容器化替换（半天，端口不变平滑切换）
+
+**A-1/A-2 Embedding/Reranker → 官方 vllm 容器**（替代宿主机 python 服务）：
+
+```bash
+# N2：先停宿主机服务腾端口（回退 = systemctl start + docker rm）
+sudo systemctl disable --now yyc3-embedding yyc3-reranker
+docker run -d --name yyc3-embed --restart unless-stopped --gpus all --shm-size 8g -p 8100:8000   -v /home/yyc3/models/Qwen3-Embedding-8B:/model:ro   --entrypoint python3 vllm/vllm-openai:latest -m vllm.entrypoints.openai.api_server   --model /model --task embed --served-model-name qwen3-embedding-8b   --max-model-len 8192 --gpu-memory-utilization 0.12 --port 8000 --trust-remote-code
+docker run -d --name yyc3-rerank --restart unless-stopped --gpus all --shm-size 8g -p 8101:8000   -v /home/yyc3/models/Qwen3-Reranker-8B:/model:ro   --entrypoint python3 vllm/vllm-openai:latest -m vllm.entrypoints.openai.api_server   --model /model --task score --served-model-name qwen3-reranker-8b   --max-model-len 8192 --gpu-memory-utilization 0.12 --port 8000 --trust-remote-code
+# 验收: curl :8100/v1/embeddings（OpenAI 格式）/ :8101/score
+```
+> ⚠️ 接口兼容注意：旧 embedding_server.py 为自定义接口，新容器为 OpenAI 标准；调用方（agent 代码/RAG 链）需按 OpenAI 格式对齐——网关 A 线 P2-1 端点本就是此格式，天然一致。
+
+**A-3 Memory → 官方 ChromaDB 容器**：
+
+```bash
+sudo systemctl disable --now yyc3-memory
+mkdir -p /home/yyc3/chroma-data && cp -r /home/yyc3/yyc3-102-projects/chromadb/* /home/yyc3/chroma-data/ 2>/dev/null
+docker run -d --name yyc3-memory --restart unless-stopped -p 8102:8000   -v /home/yyc3/chroma-data:/data   docker.m.daocloud.io/library/chromadb/chroma:latest
+# 验收: curl :8102/api/v2/heartbeat；调用方从自研 memory API 切 Chroma 标准 REST
+```
+
+### 15.4 Phase B · 治理中枢 + 8 Agent 容器化（替代 fix-n2.sh 第 2 步）
+
+> **fix-n2.sh 第 2 步（systemd 化）按本节废止**——新原则下不自研服务进系统；第 1 步（停 yyc3-node）与第 3 步（fstab 凭据化）仍有效。
+
+自研代码 = 官方基底薄封装（一次 Dockerfile，双机通用）：
+
+```dockerfile
+# deploy/agents/Dockerfile —— FROM 官方 python:3.11-slim（daocloud 已落地）
+FROM python:3.11-slim
+WORKDIR /app
+COPY yyc3-102-projects/requirements-agents.txt .   # 或逐包 pip install
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements-agents.txt
+COPY yyc3-102-projects/yyc3-family-ai-agents/ ./agents/
+COPY yyc3-102-projects/governance_hub.py .
+```
+
+编排 `deploy/agents/docker-compose.yml`：governance(:25700) + 8×agent（env 同原 systemd 模板：VLLM_ENDPOINT 指向 TP=2 的 :8001）+ `restart: unless-stopped` 开机自启等价于 systemd。构建产物经 QSFP 分发。
+
+### 15.5 Phase C · TP=2 正式化（薄封装 + compose）
+
+```dockerfile
+# deploy/dgx/Dockerfile.tp2 —— 官方 vllm 基底 + ray（解决运行时 pip）
+FROM vllm/vllm-openai:latest
+RUN pip install ray
+```
+构建 `yyc3/vllm-ray:1.0` 双机导入（QSFP）→ `deploy/dgx/docker-compose-tp2-ray.yml`（head/worker 两 service，参数照 §3.3 验证口径）→ 替换手工容器 tp2-head/tp2-worker。六条踩坑修正全部继承（§tp2-ray-实测验证模式.md）。
+
+### 15.6 Phase D · NIM 旗舰（NGC 钥轮换后）
+
+`docker login nvcr.io`（新钥）→ `nvcr.io/nimevents/deepseek-v4-flash`（§9.3 编排）或 NGC NIM 目录版（`nvcr.io/nim/deepseek-ai/...`，经 `/opt/ngccli` 检索）→ TP=2 切换旗舰，27B 降位备选。**此为唯一依赖用户动作（钥轮换）的阶段，不阻塞 A-C。**
+
+### 15.7 执行顺序与依赖（关键路径 2.5 天）
+
+```
+A(N2 三组件容器化, 半天) → B(Agent/治理容器化, 1天) → C(TP=2 compose 化, 半天) → D(NIM 旗舰, 待钥)
+B 依赖 A 完成（agent 调 embedding/memory 新接口）
+C 可与 A 并行（独立容器域）
+每 Phase 均可独立回退（systemctl start / docker rm 对偶）
+```
+
+### 15.8 收益
+
+宿主机归零业务进程（仅 docker + 挂载）｜ 全部官方基底可追溯可升级｜ 开机自启由 `restart: unless-stopped` 统一｜ 与网关 A 线（OpenAI 兼容契约）天然对齐｜ NCCL≥2.30 条件在官方镜像内天然满足。
+
+---
+
+## 十六、Day1（2026-09-02）执行实录归档
+
+> 完整记录见仓库 `docs/2026-09-02-全链路执行总结报告.md`。本节仅存要点索引：
+> NCCL 门禁通过（2.30.7，16GB 压力不复现）→ TP=2 解锁 ｜ QSFP 传输模式（模型 30.9GB/29.4s、镜像 20GB 校验一致）｜ N2 三组件零 sudo 自愈（hf-mirror 三参数）｜ CI/CD GitOps 闭环（Mac 部署桥）｜ NAS sshd 间歇拒绝根因 = TOS 防暴力惩罚（自动化连接须 ≥60s 限频）｜ 安全四项执行。
