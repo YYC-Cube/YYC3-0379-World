@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YYC³ 全端设备现状详情 · 2026-09-02</title>
+<style>
+  :root {
+    --ink:#1c2130; --muted:#69718a; --line:#e4e7f0; --bg:#f4f6fa; --card:#ffffff;
+    --red:#dc2626; --red-bg:#fef2f2; --amber:#d97706; --amber-bg:#fffbeb;
+    --green:#059669; --green-bg:#ecfdf5; --blue:#2563eb; --blue-bg:#eff6ff; --violet:#7c3aed; --violet-bg:#f5f3ff;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); line-height:1.65; padding:36px 18px; }
+  .page { max-width:960px; margin:0 auto; }
+  header h1 { font-size:25px; }
+  header .sub { color:var(--muted); font-size:13.5px; margin-top:6px; }
+  .badge { display:inline-block; font-size:12px; padding:2px 10px; border-radius:999px; margin-right:6px; font-weight:600; }
+  .b-red { background:var(--red-bg); color:var(--red); }
+  .b-green { background:var(--green-bg); color:var(--green); }
+  .b-amber { background:var(--amber-bg); color:var(--amber); }
+  .b-blue { background:var(--blue-bg); color:var(--blue); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px 24px; margin:20px 0; box-shadow:0 1px 2px rgba(15,23,42,.05); }
+  .card h2 { font-size:16.5px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+  .d-red{background:var(--red)} .d-green{background:var(--green)} .d-blue{background:var(--blue)} .d-amber{background:var(--amber)}
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+  .metric { background:var(--bg); border-radius:10px; padding:14px 16px; }
+  .metric .v { font-size:21px; font-weight:700; }
+  .metric .v small { font-size:13px; font-weight:600; }
+  .metric .k { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; padding:8px 10px; border-bottom:2px solid var(--line); white-space:nowrap; }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:none; }
+  .ok { color:var(--green); font-weight:700; }
+  .bad { color:var(--red); font-weight:700; }
+  .warn { color:var(--amber); font-weight:700; }
+  .node { border-left:4px solid var(--line); padding:14px 18px; background:var(--bg); border-radius:0 10px 10px 0; margin-bottom:12px; }
+  .node.n-green { border-color:var(--green); }
+  .node.n-red { border-color:var(--red); }
+  .node.n-amber { border-color:var(--amber); }
+  .node h3 { font-size:15px; margin-bottom:4px; }
+  .node p { font-size:13.5px; color:#3b4254; }
+  .node .tag { font-size:11.5px; color:var(--muted); }
+  .risk { display:flex; gap:10px; padding:11px 14px; border-radius:10px; font-size:13.5px; margin-bottom:8px; }
+  .r-p0 { background:var(--red-bg); }
+  .r-p1 { background:var(--amber-bg); }
+  .r-p2 { background:var(--blue-bg); }
+  .lvl { flex:none; font-weight:800; font-size:12px; padding:1px 8px; border-radius:6px; height:fit-content; }
+  .l-p0 { background:var(--red); color:#fff; }
+  .l-p1 { background:var(--amber); color:#fff; }
+  .l-p2 { background:var(--blue); color:#fff; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:26px; }
+  code { background:var(--bg); padding:1px 6px; border-radius:5px; font-size:12.5px; font-family:"SF Mono",Menlo,monospace; }
+  .chain { display:flex; flex-wrap:wrap; gap:8px; align-items:stretch; font-size:13px; }
+  .chain .hop { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 14px; min-width:130px; }
+  .chain .hop b { display:block; font-size:13px; }
+  .chain .hop span { color:var(--muted); font-size:12px; }
+  .chain .arrow { align-self:center; color:var(--muted); font-weight:700; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>YYC³ 全端设备现状详情</h1>
+  <div class="sub">
+    <span class="badge b-green">6/6 在线</span>
+    <span class="badge b-red">2 项 P0</span>
+    <span class="badge b-amber">2 项 P1</span>
+    <span class="badge b-blue">5 处记录修正</span>
+    · 实测 2026-09-02 10:16 · 服务于 YYC3-0379-World v2.1.0
+  </div>
+</header>
+
+<div class="card">
+  <h2><span class="dot d-blue"></span>一句话结论</h2>
+  <p style="font-size:14.5px">六台设备全部在线（含已被记为 offline 的 yyc3-77），但公网链路存在两处断点：<b>0379.world 的 DNS 记录失效</b>（Traefik 本身存活，公网用户却完全无法到达），以及 <b>yyc3-33 主 Gateway 未启动</b>（网关双活降级为 45 单活）。推理层正处于新旧架构交替中途：101 的旧 vLLM 已停、新的双机 TP2 卡在等 worker；102 单机 27B 推理与 Embedding 正常，但治理中枢与 Agent 集群未运行。</p>
+  <div class="chain" style="margin-top:14px">
+    <div class="hop"><b>公网用户</b><span>0379.world</span></div><div class="arrow">→</div>
+    <div class="hop"><b style="color:var(--red)">DNS ❌</b><span>无解析记录</span></div><div class="arrow">→</div>
+    <div class="hop"><b>yyc3-33 Traefik ✅</b><span>:80/:443 存活</span></div><div class="arrow">→</div>
+    <div class="hop"><b style="color:var(--red)">Gateway 主 ❌</b><span>:8000 未启动</span></div><div class="arrow">→</div>
+    <div class="hop"><b>Gateway 备 ✅</b><span>yyc3-45 v2.0.0</span></div><div class="arrow">→</div>
+    <div class="hop"><b>推理层</b><span>102 ✅ / 101 ⚠️ / 22 ✅</span></div><div class="arrow">→</div>
+    <div class="hop"><b>存储 ✅</b><span>PG:5433 · Redis · NAS 63%</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2><span class="dot d-green"></span>设备总览（实测快照）</h2>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>节点</th><th>硬件</th><th>Tailscale IP</th><th>运行时长</th><th>资源</th><th>关键服务实测</th></tr>
+    <tr><td><b>yyc3-22</b></td><td>MacBook Pro M4 Max · 128G</td><td>100.87.159.21</td><td>本机</td><td>—</td><td><span class="ok">Ollama ✅ 3 模型</span> · <span class="ok">Agent :18789 ✅</span></td></tr>
+    <tr><td><b>yyc3-33</b></td><td>阿里云 ECS · 7.1G</td><td>100.126.132.112</td><td>12d 7h</td><td>盘 15%</td><td><span class="ok">Traefik ✅ Redis ✅ PG16:5433 ✅</span> · <span class="bad">Gateway :8000 ❌</span> · <span class="bad">0379.world DNS ❌</span></td></tr>
+    <tr><td><b>yyc3-45</b></td><td>TerraMaster F4-423 · 32G</td><td>100.65.172.88</td><td>4d 17h</td><td>14T 用 63%</td><td><span class="ok">Gateway v2.0.0 healthy</span>（43min 前重启过）· Redis/PG 仅本机绑定</td></tr>
+    <tr><td><b>yyc3-101</b></td><td>DGX Spark GB10 N1 · 121G</td><td>100.65.64.49</td><td>3d 6h</td><td>内存 6.3/121G</td><td><span class="bad">vLLM :8000 ❌</span> · <span class="warn">tp2-head 启动中：Ray 等 worker</span></td></tr>
+    <tr><td><b>yyc3-102</b></td><td>DGX Spark GB10 N2 · 121G</td><td>100.76.167.103</td><td>3d 6h</td><td>内存 95/121G</td><td><span class="ok">vLLM 27B-FP8 ✅ · Embedding :8100 ✅</span> · <span class="bad">治理 :25700 ❌ Agent :25600 ❌</span></td></tr>
+    <tr><td><b>yyc3-77</b></td><td>iMac M4 · 32G</td><td>100.98.206.18</td><td>—</td><td>—</td><td><span class="ok">在线 ✅（记录已过时）</span> · <span class="bad">SSH publickey denied</span></td></tr>
+  </table>
+  </div>
+  <p style="font-size:12.5px;color:var(--muted);margin-top:10px">网络质量：101 13ms · 102 16ms · 33 25ms · 77 374ms · 45 684ms（relay 中继）。游离 TS 节点 offline：22-2 / 88-1 / 99-1（12–24 天）。</p>
+</div>
+
+<div class="card">
+  <h2><span class="dot d-red"></span>逐台状态一览</h2>
+  <div class="node n-green"><h3>yyc3-22 · 主控/开发中枢 ✅</h3><p>Ollama 在跑 <code>yyc3-family-coder:14b-q4</code>、<code>qwen3-coder-30b</code>、<code>nemotron-3.5-content-safety</code>；Agent :18789 开放。与基线一致。</p></div>
+  <div class="node n-red"><h3>yyc3-33 · 公网入口 ⚠️ 半恢复</h3><p>Traefik Up 12d、Redis :6379、PG16 实际监听 <b>:5433</b>（文档写的 5432 有偏差）。但 compose 只跑了 Traefik 一个容器——Gateway :8000 未监听；<code>nslookup 0379.world</code> 无解析。公网 IP 直连 :80 返回 301，证明 Traefik 自身完全正常，断点在 DNS 与 Gateway。</p></div>
+  <div class="node n-green"><h3>yyc3-45 · 存储中心/网关备 ✅</h3><p>Gateway v2.0.0 <code>/health</code> 全绿（redis/postgresql healthy），但 uptime 仅 43 分钟——今晨发生过一次重启。/Volume1 用 63%，剩 5.0T。Redis :6399 仅本机绑定属安全配置非故障。</p></div>
+  <div class="node n-amber"><h3>yyc3-101 · 推理主节点 ⚠️ 迁移中途</h3><p>旧 vLLM 已停（内存仅 6.3G 可证），<code>tp2-head</code> 于 10:15 刚拉起：<code>qwen3.6-27b-tp2 --tensor-parallel-size 2 --port 8001</code>，Ray 已连上 192.168.3.101:6379 集群，但 placement group 需要 2 份 GPU 资源——102 侧 <code>tp2-worker</code> 未上线，且 102 的 <code>nemoclaw-vllm</code> 正占着 GPU，两套推理互锁。</p></div>
+  <div class="node n-green"><h3>yyc3-102 · 训练/推理 ✅（服务缺失）</h3><p>nemoclaw-vllm Up 3d，服务 <code>Qwen3.6-27B-FP8</code>（当前 64K ctx，基线记录 256K）；Embedding :8100 存活。治理中枢 :25700 与 8 Agent :25600-25607 均未运行（08-21 基线是运行状态）。内存 95G/121G 高占用。</p></div>
+  <div class="node n-amber"><h3>yyc3-77 · 热备 ✅在线 / ❌不可管理</h3><p>Tailscale idle + ping 通（374ms 偏高）——「offline 7 天」记录过时。但 SSH 被拒（id_ed25519 未授权给 my 用户），第三副本与 PG 副本(:5434)状态无法远程核实。</p></div>
+</div>
+
+<div class="card">
+  <h2><span class="dot d-amber"></span>风险与建议行动</h2>
+  <div class="risk r-p0"><span class="lvl l-p0">P0</span><div><b>修复 0379.world DNS</b>：到 DNS 服务商恢复 A 记录 → 39.97.53.176。公网流量全部断在这一步。</div></div>
+  <div class="risk r-p0"><span class="lvl l-p0">P0</span><div><b>启动 yyc3-33 主 Gateway</b>：/root/0379-world 目录完整，补拉 Gateway 服务并验证 :8000/health，恢复 33主+45备 双活。</div></div>
+  <div class="risk r-p1"><span class="lvl l-p1">P1</span><div><b>闭环 101 双机 TP2</b>：二选一——停 102 的 nemoclaw-vllm 让 tp2-worker 入集群，或放弃 TP2 回退 101 单机。当前互锁状态两套推理都不可用。</div></div>
+  <div class="risk r-p1"><span class="lvl l-p1">P1</span><div><b>恢复 102 治理中枢 + Agent 集群</b>（:25700 / :25600-25607），0379-World 智能协同层依赖它们。</div></div>
+  <div class="risk r-p2"><span class="lvl l-p2">P2</span><div><b>打通 yyc3-77 SSH</b>（部署 22 的公钥到 my 用户）；<b>排查 45 今晨重启原因</b>；修正文档记录（PG 5433 / ctx 64K / 77 在线）；确认三个游离 TS 节点去留。</div></div>
+</div>
+
+<div class="card">
+  <h2><span class="dot d-blue"></span>实测方法</h2>
+  <p style="font-size:13.5px;color:#3b4254"><code>tailscale status</code> 全网视图 → <code>ping</code> 5 个 TS IP → SSH 采集 uptime/free/df/docker ps（4/5 成功）→ curl 健康接口与 nc 端口探测（8000/6379/6399/5432/25700/8100/25600/11434/18789）→ ss/systemctl/compose ls/容器日志/nslookup 深挖。完整命令与证据见同目录 Markdown 版附录。</p>
+</div>
+
+<footer>YYC3-0379-World · 全端设备现状详情 · 实测于 2026-09-02 10:16 CST · 由 yyc3-22 主控机发起</footer>
+</div>
+</body>
+</html>
