@@ -13,8 +13,10 @@
 #   - 端口复用历史约定 :8100/:8101/:8102（N2 systemd 旧位）
 #   - 网关侧：OPENAI_COMPATIBLE_UPSTREAMS 加 capability=embedding/rerank 条目即接入
 #
-# 启动: docker compose -f docker-compose-rag.yml up -d
-# 验收: curl :8100/v1/embeddings | curl :8101/score | curl :8102/api/v2/heartbeat
+# 顺序铁律：先旗舰(head→6379→worker→startup complete)后 RAG；反向必崩
+# 启动: docker compose -f docker-compose-rag.yml up -d embedding reranker  # chroma 常驻 N2
+# 验收: curl :8100/v1/embeddings | curl :8101/v1/completions(生成式打分) | curl :8102/api/v2/heartbeat
+# nightly 镜像注意: ENTRYPOINT=[vllm serve] 勿写前缀; 无 --task/--runner(自动检测); 0.6B 需 0.04+eager(权重1.1G+ctx2.7G)
 
 services:
   embedding:
@@ -25,14 +27,15 @@ services:
     gpus: all
     restart: unless-stopped
     volumes:
-      - /home/yyc3/yyc3-102-projects/models/Qwen3-Embedding-0.6B:/model:ro
+      - /home/yyc3/yyc3-101-projects/models/Qwen3-Embedding-0.6B:/model:ro
     # nightly 镜像 ENTRYPOINT 即 ["vllm","serve"]——command 勿再写 vllm serve 前缀
     command: >
       /model
       --served-model-name qwen3-embedding-0.6b
       --port 8100
-      --max-model-len 8192
-      --gpu-memory-utilization 0.05
+      --max-model-len 2048
+      --gpu-memory-utilization 0.04
+      --enforce-eager
 
   reranker:
     image: docker.m.daocloud.io/vllm/vllm-openai:nightly
@@ -42,13 +45,14 @@ services:
     gpus: all
     restart: unless-stopped
     volumes:
-      - /home/yyc3/yyc3-102-projects/models/Qwen3-Reranker-0.6B:/model:ro
+      - /home/yyc3/yyc3-101-projects/models/Qwen3-Reranker-0.6B:/model:ro
     command: >
       /model
       --served-model-name qwen3-reranker-0.6b
       --port 8101
-      --max-model-len 8192
-      --gpu-memory-utilization 0.05
+      --max-model-len 2048
+      --gpu-memory-utilization 0.04
+      --enforce-eager
 
   chroma:
     image: docker.m.daocloud.io/chromadb/chroma:latest
