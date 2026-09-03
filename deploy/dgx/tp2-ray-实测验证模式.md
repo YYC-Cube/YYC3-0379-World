@@ -34,3 +34,30 @@ docker run -d --name tp2-worker --network host --gpus all --shm-size 16g \
   'pip install -q ray && exec ray start --address=10.100.168.2:6379 --block --disable-usage-stats'
 ```
 验收：`curl localhost:8001/v1/models` → qwen3.6-27b-tp2；head 重启后 **worker 必须重启**（旧连接失效）。
+
+---
+
+## ⚠️ 2026-09-03 关键勘误：v0.26.0 镜像在 GB10 上输出乱码（已修，换 nightly）
+
+**现象**：TP=2 集群 startup complete、双机内存对称，但输出乱码（greedy raw `The capital of France is` → `e-9, 1e-9...`），21:31 容器重启后出现（此前输出连贯性未复验，无法排除更早）。
+
+**排除过程**（每一项都有实证）：
+| 嫌疑 | 验证 | 结论 |
+|------|------|------|
+| 权重损坏 | 双端 51 文件 sha256 全对官方（hf-mirror tree API LFS oid） | ✅ 完好 |
+| NCCL 通信 | GDR=5 / GDR=0 / NCCL_IB_DISABLE=1 三模式**逐字节同乱码** | ✅ 排除 |
+| ray/通道 | Gemma3 4B 小模型同参数 TP=2 双机输出完美（Paris ✓） | ✅ 排除 |
+| 量化路径 | `--quantization fp8` 通用与 `deepseek_v4_fp8` 专属**逐字节同乱码** | ✅ 排除 |
+| 分词器 | `--tokenizer-mode auto` 同乱码 | ✅ 排除 |
+| **vLLM v0.26.0 sm_121 FP8 kernel** | **换 nightly 输出立即恢复正常** | ❗ 根因 |
+
+**修复（当前生产配置）**：
+```bash
+# 双机均需：
+docker pull docker.m.daocloud.io/vllm/vllm-openai:nightly
+# digest 锁定（防漂移，2026-09-03）:
+#   docker.m.daocloud.io/vllm/vllm-openai@sha256:31a59e7704a9c2fcd967b84f649442c7d8b...
+# 启动命令与原版一致，仅镜像名换 nightly（v0.26.0 latest 标签勿再用，直至上游发修复版）
+```
+
+**验证记录（09-03 08:20）**：raw greedy → ` Paris.` ✓；chat 连贯中文 ✓；NAS 网关全链路（X-YYC3-Upstream: flagship-dsv4 + SSE 流式）✓；双机 104G/102G 对称。
