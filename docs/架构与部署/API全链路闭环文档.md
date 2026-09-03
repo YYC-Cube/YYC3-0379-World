@@ -778,7 +778,7 @@ ssh yyc3-45 "docker logs --tail 50 -f 0379-world-gateway-1"                     
 |---|------|-----------|------|------|
 | **1** | **A 线 P0：网关上游配置化 + 测试地基** | ✅ **完成（09-03 f6dd282）**：OPENAI_COMPATIBLE_UPSTREAMS env 池 + 云基址外部化 + 死代码清零 + pytest 零网络（15 用例） | 无 | mock 上游进 `/v1/models` ✓；CI test 绿 ✓ |
 | **2** | **A 线 P1：智能路由接线 + 熔断降级** | ✅ **完成（09-03）并已对公网**：分层优先级路由 + 熔断(3败摘30s半开) + 降级链 + X-YYC3-Upstream/Degraded 头；**api.0379.world → Traefik(Tailscale) → NAS 网关 → N1:8001 旗舰全链路验收通过（对话/SSE/响应头）** | #1 ✓ | 公网 chat 落 deepseek-v4-flash ✓（`x-yyc3-upstream: flagship-dsv4`）|
-| 3 | RAG 三件套容器化恢复 | 🔄 **进行中（09-03）**：0.6B 轻量版与旗舰同存（双机仅 16-19G 可用，8B 版待 KV 腾挪）；compose 入仓 `deploy/dgx/docker-compose-rag.yml` | 0.6B 模型下载 | `/v1/embeddings` 公网全链路通 |
+| 3 | RAG 三件套容器化恢复 | ✅ **完成（09-03）**：0.6B 版三容器上线（**N1 部署铁律**：N2 与 ray-worker 同节点必崩）；公网 `/v1/embeddings`(1024维) `/v1/rerank`(judge 打分排序) 全绿；8B 升级位待旗舰 KV 腾挪 | 完成 | `/v1/embeddings` 公网全链路通 ✓ |
 | 4 | 4 缺失端点补齐（A 线 P2） | ✅ **完成（09-03）**：`/v1/embeddings`(透传) `/v1/rerank`(Cohere⇆Jina 转换) `/v1/audio/transcriptions` `/v1/ocr`(multipart 透传)，capability 路由复用上游池+熔断降级+X头；9 测试例 | #1 ✓ | 7 端点契约齐 ✓（asr/ocr 真机待上游服务） |
 | 5 | Agents 容器化上线 | 代码模型无关（VLLM_ENDPOINT）→ compose 起 8 Agent+治理，env 指向 :8001 | #2 | :25600-07/:25700 健康 |
 | 6 | ~~ECS 网关副本双活~~ → **实况修正**：ECS=Traefik 边缘反代（api.0379.world→NAS:8000），NAS 网关即唯一计算实例且已服务公网；可选增强=ECS 本地副本（需连 NAS PG/Redis，性价比待评估） | 单 NAS 网关已是公网主实例 ✓ | Traefik 双上游（可选） |
@@ -800,7 +800,7 @@ ssh yyc3@100.65.64.49 'docker stop dsv4-head' && ssh yyc3@100.76.167.103 'docker
 ```
 
 > **文档维护**: YanYuCloudCube Team <admin@0379.email>
-> **最后验证**: 2026-09-03（v1.2 实况基线：**公网旗舰全链路通**（A线P0/P1落地+乱码修复）· 15 测试绿 · CI 五段绿+公网冒烟）
+> **最后验证**: 2026-09-03（v1.3：**公网 chat/embeddings/rerank 三能力全绿**（A线P0/P1/P2+RAG上线+乱码修复）· 24 测试绿 · CI 五段绿+公网冒烟+NAS SMOKE_PASS）
 > **下次审核建议**: 2026-09-30 或 A 线 P1 合入时
 
 **YanYuCloudCube** - 言启象限 | 语枢未来
