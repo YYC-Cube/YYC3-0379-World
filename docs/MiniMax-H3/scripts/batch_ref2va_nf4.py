@@ -30,7 +30,7 @@ VARIANT = "nf4"          # nf4 | pruned
 REF_IMAGES_DIR = Path("./ref_images")
 SUPPORTED_EXTS = [".jpg", ".jpeg", ".png", ".webp"]
 
-SEED_LIST = [42, 10, 24, 66, 88, 123]   # ⚠️ 保持单行，update_seed_list.py 依赖此格式
+SEED_LIST = [42, 10]   # ⚠️ 保持单行，update_seed_list.py 依赖此格式；首次验证控制规模
 
 PROMPT = """
 主体定义：<Subject1>是参考图中的人物，面部五官、发型、服装全程保持不变，脸型稳定，不会变脸。
@@ -98,8 +98,8 @@ def main():
     print(f"⏳ 加载 {VARIANT} Ref2VA 模型（一次性）...")
     pipe = load_pipeline(variant=VARIANT, pipeline="ref2va")
 
-    from PIL import Image
     from diffsynth.utils.data.audio_video import write_video_audio
+    from PIL import Image
 
     # ---------- 主循环 ----------
     for img_file in image_files:

@@ -776,14 +776,14 @@ ssh yyc3-45 "docker logs --tail 50 -f 0379-world-gateway-1"                     
 
 | # | 行动 | 现状→目标 | 依赖 | 验收 |
 |---|------|-----------|------|------|
-| **1** | **A 线 P0：网关上游配置化 + 测试地基** | 上游硬编码/测试打生产 → env 驱动 + pytest 零网络 | 无（纯代码，1-2 天） | mock 上游进 `/v1/models`；`make test` 绿 |
-| **2** | **A 线 P1：智能路由接线 + 熔断降级** | 前缀硬编码 → upstream pool 接入 **N1:8001 旗舰**（QSFP 主/Tailscale 备双地址） | #1 | 公网 chat 经网关落 deepseek-v4-flash；kill 旗舰 30s 切降级 |
+| **1** | **A 线 P0：网关上游配置化 + 测试地基** | ✅ **完成（09-03 f6dd282）**：OPENAI_COMPATIBLE_UPSTREAMS env 池 + 云基址外部化 + 死代码清零 + pytest 零网络（15 用例） | 无 | mock 上游进 `/v1/models` ✓；CI test 绿 ✓ |
+| **2** | **A 线 P1：智能路由接线 + 熔断降级** | ✅ **完成（09-03）并已对公网**：分层优先级路由 + 熔断(3败摘30s半开) + 降级链 + X-YYC3-Upstream/Degraded 头；**api.0379.world → Traefik(Tailscale) → NAS 网关 → N1:8001 旗舰全链路验收通过（对话/SSE/响应头）** | #1 ✓ | 公网 chat 落 deepseek-v4-flash ✓（`x-yyc3-upstream: flagship-dsv4`）|
 | 3 | RAG 三件套容器化恢复 | 旗舰独占期暂离 → vLLM 容器 serve Embedding/Reranker + ChromaDB 官方镜像（:8100/8101/8102 复用） | 旗舰 KV 限额调整或错峰 | `/v1/embeddings` 全链路通 |
 | 4 | 4 缺失端点补齐（A 线 P2） | embeddings/rerank/asr/ocr 不存在 → 代理端点 | #1 | 7 端点契约齐 |
 | 5 | Agents 容器化上线 | 代码模型无关（VLLM_ENDPOINT）→ compose 起 8 Agent+治理，env 指向 :8001 | #2 | :25600-07/:25700 健康 |
-| 6 | ECS 网关副本双活 | 单 NAS 网关 → ECS 同源副本（部署桥扩展） | #1 | Traefik 双上游 |
+| 6 | ~~ECS 网关副本双活~~ → **实况修正**：ECS=Traefik 边缘反代（api.0379.world→NAS:8000），NAS 网关即唯一计算实例且已服务公网；可选增强=ECS 本地副本（需连 NAS PG/Redis，性价比待评估） | 单 NAS 网关已是公网主实例 ✓ | Traefik 双上游（可选） |
 | 7 | 新模型注册 | GLM-5.3-Flash（量化后 TP=2 升级位）/ Qwen3.8-Flash-Next（轻旗舰降级位）/ MiniMax-H3-NF4（**新增视频生成端点** `/v1/videos` 候选） | 下载完成+量化 | 各自冒烟 |
-| 8 | 观测真实化 | stats/monitor 假数据 → 真实 EWMA + Grafana | #2 | 面板出真数 |
+| 8 | 观测真实化 | ✅ **API 侧完成（09-03）**：models/stats 真实 EWMA、models/errors 真数据、router/stats 并池快照、ws/monitor 去假数据；Grafana 面板字段对齐待做 | #2 ✓ | 面板出真数（API ✓/Grafana 待） |
 
 **旗舰运维速查（衔接 §9.4-bis）**：
 ```bash
@@ -795,10 +795,12 @@ curl http://100.65.64.49:8001/v1/models          # → deepseek-v4-flash
 # 停机（干净关停）
 ssh yyc3@100.65.64.49 'docker stop dsv4-head' && ssh yyc3@100.76.167.103 'docker stop dsv4-worker'
 # 注意：容器 /tmp 不持久——启动脚本已锚定 ~/dsv4_head.sh(脚本在 /home/yyc3)，误删脚本会导致 docker start 挂载失败（2026-09-03 实测踩坑）
+# ⚠️ 镜像铁律（09-03 事故）：vllm/vllm-openai:v0.26.0(latest) 在 GB10/sm_121 上 FP8 kernel 输出乱码
+#    —— 必须 docker.m.daocloud.io/vllm/vllm-openai:nightly（digest 31a59e77…），排除链见 deploy/dgx/tp2-ray-实测验证模式.md
 ```
 
 > **文档维护**: YanYuCloudCube Team <admin@0379.email>
-> **最后验证**: 2026-09-03（v1.1 实况基线：公网 200 · 旗舰 TP=2 · CI GitOps 绿）
+> **最后验证**: 2026-09-03（v1.2 实况基线：**公网旗舰全链路通**（A线P0/P1落地+乱码修复）· 15 测试绿 · CI 五段绿+公网冒烟）
 > **下次审核建议**: 2026-09-30 或 A 线 P1 合入时
 
 **YanYuCloudCube** - 言启象限 | 语枢未来

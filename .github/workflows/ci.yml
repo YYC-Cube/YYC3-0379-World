@@ -225,3 +225,18 @@ jobs:
             fi
           done
           [ "$FAIL" = "0" ] && echo "部署验证通过" || { echo "部署验证失败——请检查 NAS auto-deploy.log 与 Mac watch.log"; exit 1; }
+
+      - name: 旗舰公网冒烟（上游池路由 + 响应头契约）
+        env:
+          PROD_API_KEY: ${{ secrets.PROD_API_KEY }}
+        run: |
+          echo "── /v1/models 含旗舰 ──"
+          MODELS=$(curl -s -m 20 -H "X-API-Key: $PROD_API_KEY" https://api.0379.world/v1/models)
+          echo "$MODELS" | python3 -c "import json,sys; ids=[m['id'] for m in json.load(sys.stdin)]; sys.exit(0 if 'deepseek-v4-flash' in ids else 1)" \
+            && echo "✅ deepseek-v4-flash 已在公网模型列表" || { echo "❌ 公网模型列表缺旗舰"; exit 1; }
+          echo "── 旗舰对话 + X-YYC3-Upstream 头 ──"
+          curl -s -m 180 -D /tmp/h -o /tmp/r -H "X-API-Key: $PROD_API_KEY" -H "Content-Type: application/json" \
+            -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"回复ok即可"}],"max_tokens":16}' \
+            https://api.0379.world/v1/chat/completions
+          grep -qi "^x-yyc3-upstream" /tmp/h && echo "✅ 头: $(grep -i '^x-yyc3-upstream' /tmp/h | tr -d '\r')" || { echo "❌ 缺 X-YYC3-Upstream 头"; exit 1; }
+          python3 -c "import json;d=json.load(open('/tmp/r'));c=d['choices'][0]['message']['content'];assert c.strip();print('✅ 回复:', c[:40])" || { echo "❌ 响应异常"; cat /tmp/r; exit 1; }

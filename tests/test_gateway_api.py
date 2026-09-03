@@ -46,7 +46,7 @@ os.environ.update(
     }
 )
 
-import asyncio  # noqa: E402
+import time  # noqa: E402
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -107,9 +107,7 @@ def test_chat_requires_auth(client):
 
 
 def test_chat_bad_key(client):
-    r = client.post(
-        "/v1/chat/completions", json=_chat_body(), headers={"X-API-Key": "wrong"}
-    )
+    r = client.post("/v1/chat/completions", json=_chat_body(), headers={"X-API-Key": "wrong"})
     assert r.status_code in (401, 403)
 
 
@@ -233,9 +231,7 @@ def test_circuit_breaker_opens_and_falls_back():
         for i in range(3):
             body = _chat_body()
             body["messages"][0]["content"] = f"breaker probe {i}"
-            r = c.post(
-                "/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"}
-            )
+            r = c.post("/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"})
             assert r.status_code == 200, r.text
             assert r.headers.get("x-yyc3-degraded") == "flagship"
     assert flag.consecutive_failures == 3
@@ -246,9 +242,7 @@ def test_circuit_breaker_opens_and_falls_back():
     with TestClient(app) as c:
         body = _chat_body()
         body["messages"][0]["content"] = "post-breaker probe"
-        r = c.post(
-            "/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"}
-        )
+        r = c.post("/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"})
         assert r.status_code == 200, r.text
     assert not fail.called, "熔断摘除后不应再请求旗舰"
     assert r.headers.get("x-yyc3-degraded") is None
@@ -288,3 +282,111 @@ def test_models_stats_real_ewma(client):
     assert r.status_code == 200
     by_id = {m["model_id"]: m for m in r.json()}
     assert "flagship" in by_id  # 上游池真实数据（DB 不可达也不影响）
+
+
+# ── 补强：流式 / 参数透传 / 熔断恢复 / 灰度开关 ─────────────
+
+
+@pytest.mark.asyncio
+async def test_stream_sse_and_upstream_disclosure(client, monkeypatch):
+    """流式：SSE 格式正确、首 chunk 披露 _yyc3_upstream、以 [DONE] 收尾"""
+    from app.api import chat as chat_mod
+
+    async def _fake_stream(base_url, model, messages, api_key="", **kw):
+        yield {
+            "id": "chatcmpl-s",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "你好"},
+                    "finish_reason": None,
+                }
+            ],
+        }
+        yield {
+            "id": "chatcmpl-s",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+
+    monkeypatch.setattr(chat_mod.openai_compatible, "chat_completion_stream", _fake_stream)
+
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        headers=_auth(),
+        json={**_chat_body(), "stream": True},
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers.get("x-yyc3-upstream") == "flagship"
+        body = "".join(resp.iter_text())
+
+    lines = [ln for ln in body.split("\n\n") if ln.strip()]
+    assert lines[-1] == "data: [DONE]"
+    import json as _json
+
+    first = _json.loads(lines[0][6:])
+    assert first["choices"][0]["delta"]["content"] == "你好"
+    assert first["_yyc3_upstream"] == "flagship"
+
+
+@respx.mock
+def test_params_passthrough_to_upstream(client):
+    """上游收到的请求体：model/messages/max_tokens/temperature 原样透传"""
+    route = respx.post("http://flagship.test:8001/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_upstream_ok())
+    )
+    body = _chat_body()
+    body["max_tokens"] = 77
+    body["temperature"] = 0.2
+    r = client.post("/v1/chat/completions", json=body, headers=_auth())
+    assert r.status_code == 200
+    sent = _json_loads(route.calls.last.request.content)
+    assert sent["model"] == "deepseek-v4-flash"
+    assert sent["messages"][0]["content"].startswith("用一句话")
+    assert sent["max_tokens"] == 77
+    assert sent["temperature"] == 0.2
+
+
+def test_router_disabled_falls_to_ollama():
+    """ROUTER_ENABLED=false 灰度回退：上游池被绕过，旗舰模型名也走 Ollama"""
+    from app.api.chat import _select_backend
+    from app.config import settings as _settings
+    from app.services import ollama as _ollama
+
+    old = _settings.router_enabled
+    try:
+        _settings.router_enabled = False
+        backend, _, btype = _select_backend("deepseek-v4-flash")
+        assert backend is _ollama and btype == "ollama"
+    finally:
+        _settings.router_enabled = old
+
+
+def test_breaker_success_closes():
+    """熔断 OPEN 后时间窗过 → 半开放行 → 一次成功 → 恢复 CLOSED"""
+    import app.services.upstream_registry as ur
+
+    registry.load_from_env()
+    flag = registry.upstreams["flagship"]
+    try:
+        flag.breaker_state = "open"
+        flag.breaker_opened_at = time.time() - (ur.BREAKER_OPEN_SECONDS + 1)
+        assert registry.available(flag) is True  # half_open 探测放行
+        registry.release(flag, 120.0, True)
+        assert flag.breaker_state == "closed"
+        assert flag.consecutive_failures == 0
+    finally:
+        flag.breaker_state = "closed"
+        flag.consecutive_failures = 0
+
+
+def _json_loads(raw):
+    import json as _json
+
+    return _json.loads(raw)
