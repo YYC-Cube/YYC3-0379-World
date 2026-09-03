@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from typing import List
 
 import psutil
-from app.api import chat, documents, knowledge_base, mcp, rag, websocket
+from app.api import chat, documents, knowledge_base, mcp, proxy, rag, websocket
 from app.config import settings
 from app.db import ModelRegistry, async_session
 
@@ -220,6 +220,7 @@ app.include_router(websocket.router, tags=["🔌 WebSocket"])
 app.include_router(knowledge_base.router, tags=["📚 知识库管理"])
 app.include_router(documents.router, tags=["📄 文档管理"])
 app.include_router(rag.router, tags=["🔍 RAG检索"])
+app.include_router(proxy.router, tags=["🧩 能力代理(embeddings/rerank/asr/ocr)"])
 
 
 @app.get("/health")
@@ -538,6 +539,8 @@ async def list_models():
     from app.services.upstream_registry import registry as upstream_registry
 
     for u in upstream_registry.upstreams.values():
+        if u.capability != "chat":
+            continue
         for m in u.models:
             if "*" in m or "?" in m:
                 m = m.replace("*", "").replace("?", "") or u.name

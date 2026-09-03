@@ -778,8 +778,8 @@ ssh yyc3-45 "docker logs --tail 50 -f 0379-world-gateway-1"                     
 |---|------|-----------|------|------|
 | **1** | **A 线 P0：网关上游配置化 + 测试地基** | ✅ **完成（09-03 f6dd282）**：OPENAI_COMPATIBLE_UPSTREAMS env 池 + 云基址外部化 + 死代码清零 + pytest 零网络（15 用例） | 无 | mock 上游进 `/v1/models` ✓；CI test 绿 ✓ |
 | **2** | **A 线 P1：智能路由接线 + 熔断降级** | ✅ **完成（09-03）并已对公网**：分层优先级路由 + 熔断(3败摘30s半开) + 降级链 + X-YYC3-Upstream/Degraded 头；**api.0379.world → Traefik(Tailscale) → NAS 网关 → N1:8001 旗舰全链路验收通过（对话/SSE/响应头）** | #1 ✓ | 公网 chat 落 deepseek-v4-flash ✓（`x-yyc3-upstream: flagship-dsv4`）|
-| 3 | RAG 三件套容器化恢复 | 旗舰独占期暂离 → vLLM 容器 serve Embedding/Reranker + ChromaDB 官方镜像（:8100/8101/8102 复用） | 旗舰 KV 限额调整或错峰 | `/v1/embeddings` 全链路通 |
-| 4 | 4 缺失端点补齐（A 线 P2） | embeddings/rerank/asr/ocr 不存在 → 代理端点 | #1 | 7 端点契约齐 |
+| 3 | RAG 三件套容器化恢复 | 🔄 **进行中（09-03）**：0.6B 轻量版与旗舰同存（双机仅 16-19G 可用，8B 版待 KV 腾挪）；compose 入仓 `deploy/dgx/docker-compose-rag.yml` | 0.6B 模型下载 | `/v1/embeddings` 公网全链路通 |
+| 4 | 4 缺失端点补齐（A 线 P2） | ✅ **完成（09-03）**：`/v1/embeddings`(透传) `/v1/rerank`(Cohere⇆Jina 转换) `/v1/audio/transcriptions` `/v1/ocr`(multipart 透传)，capability 路由复用上游池+熔断降级+X头；9 测试例 | #1 ✓ | 7 端点契约齐 ✓（asr/ocr 真机待上游服务） |
 | 5 | Agents 容器化上线 | 代码模型无关（VLLM_ENDPOINT）→ compose 起 8 Agent+治理，env 指向 :8001 | #2 | :25600-07/:25700 健康 |
 | 6 | ~~ECS 网关副本双活~~ → **实况修正**：ECS=Traefik 边缘反代（api.0379.world→NAS:8000），NAS 网关即唯一计算实例且已服务公网；可选增强=ECS 本地副本（需连 NAS PG/Redis，性价比待评估） | 单 NAS 网关已是公网主实例 ✓ | Traefik 双上游（可选） |
 | 7 | 新模型注册 | GLM-5.3-Flash（量化后 TP=2 升级位）/ Qwen3.8-Flash-Next（轻旗舰降级位）/ MiniMax-H3-NF4（**新增视频生成端点** `/v1/videos` 候选） | 下载完成+量化 | 各自冒烟 |

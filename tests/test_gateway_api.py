@@ -56,6 +56,16 @@ from app.services.upstream_registry import registry  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _pool_context():
+    """每个测试函数前：本文件的池写入 settings 并重载 registry（跨文件互不污染）"""
+    from app.config import settings as _settings
+
+    _settings.openai_compatible_upstreams = _POOL
+    registry.load_from_env()
+    yield
+
+
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:

@@ -1,0 +1,62 @@
+# file: docker-compose-rag.yml
+# description: RAG 三件套（Embedding/Reranker/ChromaDB）容器化编排——yyc3-102 N2 部署
+# author: YanYuCloudCube Team
+# version: v1.0.0
+# created: 2026-09-03
+# status: active
+# tags: [rag],[embedding],[reranker],[chromadb]
+#
+# 设计决策（2026-09-03 实勘）：
+#   - 旗舰 TP=2 独占期双机可用内存仅 16-19G → 先上 0.6B 轻量版（各 ~3G，与旗舰同存安全）
+#   - 8B 版切换：改 image 挂载路径为 Qwen3-Embedding-8B/Reranker-8B + util 0.16
+#     （前提=旗舰 KV 限额腾挪，见部署指南 §15.3）
+#   - 端口复用历史约定 :8100/:8101/:8102（N2 systemd 旧位）
+#   - 网关侧：OPENAI_COMPATIBLE_UPSTREAMS 加 capability=embedding/rerank 条目即接入
+#
+# 启动: docker compose -f docker-compose-rag.yml up -d
+# 验收: curl :8100/v1/embeddings | curl :8101/score | curl :8102/api/v2/heartbeat
+
+services:
+  embedding:
+    image: docker.m.daocloud.io/vllm/vllm-openai:nightly
+    container_name: yyc3-embedding
+    network_mode: host
+    ipc: host
+    restart: unless-stopped
+    volumes:
+      - /home/yyc3/yyc3-102-projects/models/Qwen3-Embedding-0.6B:/model:ro
+    command: >
+      vllm serve /model
+      --served-model-name qwen3-embedding-0.6b
+      --task embed
+      --port 8100
+      --max-model-len 8192
+      --gpu-memory-utilization 0.05
+
+  reranker:
+    image: docker.m.daocloud.io/vllm/vllm-openai:nightly
+    container_name: yyc3-reranker
+    network_mode: host
+    ipc: host
+    restart: unless-stopped
+    volumes:
+      - /home/yyc3/yyc3-102-projects/models/Qwen3-Reranker-0.6B:/model:ro
+    command: >
+      vllm serve /model
+      --served-model-name qwen3-reranker-0.6b
+      --task score
+      --port 8101
+      --max-model-len 8192
+      --gpu-memory-utilization 0.05
+
+  chroma:
+    image: docker.m.daocloud.io/chromadb/chroma:latest
+    container_name: yyc3-chroma
+    restart: unless-stopped
+    ports:
+      - "8102:8000"
+    volumes:
+      - /home/yyc3/chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
