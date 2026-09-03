@@ -27,3 +27,21 @@ if "app" not in sys.modules:
 # 供测试文件直接 import app.* 时同源
 if _API_DIR not in sys.path:
     sys.path.insert(0, _API_DIR)
+
+
+# ── 测试密闭性：缓存旁路（CI 有真 Redis，命中缓存会让请求绕过后端破坏断言）──
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_cache(monkeypatch):
+    from app.utils import cache_manager
+
+    async def _no_get(key):
+        return None
+
+    async def _no_set(key, value, ttl=None, tags=None):
+        return None
+
+    monkeypatch.setattr(cache_manager, "get", _no_get)
+    monkeypatch.setattr(cache_manager, "set", _no_set)
