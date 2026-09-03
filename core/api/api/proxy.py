@@ -42,12 +42,30 @@ router = APIRouter()
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0, read=120.0)
 
 # capability → 上游请求路径
+# rerank 走生成式打分（Qwen3-Reranker 官方用法）：指令模板 + completions logprobs 取 yes 概率
 _CAP_PATH = {
     "embedding": "/v1/embeddings",
-    "rerank": "/v1/score",
+    "rerank": "/v1/completions",
     "asr": "/v1/audio/transcriptions",
     "ocr": "/v1/ocr",
 }
+
+# Qwen3-Reranker 官方 judge 三段式模板（生成式打分：取 yes token 概率）
+_RERANK_PREFIX = (
+    "<|im_start|>system\nJudge whether the Document meets the requirements based on "
+    'the Query and the Instruct provided. Note that the answer can only be "yes" or "no".'
+    "<|im_end|>\n<|im_start|>user\n"
+)
+_RERANK_INSTRUCT = "Given a web search query, retrieve relevant passages that answer the query"
+_RERANK_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+
+
+def _rerank_prompt(query: str, doc: str) -> str:
+    middle = (
+        f"<Instruct>{_RERANK_INSTRUCT}</Instruct>"
+        f"\n<Query>{query}</Query>\n<Document>{doc}</Document>"
+    )
+    return _RERANK_PREFIX + middle + _RERANK_SUFFIX
 
 
 class EmbeddingRequest(BaseModel):
@@ -133,6 +151,19 @@ def _json_or_502(payload: Dict, upstream: Upstream, degraded: List[str], status_
     return JSONResponse(content=payload, status_code=status_hint, headers=headers)
 
 
+def _yes_probability(choice: Dict) -> float:
+    """从 completions choice 的 top_logprobs 里提取 yes 概率（Qwen3-Reranker 语义）"""
+    import math
+
+    top = (choice.get("logprobs") or {}).get("top_logprobs") or []
+    if not top:
+        return 0.0
+    for tok, lp in (top[0] or {}).items():
+        if tok.strip().lower() == "yes":
+            return math.exp(lp)
+    return 0.0
+
+
 # ── 1) POST /v1/embeddings ─────────────────────────────────
 
 
@@ -158,20 +189,23 @@ async def embeddings(req: EmbeddingRequest):
 
 @router.post("/v1/rerank")
 async def rerank(req: RerankRequest):
-    """重排序（Cohere 风格对外；上游 vLLM --task score /v1/score Jina 格式）"""
+    """重排序（Cohere 风格对外；上游 Qwen3-Reranker 生成式打分）"""
     try:
+        # Qwen3-Reranker 生成式打分：批量 prompt → completions(max_tokens=1, logprobs)
+        prompts = [_rerank_prompt(req.query, doc) for doc in req.documents]
         score_body = {
             "model": req.model,
-            "text_1": req.query,
-            "text_2": req.documents,
+            "prompt": prompts,
+            "max_tokens": 1,
+            "temperature": 0,
+            "logprobs": 20,
         }
         result, u, degraded = await _forward("rerank", json_body=score_body)
-        # vLLM /score 响应: {"data": [{"index": i, "score": s}, ...]} → Cohere results
-        raw = result.get("data", result.get("results", []))
-        items = [
-            {"index": int(it.get("index", i)), "relevance_score": float(it.get("score", 0.0))}
-            for i, it in enumerate(raw)
-        ]
+        choices = result.get("choices", [])
+        items = []
+        for i, ch in enumerate(choices):
+            score = _yes_probability(ch)
+            items.append({"index": i, "relevance_score": score})
         items.sort(key=lambda x: x["relevance_score"], reverse=True)
         top_n = req.top_n or len(items)
         payload = {

@@ -75,7 +75,6 @@ os.environ.update(
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 import respx  # noqa: E402
-from app.config import settings as _settings  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services.upstream_registry import registry  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -159,22 +158,21 @@ def test_embeddings_requires_auth(client):
     assert r.status_code in (401, 403)
 
 
-# ── rerank：Cohere ⇆ Jina 转换 ──────────────────────────────
+# ── rerank：Cohere 对外 ⇆ 生成式打分 ──────────────────────
 
 
 @respx.mock
 def test_rerank_translation(client):
-    """对外 Cohere 风格 → 上游 vLLM /score Jina 格式；返回按分数降序"""
-    registry.load_from_env()
-    route = respx.post("http://rerank.test:8101/v1/score").mock(
+    """对外 Cohere 风格 → 上游生成式打分(/v1/completions+logprobs)；按 yes 概率降序"""
+    route = respx.post("http://rerank.test:8101/v1/completions").mock(
         return_value=httpx.Response(
             200,
             json={
-                "object": "list",
-                "data": [
-                    {"index": 0, "score": 0.10},
-                    {"index": 1, "score": 0.95},
-                    {"index": 2, "score": 0.50},
+                "object": "text_completion",
+                "choices": [
+                    {"index": 0, "logprobs": {"top_logprobs": [{"no": -2.3, "yes": -0.1}]}},
+                    {"index": 1, "logprobs": {"top_logprobs": [{"yes": -0.05, "no": -3.0}]}},
+                    {"index": 2, "logprobs": {"top_logprobs": [{"no": -0.2}]}},
                 ],
                 "usage": {"prompt_tokens": 9, "total_tokens": 9},
             },
@@ -192,12 +190,15 @@ def test_rerank_translation(client):
     )
     assert r.status_code == 200, r.text
     sent = json.loads(route.calls.last.request.content)
-    assert sent["text_1"] == "什么是GB10"
-    assert sent["text_2"] == ["答案A", "GB10是Grace Blackwell", "无关C"]
+    assert len(sent["prompt"]) == 3  # 每文档一条指令模板
+    assert "什么是GB10" in sent["prompt"][1]
+    assert "GB10是Grace Blackwell" in sent["prompt"][1]
+    assert sent["prompt"][1].startswith("<|im_start|>system")  # 官方 judge 模板
     body = r.json()
-    assert body["results"][0]["index"] == 1  # 0.95 最高
-    assert body["results"][0]["relevance_score"] == pytest.approx(0.95)
+    assert body["results"][0]["index"] == 1  # yes=-0.05 概率最高
+    assert body["results"][0]["relevance_score"] == pytest.approx(0.951, abs=0.01)
     assert len(body["results"]) == 2  # top_n=2
+    assert body["results"][1]["index"] == 0  # yes=-0.1 次之
     assert r.headers.get("x-yyc3-upstream") == "rerank-main"
 
 

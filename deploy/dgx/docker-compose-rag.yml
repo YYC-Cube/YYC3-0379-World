@@ -22,13 +22,14 @@ services:
     container_name: yyc3-embedding
     network_mode: host
     ipc: host
+    gpus: all
     restart: unless-stopped
     volumes:
       - /home/yyc3/yyc3-102-projects/models/Qwen3-Embedding-0.6B:/model:ro
+    # nightly 镜像 ENTRYPOINT 即 ["vllm","serve"]——command 勿再写 vllm serve 前缀
     command: >
-      vllm serve /model
+      /model
       --served-model-name qwen3-embedding-0.6b
-      --task embed
       --port 8100
       --max-model-len 8192
       --gpu-memory-utilization 0.05
@@ -38,13 +39,13 @@ services:
     container_name: yyc3-reranker
     network_mode: host
     ipc: host
+    gpus: all
     restart: unless-stopped
     volumes:
       - /home/yyc3/yyc3-102-projects/models/Qwen3-Reranker-0.6B:/model:ro
     command: >
-      vllm serve /model
+      /model
       --served-model-name qwen3-reranker-0.6b
-      --task score
       --port 8101
       --max-model-len 8192
       --gpu-memory-utilization 0.05
