@@ -6,6 +6,12 @@
 
 ### 全链路 AI 模型网关 · 智能协同平台
 
+> **🟢 09-14 生产实况**（详见 `docs/架构与部署/API全链路闭环文档.md` §十-ter）：
+> 生产域名 `https://api.0379.world`（ECS Traefik 边缘 → NAS 网关:8000 → DGX 双机推理池）；
+> **公网三能力** chat(`deepseek-v4-flash` TP=2 双 GB10)/embeddings(1024维)/rerank 全绿，响应头 `X-YYC3-Upstream` 契约；
+> 上游池 env 化（`OPENAI_COMPATIBLE_UPSTREAMS`）+ 熔断降级 + 24 pytest + CI 五段 + 四层冒烟保障；
+> 8 Agent+治理中枢容器化运行于 N2（:25600-07/:25700）。
+
 > **_YanYuCloudCube_**
 > _言启象限 | 语枢未来_
 > **_Words Initiate Quadrants, Language Serves as Core for Future_**
