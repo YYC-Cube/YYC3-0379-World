@@ -12,7 +12,7 @@ category: documentation
 
 # YYC3-0379-World API 全链路闭环文档
 
-> **版本**: v1.1.0 | **更新日期**: 2026-09-03（原 v1.0.0 2026-08-30）
+> **版本**: v1.4.0 | **更新日期**: 2026-09-14（v1.1 实况改版 09-03；v1.3 三能力 09-12；v1.4 全端实勘对齐 09-14）
 > **网关版本**: v2.0.0 | **生产域名**: `https://api.0379.world`
 > **文档定位**: 面向开发、测试、运维三团队的单一事实来源 (Single Source of Truth)
 >
@@ -769,6 +769,33 @@ ssh yyc3-45 "docker logs --tail 50 -f 0379-world-gateway-1"                     
 ```
 
 ---
+
+## 十-ter、全端实况快照（2026-09-14 SSH 实勘基准）
+
+> 本节为最新实况锚点（三文档分头引用此节，避免重复维护）；执行细节见《DGX-Spark双机推理部署指南》与 `deploy/dgx/tp2-ray-实测验证模式.md` 攻坚档案。
+
+### 设备-容器-端口实况（实测 200/healthy）
+
+| 节点 | 角色 | 容器/服务 | 实况 |
+|------|------|-----------|------|
+| **N1 yyc3-101** | 旗舰推理+RAG | `dsv4-head`(:8001 TP=2 head) / `yyc3-embedding`(:8100) / `yyc3-reranker`(:8101) | 三共存稳定；**vllm nightly 镜像（digest 31a59e77）**，v0.26.0 在 sm_121 FP8 kernel 乱码已证 |
+| **N2 yyc3-102** | 旗舰 worker+Agents+Chroma | `dsv4-worker` / 8×`agent-*`(:25600-07) + `yyc3-governance-hub`(:25700) / `yyc3-chroma`(:8102) | Agents 全接旗舰（`VLLM_ENDPOINT=http://10.100.168.2:8001/v1` QSFP 直连） |
+| **NAS yyc3-45** | 网关计算主实例 | `0379-world-gateway-1`(:8000) + postgres/redis + gitbucket/wireguard | 池 3 上游（flagship-dsv4/embed-n1/rerank-n1，均 Tailscale） |
+| **ECS yyc3-33** | 边缘反代 | `docker-traefik-1`(80/443, Let's Encrypt) | `dynamic.yml: gateway-api→http://100.65.172.88:8000`——**无网关副本** |
+| 公网 | — | `https://api.0379.world` | health=200；chat/embeddings/rerank 三能力全绿（X-YYC3-Upstream 头契约） |
+
+### 09-03 → 09-14 关键事件（影响架构记录）
+
+1. **A线网关 P0/P1/P2 全落地**：上游池 env 化+三段式路由+熔断降级+四能力端点（embeddings 透传/rerank Cohere⇆生成式打分/asr/ocr 待上游）；24 pytest + CI 五段绿 + NAS SMOKE + 公网冒烟四层保障
+2. **旗舰乱码根因**：vLLM v0.26.0 sm_121 FP8 kernel 缺陷 → nightly 修复（铁律：v0.26.0 勿用）
+3. **"容器被外部停止"结案**：vLLM fatal 自退（GPU 竞态→NVRM OOM→EngineCore fatal→有序 shutdown exit 0）；非 Agent/人为（auditd+canary 三兄弟 38h 存活佐证；罗网留置）
+4. **GLM-5.3-Flash-NVFP4 终判**：92-95G/rank + vLLM/ray 在 121G UMA 双机**容量硬约束**（五轮双格式证毕）；替代路线 AWQ-INT4(~50G/rank)/vLLM 演进/硬件代际；资产双端留档
+5. **SSH 全网格 8/8**：NAS 家目录 777+StrictModes 根因修复（chmod 755 + watch.sh/rebuild 双护栏）；N2 `id_ed25519` 带口令→自动化用 `id_ed25519_shared`
+6. **运维铁律新增**：RAG 只能与 head 同机（N2 与 ray-worker 必崩）；先旗舰后 RAG 启动序；nightly ENTRYPOINT=[vllm serve] 勿写前缀
+
+### 十一清单状态同步（09-14）
+
+#1/#2/#3/#4/#8 已完成（见 §十一）；#5 Agents 容器化 **已完成**（上表）；#6 实况修正（ECS=边缘反代，无双活需求）；#7 新模型注册：GLM 封存待替代路线，Qwen3.8-Flash-Next/MiniMax-H3 下载中。
 
 ## 十一、实况落地行动清单（v1.1 · 2026-09-03，衔接全链路）
 

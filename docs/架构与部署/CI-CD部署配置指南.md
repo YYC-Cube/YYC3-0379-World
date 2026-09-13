@@ -26,13 +26,15 @@ lint → test + security(并行) → build → deploy → 健康验证
 
 ## 一、当前状态
 
-| Job | 状态 | 说明 |
+> **09-14 状态修正**：下表为 09-02 历史状态，仅存档。**现行实况**——CI 五段全绿（lint/24 pytest/security/build/部署验证）；build 已解锁；deploy 演进为 **GitOps 模式**（Mac 部署桥 `~/yyc3-deploy/watch.sh` cron */2min 对比 NAS HEAD → push nasdeploy → NAS `rebuild-gateway.sh`（尾带 SMOKE 冒烟）→ CI 部署验证 job 对公网做旗舰冒烟（PROD_API_KEY secret）。部署通道细节见《API全链路闭环文档》§九与 §十-ter。
+
+| Job | 状态（09-02 历史） | 说明 |
 |-----|------|------|
 | 代码质量检查 | ✅ 通过 | black + isort + flake8 + mypy |
 | 安全扫描 | ✅ 通过 | safety + bandit |
-| 单元测试 | ✅ 通过 | pytest + coverage |
-| 构建镜像 | ⬜ 跳过 | 缺少 Docker Hub 凭证 |
-| 部署生产环境 | ⬜ 跳过 | 依赖 build + NAS 网络不可达 |
+| 单元测试 | ✅ 通过 | pytest + coverage（现 24 用例含 proxy 四端点） |
+| 构建镜像 | ⬜ 跳过（历史） | 后已解锁 ✓ |
+| 部署生产环境 | ⬜ 跳过（历史） | 后演进为 GitOps 桥 ✓ |
 
 ---
 

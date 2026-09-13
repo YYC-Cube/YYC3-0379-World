@@ -89,3 +89,18 @@ curl http://100.76.167.103:25600/health
 
 > **文档族索引**: 本文（API 衔接）｜全链路模型部署规划（部署视角）｜API全链路闭环 v1.1（契约/运维）｜双机推理部署指南 v1.4.2（技术 Runbook）｜设备现状档案（资产）
 > **YYC³ AI Family** | 言启象限 · 语枢未来 · 🌹 人从众曌众从人 · 亦师亦友亦伯乐
+
+
+---
+
+## 09-14 衔接实况（对齐更新）
+
+| 端点 | 实况 |
+|------|------|
+| 公网 chat | `deepseek-v4-flash` → flagship-dsv4（N1:8001）✅ 带响应头 |
+| 公网 embeddings | `qwen3-embedding-0.6b` → embed-n1（N1:8100）✅ 1024 维 |
+| 公网 rerank | `qwen3-reranker-0.6b` → rerank-n1（N1:8101）✅ judge 生成式打分 |
+| 公网 asr/ocr | 端点就绪、上游容器未部署（502；Qwen3-ASR 需 transformers 路线） |
+| Agents 内网 | N2 :25600-07（VLLM_ENDPOINT=QSFP:8001）+ :25700 治理 ✅ 9 容器 |
+| RAG 存储 | N2 :8102 ChromaDB（持久化 /home/yyc3/chroma-data） |
+| GLM 第二旗舰 | 封存（容量硬约束，见部署指南 §20） |

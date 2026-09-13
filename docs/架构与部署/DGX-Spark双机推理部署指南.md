@@ -896,3 +896,14 @@ N2 worker: ray start --address=10.100.168.2:6379 --block
 ### 19.4 后续衔接
 
 Phase 2 = 三组件容器化归位（§15.3）+ agents env 切 :8001（§17.3 两行改动）；Phase 3 = GLM-5.3-Flash 量化线（328G 下载完成后 §八产线）。
+
+
+---
+
+## §20 GLM-5.3-Flash-NVFP4 第二旗舰——终判封存（2026-09-14）
+
+**结论：容量硬约束，非配置可解。** 92-95G/rank + vLLM/ray 栈在 121G UMA 双机不可行（五轮排障、modelopt 与 compressed-tensors 双格式证毕；对照 DSv4 74.8G/rank 留 26G 活口故稳）。完整攻坚档案（含 ray GCS auth 次生根因、page cache OOM 实锤、脚本族、尸检日志）见 `deploy/dgx/tp2-ray-实测验证模式.md`。
+
+**资产留档**：双端 nvidia 版 190.4G + N1 RedHatAI 版 184.3G 副本；启动脚本 `~/glm_head*.sh`/`~/glm_worker*.sh`；NAS 池未注入 glm 条目（从未影响生产）。
+
+**替代路线（待拍板）**：① AWQ-INT4 版 ~100G（50G/rank 从容）② vLLM sleep-mode 演进 ③ 硬件代际升级。
