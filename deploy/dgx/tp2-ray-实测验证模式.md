@@ -61,3 +61,27 @@ docker pull docker.m.daocloud.io/vllm/vllm-openai:nightly
 ```
 
 **验证记录（09-03 08:20）**：raw greedy → ` Paris.` ✓；chat 连贯中文 ✓；NAS 网关全链路（X-YYC3-Upstream: flagship-dsv4 + SSE 流式）✓；双机 104G/102G 对称。
+
+---
+
+## GLM-5.3-Flash-NVFP4 双机部署攻坚档案（09-13/14，进行中）
+
+### 资产
+- `nvidia/GLM-5.3-Flash-NVFP4`（190.4G/33sh，modelopt 格式）双端就位：N1 `~/yyc3-101-projects/models/`、N2 `~/yyc3-102-projects/models/`
+- `RedHatAI/GLM-5.3-Flash-NVFP4`（184.3G/11sh，**compressed-tensors/recipe.yaml 格式**）N1 `GLM-5.3-Flash-NVFP4-RH/` 下载中——B 线主攻
+- 脚本：N1 `~/glm_head.sh`、N2 `~/glm_worker.sh`（ray :6380 / serve :8002 / patch ray 0.99 / object-store 2G）、编排 `~/glm-tp2-deploy.sh`、worker 尸检 `~/glm_worker_autopsy_v5.log`
+
+### 排障链（五轮）
+| 轮 | 参数 | 结果 | 根因 |
+|---|------|------|------|
+| 1 | util 0.72 | KV 无空间 | 每 rank 权重 95.2G > 87.6G 预算 |
+| 2 | util 0.85 | ray 节点级 OOM 杀（系统内存 95% 线） | GB10 UMA：GPU 驻留=系统内存；ray 阈值硬编码 0.95 |
+| 3 | patch 0.99 + obj-store 2G + drop_caches | worker 未启动 | 脚本 sed 插在 `exec` 后（exec sed 事故） |
+| 4 | 修正脚本 | ActorHandleNotFound 循环 | 未留 worker 日志（教训：先存后删） |
+| 5 | util 0.86 + enforce-eager | 仍循环 | **尸检实锤：raylet `GCS authentication error`**（session token 失配自持循环） |
+
+### B 线要点（下窗口）
+1. RH 版 compressed-tensors 走 vLLM 原生 NVFP4 路径（绕开 TransformersMultiModalMoE）+ 每 rank 92.2G（省 3G）
+2. **全新 ray 集群**：启动前双端清残留（容器内 `rm -rf /tmp/ray`；head/worker 全新起）——针对 GCS auth 根因
+3. util 0.84 + len 16384 + kv fp8 + patch 0.99 起步
+4. **轮换制**：执行前停 dsv4-head/worker + RAG；失败即回滚（Runbook §19）
