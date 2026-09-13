@@ -52,7 +52,7 @@ fi
 if [ -n "$KEY" ]; then
   CODE=$(curl -s -o /tmp/st_c.json -D /tmp/st_c.h -w "%{http_code}" -m 120 \
     -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"回复ok两个字母即可\"}],\"max_tokens\":16}" \
+    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"回复ok $RANDOM 防缓存\"}],\"max_tokens\":16}" \
     "$BASE/v1/chat/completions" || echo 000)
   CONTENT=$(python3 -c "import json;d=json.load(open('/tmp/st_c.json'));print(d['choices'][0]['message']['content'][:40])" 2>/dev/null)
   UPSTREAM=$(grep -i "^x-yyc3-upstream" /tmp/st_c.h 2>/dev/null | tr -d '\r' | cut -d' ' -f2)

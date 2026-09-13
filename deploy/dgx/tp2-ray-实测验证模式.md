@@ -80,7 +80,14 @@ docker pull docker.m.daocloud.io/vllm/vllm-openai:nightly
 | 4 | 修正脚本 | ActorHandleNotFound 循环 | 未留 worker 日志（教训：先存后删） |
 | 5 | util 0.86 + enforce-eager | 仍循环 | **尸检实锤：raylet `GCS authentication error`**（session token 失配自持循环） |
 
-### B 线要点（下窗口）
+### 终判（09-14 B 线执行后）
+B 线（RedHatAI compressed-tensors + 全新 ray + util 0.84 + eager + 双端 patch + 保压）**仍循环**：
+worker 尸检实锤 **page cache 涌入触发 ray 节点 OOM → GCS auth error 为次生**。五轮+双格式证毕——
+**GLM NVFP4（92-95G/rank）+ vLLM/ray 栈在 121G UMA 双机属容量硬约束，非配置可解**（DSv4 74.8G/rank 留 26G 活口故稳）。
+资产保留：双端 nvidia 版 + N1 RH 版副本 + 脚本族 + 尸检日志（N2 ~/glm_worker_autopsy*.log）。
+替代路线：① AWQ-INT4 版（~100G，50G/rank 大余量，wtdCode/cyankiwi 版）② 等 vLLM sleep-mode/offload 能力 ③ 硬件代际升级。
+
+### B 线要点（已执行，见上终判）
 1. RH 版 compressed-tensors 走 vLLM 原生 NVFP4 路径（绕开 TransformersMultiModalMoE）+ 每 rank 92.2G（省 3G）
 2. **全新 ray 集群**：启动前双端清残留（容器内 `rm -rf /tmp/ray`；head/worker 全新起）——针对 GCS auth 根因
 3. util 0.84 + len 16384 + kv fp8 + patch 0.99 起步
