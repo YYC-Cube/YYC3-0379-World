@@ -230,14 +230,21 @@ Client Request
 
 ### 多模型统一接入
 
-| Provider | 模型 | 类型 | 特性 |
-|:--------:|:-----|:----:|:-----|
-| **智谱 AI** | glm-4-flash, glm-4-plus | 云端 | 128K上下文, 高性价比 |
-| **DeepSeek** | deepseek-chat, deepseek-coder | 云端 | 代码专精, 64K上下文 |
-| **Ollama** | llama3.2, qwen2.5, codegeex4 | 本地 | 隐私安全, 零成本 |
+**生产实况能力矩阵（09-14）**——云适配器（zhipu/deepseek/openai 前缀路由）+ **本地推理池（`OPENAI_COMPATIBLE_UPSTREAMS` env 单行 JSON）**双层：
+
+| 能力 | 生产上游 | 模型 | 状态 |
+|:----:|:--------|:-----|:----:|
+| chat | DGX 双机 TP=2（N1:8001） | `deepseek-v4-flash` | ✅ 公网 |
+| embeddings | N1:8100 | `qwen3-embedding-0.6b`（1024 维） | ✅ 公网 |
+| rerank | N1:8101 | `qwen3-reranker-0.6b`（judge 生成式打分） | ✅ 公网 |
+| asr / ocr | 待上游 | 端点已就绪（capability 路由） | 🟡 方案见 docs/架构与部署 |
+| video | Mac yyc3-22 数字人生产线 | MiniMax-H3（异步任务 API 规划中） | 🟠 第五能力 |
+
+上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。
 
 ### 智能路由与负载均衡
 
+- **上游池三段式路由**（现行）：云前缀 → 上游池（fnmatch 模型匹配+分层优先级）→ Ollama 兜底；`ROUTER_ENABLED` 一键灰度回退
 - **ADAPTIVE 策略**：基于 EWMA 平滑延迟 + 错误率 + 实时负载的加权随机选择
 - **动态权重反馈循环**：请求完成后上报真实数据，周期性重新计算节点权重
 - **自动降级与恢复**：错误率 >15% 自动降级，恢复后自动升级
@@ -329,9 +336,11 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key" \
   -d '{
-    "model": "glm-4-flash",
+    "model": "deepseek-v4-flash",
     "messages": [{"role": "user", "content": "你好"}]
   }'
+# 生产部署（实况）：ECS Traefik 边缘 → NAS 网关 → DGX 推理池；发版走 GitOps
+# （Mac 桥 watch.sh → NAS rebuild-gateway.sh → CI 公网冒烟），详见 docs/架构与部署/CI-CD部署配置指南.md
 ```
 
 ### 5. 访问文档
