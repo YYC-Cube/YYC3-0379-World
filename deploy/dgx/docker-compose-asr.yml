@@ -1,0 +1,28 @@
+# file: docker-compose-asr.yml
+# description: ASR 第四能力上游——Qwen3-ASR-1.7B vLLM 原生 serve（N1 :8004）
+# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-14
+#
+# 要点（实测）：
+#   - vLLM nightly 原生支持 Qwen3ASRForConditionalGeneration（/v1/audio/transcriptions OpenAI 兼容开箱）
+#   - 容器需 soundfile（音频解析依赖）：首选固化镜像 docker.m.daocloud.io/yyc3/asr-qwen3:v1；
+#     用原版 nightly 起则需先 docker exec 装 soundfile（--ignore-installed，debian 包冲突）
+#   - qwen-asr PyPI 包与 nightly transformers 装饰器签名不兼容（check_model_inputs），勿用包路线
+#   - util 0.05 + eager + len 8192 与旗舰/RAG 共存（N1 总占用 ~0.85 稳定线内）
+# 网关接入：池加 {"name":"asr-n1","base_url":"http://<N1>:8004","models":["qwen3-asr*"],"capability":"asr","priority":1}
+services:
+  asr:
+    image: docker.m.daocloud.io/yyc3/asr-qwen3:v1
+    container_name: yyc3-asr
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    gpus: all
+    volumes:
+      - /home/yyc3/yyc3-101-projects/models/Qwen3-ASR-1.7B:/model:ro
+    command: >
+      /model
+      --served-model-name qwen3-asr-1.7b
+      --port 8004
+      --max-model-len 8192
+      --gpu-memory-utilization 0.05
+      --enforce-eager
