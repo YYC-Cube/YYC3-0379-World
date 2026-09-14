@@ -80,6 +80,17 @@ docker pull docker.m.daocloud.io/vllm/vllm-openai:nightly
 | 4 | 修正脚本 | ActorHandleNotFound 循环 | 未留 worker 日志（教训：先存后删） |
 | 5 | util 0.86 + enforce-eager | 仍循环 | **尸检实锤：raylet `GCS authentication error`**（session token 失配自持循环） |
 
+### AWQ-INT4 执行结果（09-14 终证）
+
+AWQ 线（cyankiwi/GLM-5.3-Flash-AWQ-INT4，compressed-tensors，183.6G/43sh，**53 文件 size 级校验完整**，
+双端就位+全副武装配置 util 0.82/eager/patch 0.99/obj-store 2G/全新 ray/双端 drop_caches 保压）
+**仍同因 actor 循环**（err 计数攀升与 NVFP4 两轮完全一致）。
+
+**GLM-5.3-Flash（320B）三格式终证**：modelopt NVFP4 190.4G / compressed-tensors NVFP4 184.3G /
+compressed-tensors AWQ 183.6G —— 每 rank 91.8~95.2G，**任何 ~4bit 全量形态在 121G UMA 双机 TP=2 均不可行**。
+唯一理论可行区 = ≤150G 检查点（75G/rank，如 GGUF IQ4_XS 146G 但仅 llama.cpp 可用且需双机 RPC 不成熟）。
+生产线四进四出零事故（DSv4+RAG+Agents 每次完整复位，第四次冒烟 6/6 全绿含 X 头）。
+
 ### 终判（09-14 B 线执行后）
 B 线（RedHatAI compressed-tensors + 全新 ray + util 0.84 + eager + 双端 patch + 保压）**仍循环**：
 worker 尸检实锤 **page cache 涌入触发 ray 节点 OOM → GCS auth error 为次生**。五轮+双格式证毕——
