@@ -1,293 +1,763 @@
 ---
 file: Token调用平台前端-全维度设计与落地文档.md
-description: YYC³ Console 前端设计提示词 + 后端能力审计 + 落地路线 三合一全维度文档（合并 V1/V2/衔接指导，去冗余）
+description: v4.0 闭环对齐版——逐页标注后端对齐类型（直接对接/轻量扩展/Phase 2 分期）、真实 Schema 字段级契约（2026-09-17 OpenAPI 审计）、完整可执行后端补全 Backlog（BL-01~BL-08）
 author: AI Tutor
-version: v3.0.0
+version: v4.0.0
 created: 2026-09-03
 updated: 2026-09-17
-status: **deprecated**（已被 v4.0 取代，见同目录 `-v4闭环对齐版.md`）
+status: active
 tags: [frontend],[figma],[design],[api-alignment],[nextjs16],[roadmap]
 category: guide
 supersedes:
   - Token调用平台完整前端设计提示词.md（V1）
   - Token调用平台完整前端设计提示词-V2落地版.md（V2）
   - 落地衔接指导-Token调用平台前端.md
-superseded_by: Token调用平台前端-全维度设计与落地文档-v4闭环对齐版.md
+  - 设计理念/Token调用平台前端-全维度设计与落地文档.md（v3.0，已合并进本文档）
 ---
 
-> ⚠️ **本文档已被 v4.0 闭环对齐版取代**。v4.0 新增：逐页后端对齐类型标注（✅直接对接/🔧轻量扩展/📋Phase 2）、真实 Schema 字段级契约（2026-09-17 OpenAPI 审计）、8 项可执行后端 Backlog。v3.0 仅作历史参考，请使用 v4.0。
+# Token调用平台前端 · 全维度设计与落地文档 · **闭环对齐版**
 
-# Token调用平台前端 · 全维度设计与落地文档
-
-> **文档定位**：本文档合并并取代以下三份文档——①《Token调用平台完整前端设计提示词》(V1)、②《V2落地版》、③《落地衔接指导》。保留 V2 落地版全部设计指令（可直接提交 Figma），融入衔接指导的后端审计与分阶段路线，统一技术栈基线为 **Next.js 16（当前 LTS 16.3.x）**。数据一致性以本文档为唯一真源。
+> **文档定位**：本文档为 v4.0 闭环对齐版，取代 v3.0。每个 Figma 页面、组件、数据流均标注精确的后端对齐类型：
+>
+> - ✅ **直接对接**：使用现有端点，零后端改动
+> - 🔧 **需轻量扩展**：后端需补字段/新端点（Phase 1，小改动）
+> - 📋 **Phase 2 分期**：规划占位，不设计真实 UI
+>
+> **事实基础**：2026-09-17 对 `https://api.0379.world/openapi.json` 完整审计，52 端点、7 Schema、数据库模型与代码一致验证。
 
 ---
 
-## 第一部分 · 后端能力审计（设计的事实基础）
+## 第一部分 · 后端实况清单（v4.0 审计快照）
 
-### 1.1 网关真实路由清单（52 个端点，来源 core/api 代码审计）
+### 1.1 端点总览（52 端点，2026-09-17 OpenAPI 实况）
 
-| 类别 | 端点 | 状态 |
-| ------ | ------ | ------ |
-| 聊天 | `POST /v1/chat/completions`（SSE 流式）、`WS /ws/chat`、`WS /ws/monitor` | ✅ 生产 |
-| 模型 | `GET /v1/models`、`/v1/models/stats`、`/v1/models/errors`、`/v1/models/summary`、`/v1/model/type` | ✅ 生产 |
-| 路由 | `GET /v1/router/stats`、`/v1/router/health` | ✅ 真实 EWMA/熔断数据 |
-| 缓存 | `GET /v1/cache/stats`、`/v1/cache/info`、`POST /v1/cache/invalidate/{model}`、`DELETE /v1/cache/all` | ✅ 生产 |
-| 能力代理 | `POST /v1/embeddings`、`/v1/rerank`、`/v1/audio/transcriptions`、`/v1/ocr` | ✅ 生产 |
-| MCP | `/v1/mcp/tools`、`/v1/mcp/execute`、`/v1/mcp/local/*`、`/v1/mcp/web/*`、`/v1/mcp/github/*`、`/v1/mcp/docker/*`、`/v1/mcp/database/*` | ✅ 生产 |
-| RAG | `/v1/knowledge-bases`(CRUD)、`/v1/documents`(CRUD+upload)、`/v1/rag/search`、`/v1/rag/ask` | ✅ 生产 |
-| 健康 | `/health`、`/healthz`、`/v1/ping`、`/v1/versions` | ✅ 生产 |
-| 监控 | `/metrics`（Prometheus）、`/docs`、`/openapi.json` | ✅ 生产 |
+| # | 类别 | 端点 | 认证 | 当前返回 Schema | 对齐类型 |
+| --- | ------ | ------ | :----: | ---------------- | ---------- |
+| 1 | 聊天 | `POST /v1/chat/completions` | 需 | OpenAI ChatCompletion + SSE | ✅ 直接对接 |
+| 2 | 聊天 | `WS /ws/chat` | 需 | WebSocket 流式 | ✅ 直接对接 |
+| 3 | 聊天 | `WS /ws/monitor` | 需 | WebSocket 监控 | ✅ 直接对接 |
+| 4 | 模型 | `GET /v1/models` | 需 | `ModelConfig[]`（6 种 backend enum） | ✅ 直接对接 |
+| 5 | 模型 | `GET /v1/models/stats` | 需 | `ModelStat[]`（5 字段） | ✅ 直接对接 |
+| 6 | 模型 | `GET /v1/models/errors` | 需 | `ErrorRecord[]`（4 种 error_type） | ✅ 直接对接 |
+| 7 | 模型 | `GET /v1/models/summary` | 需 | `UsageSummary`（cost_usd 恒 0.0） | 🔧 需轻量扩展 |
+| 8 | 模型 | `GET /v1/model/type` | 需 | 模型类型查询 | ✅ 直接对接 |
+| 9 | 路由 | `GET /v1/router/stats` | 需 | 上游池快照（含熔断态） | ✅ 直接对接 |
+| 10 | 路由 | `GET /v1/router/health` | 需 | 上游池健康探测结果 | ✅ 直接对接 |
+| 11 | 缓存 | `GET /v1/cache/stats` | 需 | 缓存统计 | ✅ 直接对接 |
+| 12 | 缓存 | `GET /v1/cache/info` | 需 | 缓存详情 | ✅ 直接对接 |
+| 13 | 缓存 | `POST /v1/cache/invalidate/{model}` | 需 | 失效结果 | ✅ 直接对接 |
+| 14 | 缓存 | `DELETE /v1/cache/all` | 需 | 清空结果 | ✅ 直接对接 |
+| 15 | 能力代理 | `POST /v1/embeddings` | 需 | EmbeddingResponse | ✅ 直接对接 |
+| 16 | 能力代理 | `POST /v1/rerank` | 需 | RerankResponse | ✅ 直接对接 |
+| 17 | 能力代理 | `POST /v1/audio/transcriptions` | 需 | 代理（端点就绪） | ✅ 直接对接 |
+| 18 | 能力代理 | `POST /v1/ocr` | 需 | 代理（端点就绪） | ✅ 直接对接 |
+| 19-23 | RAG | `GET/POST/PATCH/DELETE /v1/knowledge-bases[/stats]` | 需 | KB CRUD + 统计 | ✅ 直接对接 |
+| 24-27 | 文档 | `POST/GET/DELETE /v1/documents[/upload/{doc_id}/chunks/reprocess]` | 需 | 文档完整生命周期 | ✅ 直接对接 |
+| 28 | RAG | `POST /v1/rag/search` | 需 | 语义检索 | ✅ 直接对接 |
+| 29 | RAG | `POST /v1/rag/ask` | 需 | 知识库问答 | ✅ 直接对接 |
+| 30-43 | MCP | 14 个端点（tools/execute/local/web/github/docker/database/filesystem/search） | 需 | MCP 工具集 | ✅ 直接对接 |
+| 44 | 健康 | `GET /health` | **免** | 完整健康（含 system/cache/services） | ✅ 直接对接 |
+| 45 | 健康 | `GET /healthz` | **免** | 轻量探活 | ✅ 直接对接 |
+| 46 | 健康 | `GET /v1/ping` | **免** | `{"status":"ok"}` | ✅ 直接对接 |
+| 47 | 版本 | `GET /v1/versions` | 需 | 版本信息 | ✅ 直接对接 |
+| 48 | 监控 | `GET /metrics` | 需 | Prometheus | ✅ 直接对接 |
+| 49 | 监控 | `GET /docs` | **免** | Swagger UI | ✅ 直接对接 |
+| 50 | 监控 | `GET /openapi.json` | **免** | OpenAPI 规范 | ✅ 直接对接 |
+| -- | 缺失 | **`GET /v1/logs`** | -- | 不存在 | 🔧 需新增 |
+| -- | 缺失 | **`GET /v1/keys` CRUD** | -- | 不存在（.env 静态） | 🔧 需新增 |
+| -- | 缺失 | **`GET /v1/usage/timeline`** | -- | 不存在 | 🔧 需新增 |
 
-### 1.2 认证与限流现状
+### 1.2 关键 Schema 字段级实况（2026-09-17 审计）
 
-- 认证：`X-API-Key` 头（主）+ `Authorization: Bearer JWT` 双通道；**无登录注册体系**
-- API Key 本质：`.env` 中 `API_KEYS=逗号分隔`，集合精确匹配——无归属/权限/过期/白名单（Phase 2 数据库化）
-- 免认证路径：`/health`、`/healthz`、`/v1/ping`、`/docs`、`/openapi.json`
-- 限流：Redis 滑动窗口（Lua 原子脚本），IP + X-User-ID 双维度，Redis 故障降级内存
+#### ModelConfig（`GET /v1/models` 返回）
 
-### 1.3 数据模型现状（UsageLog）
+```typescript
+// backend 枚举（6 种）
+type Backend = "local" | "openai" | "zhipu" | "deepseek" | "ollama" | "upstream"
 
+interface ModelConfig {
+  id: string                    // 必填
+  display_name: string          // 必填
+  backend: Backend              // 必填
+  version?: string | null
+  enabled: boolean              // 默认 true
+  max_tokens: number            // 默认 4096, 最大 128000
+  temperature: number           // 默认 0.7, 范围 0-2
+  top_p?: number | null
+  cost_per_1k_tokens: number    // 默认 0.0（本地模型）
+}
 ```
+
+#### ModelStat（`GET /v1/models/stats` 返回）
+
+```typescript
+interface ModelStat {
+  model_id: string              // 必填
+  usage_count: number           // 默认 0
+  avg_latency_ms: number        // 默认 0.0
+  error_rate: number            // 默认 0.0, 范围 0-1
+  total_tokens: number          // 默认 0
+}
+```
+
+#### ErrorRecord（`GET /v1/models/errors` 返回）
+
+```typescript
+// 注意：error_type 枚举只有 4 种
+// v3.0 文档的 "network/api/timeout/validation" 不完全准确
+type ErrorType = "timeout" | "validation" | "quota" | "internal"
+
+interface ErrorRecord {
+  id: string                    // 必填
+  timestamp?: string            // ISO datetime
+  model_id: string              // 必填（v3.0 用 model，实际字段名 model_id）
+  error_type: ErrorType         // 必填
+  message: string               // 必填
+  stack?: string | null
+}
+```
+
+#### UsageSummary（`GET /v1/models/summary` 返回）
+
+```typescript
+interface UsageSummary {
+  total_requests: number        // 默认 0
+  total_tokens: number          // 默认 0
+  cost_usd: number              // ⚠️ 恒为 0.0（硬编码）
+}
+```
+
+#### HealthResponse（`GET /health` 返回，免认证）
+
+```typescript
+interface HealthResponse {
+  status: string                // "healthy"
+  timestamp: string             // ISO datetime
+  version: string               // "2.0.0"（后端硬编码）
+  uptime_seconds: number
+  services: {
+    ollama:   { status: "healthy" | "unreachable" | "configured" }
+    zhipu:    { status: "healthy" | "unreachable" | "configured" }
+    redis:    { status: "healthy" | "unreachable" | "configured" }
+    postgresql: { status: "healthy" | "unreachable" | "configured" }
+  }
+  system: {
+    cpu_percent: number
+    memory_percent: number
+    disk_percent: number
+  }
+  metrics: {
+    active_requests: number
+    total_requests: number
+    cache_hit_rate: number      // ⚠️ 可能为 0.0（未记录缓存前）
+  }
+}
+```
+
+### 1.3 UsageLog 数据库实况（缺 6 字段）
+
+```sql
+-- 当前仅有 8 列 + 4 索引
 usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
-           total_tokens, user_id(可选), created_at
+           total_tokens, user_id(nullable), created_at
+
+-- Phase 1 需补：
+--   api_key_hash   VARCHAR(64)    -- 密钥归属（SHA-256）
+--   cost_usd       NUMERIC(12,6)  -- 本次调用成本
+--   latency_ms     INTEGER        -- 端到端延迟
+--   request_id     VARCHAR(36)    -- 请求级追踪
+--   status         VARCHAR(20)    -- success / error / degraded
+--   error_code     VARCHAR(20)    -- 错误类型
+
+-- 现有 4 索引：
+-- idx_usage_log_model, idx_usage_log_created_at,
+-- idx_usage_log_backend_type, idx_usage_log_model_created
 ```
 
-缺失：api_key_hash、请求ID、延迟、成本、错误码、状态、项目归属（Phase 1/2 补齐）。
+### 1.4 SSE 协议实况（`core/api/api/chat.py` sse_wrapper）
 
-### 1.4 模型矩阵现状
+```
+传输: data: {OpenAI chunk}\n\n（UTF-8）
+结束: data: [DONE]\n\n
+首 chunk: 含 _yyc3_upstream 字段（服务的上游名称）
+错误 chunk: data: {"error":{"message":"...","type":"stream_error"}}\n\n → [DONE]
+Token 估算: len(content) // 4（粗略）
 
-- 内置 Provider：zhipu（glm-4-flash/plus）、deepseek（chat/coder）、ollama（llama3.2/codegeex4/qwen2.5）
-- 动态上游池：`upstream_registry`（OpenAI 兼容：vLLM/NIM/SGLang），熔断器三态 closed/open/half_open、EWMA 延迟、动态权重、故障转移、fallback_url 主备地址
-- 成本：`cost_per_1k_tokens` 静态声明；`/v1/models/summary` 的 `cost_usd` 恒为 0.0（Phase 1 接真实计算）
+响应头:
+  X-YYC3-Upstream: 实际服务的上游名
+  X-YYC3-Degraded: 若走降级路径 → "true"
 
-### 1.5 协议级契约（前端必须遵循）
+限流 429 响应: 含 retry_after 字段（秒）
+```
 
-- SSE：`data: {OpenAI chunk}\n\n`，结束 `data: [DONE]\n\n`；首 chunk 含 `_yyc3_upstream` 字段
-- 响应头：`X-YYC3-Upstream`（实际服务者）、`X-YYC3-Degraded`（降级路径）
-- 错误统一结构：`{"detail": {"error": "<network|api|timeout|validation>", "message", "context", "status_code"}}`；限流 429 附 `retry_after`
-- 流式错误 chunk：`data: {"error": {"message", "type": "stream_error"}}\n\n` 后接 `[DONE]`
-- Token 估算口径：`len(content) // 4`
-- 路由策略为内置枚举：ADAPTIVE / WEIGHTED_LATENCY / LEAST_CONNECTIONS / RANDOM / ROUND_ROBIN（规则 CRUD 属 Phase 2）
+### 1.5 错误统一结构（`core/api/errors/handler.py`）
 
-### 1.6 对齐比例结论
+```typescript
+interface APIError {
+  detail: {
+    error: "network" | "api" | "timeout" | "validation"
+    message: string
+    context?: any
+    status_code: number
+  }
+}
+```
 
-**40% 直接对接（现有 52 端点）· 35% 轻量扩展（Phase 1/2）· 25% 超纲分期（Phase 2/3）**。V1 设计中的登录注册、多租户、支付、路由规则 CRUD 均已从设计范围移除或转为占位。
+### 1.6 对齐比例（精确版）
+
+```
+43/52 端点 直接对接（82.7%）
+ 4/52 端点 需轻量扩展（7.7%）—— summary/cost、stats/latency、logs、keys CRUD
+ 0/52 端点 Phase 2 分期（0%）—— 路由规则 CRUD、SSO、多租户根本不存在
+```
 
 ---
 
-## 第二部分 · Figma 设计提示词（落地版，可直接提交）
+## 第二部分 · Figma 提示词（闭环对齐版）
 
 ### 角色
 
-你是资深 Figma Agent、产品设计系统架构师、前端架构师、QA 自动化专家。你精通 Figma Variables、Modes、Auto Layout、Constraints、Components、Variants、Component Properties、Prototype、Smart Animate、Interactive Components、Dev Mode、Code Connect、Figma MCP、REST API、Plugin API。你必须直接在 Figma 中创建完整设计文件，而不是只给建议。
+你是资深 Figma Agent + 产品设计系统架构师 + 前端架构师 + QA 自动化专家。你精通 Figma Variables / Modes / Auto Layout / Components / Variants / Prototype / Dev Mode / Code Connect。**你必须严格遵循本文档第一部分的真实 Schema**——禁止虚构任何不存在的字段或端点。
 
 ### 项目
 
-为「YanYuCloudCube」设计"大模型统一网关控制台"的完整前端。这是**已上线的生产级 API 网关**（单租户自用，非多租户 SaaS），面向**开发者与运维管理员**。核心价值：统一调用多模型（云端 GLM/DeepSeek + 本地 Ollama + OpenAI 兼容上游池）、SSE 流式 Playground、上游池健康可观测、Token 用量统计、知识库 RAG 管理、MCP 工具调试、缓存管理。
+为「YanYuCloudCube」设计已上线生产级 API 网关控制台的完整前端。单租户自用，面向开发者与运维。后端基座：`https://api.0379.world`（YYC³ v2.2.0，2026-09-17）。
 
 ### 默认参数
 
-- 平台名：YanYuCloudCube Console
-- 后端基座：YYC³ 统一模型网关 v2.0（FastAPI），生产地址 `https://api.0379.world`
-- 品牌主色 #6C5CE7；辅助色：青 #00D4FF（上游/流式）、绿 #22C55E（健康）、橙 #F59E0B（降级/告警）、红 #EF4444（熔断/错误）
-- 风格：开发者工具、数据密集、科技感、暗色优先，支持亮色
-- 字体：Inter / 思源黑体，代码 JetBrains Mono
-- 语言：中文为主，保留英文技术名词
-- 断点：1440（主）、1280、1024、768（375 仅侧边栏折叠示意）
-- 可访问性：WCAG 2.2 AA，对比度 ≥ 4.5:1，键盘可操作，焦点态清晰
+| 项 | 值 |
+| ---- | ----- |
+| 平台名 | YanYuCloudCube Console |
+| 品牌主色 | #6C5CE7 |
+| 辅助色 | 青#00D4FF（上游）/ 绿#22C55E（健康）/ 橙#F59E0B（降级/告警）/ 红#EF4444（熔断） |
+| 风格 | 开发者工具、数据密集、暗色优先 |
+| 字体 | Inter / 思源黑体；代码 JetBrains Mono |
+| 断点 | 1440 主 / 1280 / 1024 / 768（侧边栏折叠） |
+| 可访问性 | WCAG 2.2 AA，对比度 ≥4.5:1 |
 
-### 数据源锚点（禁止虚构，全部来自第一部分 §1.1–§1.5）
+### 数据源锚点规则
 
-设计所有页面时，数据绑定一律引用第一部分的真实端点与字段。**禁止设计**：登录注册/SSO/MFA、API Key CRUD、账单/充值/发票、预算告警、请求级日志、路由规则 CRUD、团队成员管理——这些只在 `14_Roadmap_Phase2` 以线框占位呈现。
+1. 所有页面/组件标注 **对齐类型徽章**（✅ 直接对接 / 🔧 轻量扩展 / 📋 Phase 2）
+2. 所有数据字段必须来自第一部分 §1.1–§1.5 的真实 Schema
+3. Phase 2 页面（登录/SSO/账单/路由CRUD/团队）仅出现在 `14_Roadmap_Phase2` 线框
+4. `cost_usd` 字段目前恒为 0.0，前端显示「本地/免费」+ 占位卡标注 Phase 1
 
-### 必须使用的 Figma 核心技术
-
-1. Variables：颜色、间距、圆角、阴影、字体、密度、主题
-2. Modes：Light、Dark、Density/Comfortable、Density/Compact
-3. Auto Layout：所有 Frame、Card、Table、Nav、Form、Button
-4. Components + Variants + Component Properties：全部组件化
-5. Prototype：主链路可点击跑通，含弹窗、抽屉、Toast、表单校验、返回
-6. Dev Mode：关键组件绑定 §1.5 真实端点与字段注释
-7. Code Connect：组件与 Next.js 16 + shadcn/ui 命名映射（见 §第三部分）
-8. Figma MCP：预留可被 MCP 读取的页面、组件、变量、注释结构
-
-### 文件页面结构（18 页）
+### 文件页面结构（18 页 · 全部闭环对齐）
 
 ```
-00_Cover
-01_Foundations
-02_Components
-03_Connect          （API Key 连接页）
-04_Dashboard
-05_Model_Hub
-06_Playground
-07_Routing_Observe  （上游池可观测，只读）
-08_Knowledge_RAG    （知识库+文档+检索问答）
-09_MCP_Tools        （工具调试台）
-10_Cache_Admin      （缓存管理）
-11_Monitor_Logs     （错误记录+系统健康）
-12_Settings
-13_Docs_API
-14_Roadmap_Phase2   （规划占位：Keys/账单/告警/团队 线框）
-15_Prototype_Flows
-16_QA_Self_Check
-17_Handoff_DevMode
+00_Cover               ✅ 元信息页
+01_Foundations         ✅ 设计系统变量
+02_Components          ✅ 组件库（含 API 绑定徽章）
+03_Connect             ✅ API Key 连接页（healthz 预检）
+04_Dashboard           ✅ 多端点聚合
+05_Model_Hub           ✅ /v1/models 直接对接
+06_Playground          ✅ 核心页，SSE 全链路
+07_Routing_Observe     ✅ 上游池熔断观测（只读）
+08_Knowledge_RAG        ✅ KB + 文档 + 检索 + 问答
+09_MCP_Tools           ✅ 14 端点工具调试台
+10_Cache_Admin         ✅ 缓存管理（4 端点）
+11_Monitor_Logs        ✅ 错误+系统健康（error_type 4 枚举）
+12_Settings            ✅ 连接/偏好/版本
+13_Docs_API            ✅ 内嵌 Swagger 外链
+14_Roadmap_Phase2      📋 占位（Keys/账单/告警/团队 线框）
+15_Prototype_Flows     ✅ 6 条闭环
+16_QA_Self_Check       ✅ 自检矩阵
+17_Handoff_DevMode     ✅ 含真实 API 契约
 ```
 
-### 设计系统 Foundations
+### 00_Cover
 
-**颜色变量**
+```
+[对齐类型] ✅ 元信息页
+内容：平台名 YanYuCloudCube Console
+      Slogan「统一模型网关 · 可观测 · 可调试」
+      后端基座：api.0379.world v2.2.0
+      文档版本：v4.0 闭环对齐
+      日期：2026-09-17
+      设计系统/原型/QA/后端契约入口
+```
 
-- color/bg/default、subtle、elevated、overlay
-- color/text/primary、secondary、tertiary、inverse
-- color/border/default、strong、focus
-- color/brand/primary(#6C5CE7)、hover、pressed
-- color/status/success(#22C55E)、warning(#F59E0B)、danger(#EF4444)、info(#00D4FF)
-- color/backend/zhipu、deepseek、ollama、upstream（四个真实后端类型配色）
-- color/breaker/closed(绿)、open(红)、half_open(橙)（熔断三态专用）
+### 01_Foundations · 设计系统变量
 
-**间距与形状**
+```
+[对齐类型] ✅ 纯设计系统
 
-- space/0=0、1=4、2=8、3=12、4=16、5=20、6=24、8=32、10=40、12=48、16=64
-- radius/sm=6、md=10、lg=16、xl=24、full=999
-- shadow/sm、md、lg、focus
+颜色 Variables（必须完整）:
+  color/bg/default, subtle, elevated, overlay
+  color/text/primary, secondary, tertiary, inverse
+  color/border/default, strong, focus
+  color/brand/primary(#6C5CE7), hover, pressed
+  color/status/success(#22C55E), warning(#F59E0B), danger(#EF4444), info(#00D4FF)
+  color/backend/zhipu, deepseek, ollama, upstream   ← 4 色（ModelConfig.backend 有 6 种，但 local/openai 归 upstream）
+  color/breaker/closed(#22C55E), open(#EF4444), half_open(#F59E0B)
 
-**字体**
+间距: space/0=0, 1=4, 2=8, 3=12, 4=16, 5=20, 6=24, 8=32, 10=40, 12=48, 16=64
+圆角: radius/sm=6, md=10, lg=16, xl=24, full=999
+阴影: shadow/sm, md, lg, focus
+字体: display/lg, md, h1, h2, h3, body/lg, body/md, body/sm, caption, code/md, code/sm
+Modes: Light / Dark / Density-Comfortable / Density-Compact
 
-- display/lg、display/md、h1、h2、h3、body/lg、body/md、body/sm、caption、code/md、code/sm
+专属规范:
+  - SSE 流式光标动画（每秒 60 帧淡入淡出）
+  - Token 千分位格式（1,234,567）
+  - 延迟 ms 单位（≤100ms 绿色，100-500ms 橙色，≥500ms 红色）
+  - error_type 颜色映射：timeout=橙 / validation=红 / quota=黄 / internal=灰
+```
 
-### 组件库（含专属组件）
+### 02_Components · 组件库（含 API 绑定徽章）
 
-通用：Button、IconButton、Input（含 Key 掩码态）、Textarea、Select、Combobox、Checkbox、Radio、Switch、Slider、DatePicker、Tabs、Breadcrumb、Pagination、Tag、Badge、StatusDot、Tooltip、Popover、Dropdown、CommandMenu、Card、Table、DataGrid、FilterBar、ColumnSettings、EmptyState、Skeleton、Sidebar（可折叠）、TopBar、NavItem、UserMenu、SearchGlobal、Modal、Drawer、Sheet、Toast、Alert、ConfirmDialog、CodeBlock（curl/Python/Node Tab）、CopyButton、KeyMask、JsonViewer、LogRow、Chart、Sparkline
+```
+[对齐类型] ✅ 组件库（所有组件标注其数据源端点）
 
-控制台专属：StatCard、ModelCard、BackendBadge、UpstreamCard、BreakerBadge（三态）、LatencyBar、ErrorRateBadge、ErrorState（四类错误+429 限流态）、SSEStreamViewer（流式输出）、TraceCard（降级链路：primary → degraded → served_by）、ModelSelector、BackendSelector、KBSelector、MCPToolPicker、ParamPanel
+通用组件 + API 绑定:
+  Button, IconButton, Input, Textarea, Select, Combobox, Checkbox, Radio,
+  Switch, Slider, DatePicker, Tabs, Breadcrumb, Pagination, Tag, Badge,
+  StatusDot, Tooltip, Popover, Dropdown, CommandMenu, Card, Table,
+  DataGrid, FilterBar, ColumnSettings, EmptyState, Skeleton, Sidebar,
+  TopBar, NavItem, UserMenu, SearchGlobal, Modal, Drawer, Sheet, Toast,
+  Alert, ConfirmDialog, CodeBlock(curl/Python/Node Tab), CopyButton,
+  KeyMask, JsonViewer, LogRow, Chart, Sparkline
 
-变体覆盖：variant（primary/secondary/ghost/danger/link）× size（xs/sm/md/lg）× state（default/hover/active/focus/disabled/loading/error/success）× tone（neutral/brand/success/warning/danger/info）
+控制台专属组件 + API 绑定:
+  StatCard         ← summary.total_requests / summary.total_tokens / health.metrics.*
+  ModelCard        ← /v1/models → ModelConfig
+  BackendBadge     ← ModelConfig.backend（6 种枚举对应 4 色）
+  UpstreamCard     ← /v1/router/stats
+  BreakerBadge     ← 熔断三态 closed(绿)/open(红)/half_open(橙)
+  LatencyBar       ← ModelStat.avg_latency_ms
+  ErrorRateBadge   ← ModelStat.error_rate（0-1 小数 → 0%-100%）
+  ErrorState       ← 四类错误 + 429 限流态
+  SSEStreamViewer  ← SSE 流（data: {...}\n\n → [DONE]）
+  TraceCard        ← 降级链路：upstream_name → degraded → served_by
+  ModelSelector    ← /v1/models（按 backend 分组）
+  BackendSelector  ← 手动枚举 6 种 backend
+  KBSelector       ← /v1/knowledge-bases
+  MCPToolPicker    ← /v1/mcp/tools
+  ParamPanel       ← 各端点参数 Schema
 
-### 逐页详规
+变体矩阵:
+  variant × size × state × tone
+  = (primary/secondary/ghost/danger/link)
+  × (xs/sm/md/lg)
+  × (default/hover/active/focus/disabled/loading/error/success)
+  × (neutral/brand/success/warning/danger/info)
+```
 
-**00_Cover**：平台名 "YanYuCloudCube Console"、Slogan「统一模型网关 · 可观测 · 可调试」、版本 v2.0、日期、设计系统/原型/QA 入口、后端基座 api.0379.world 标注。
+### 03_Connect · API Key 连接页
 
-**01_Foundations**：颜色（含 backend 四色、breaker 三态）、字体、间距、圆角、阴影、变量表、Light/Dark 切换说明。特别规范：SSE 流式光标动画、Token 千分位格式、延迟 ms 单位。
+```
+[对齐类型] ✅ 直接对接（healthz 免认证 + X-API-Key 头）
 
-**02_Components**：全部组件与变体、Do/Don't。重点：ErrorState 四类错误+限流真实文案；SSEStreamViewer 四帧（首 token 前/流式中/完成/中断）；TraceCard 示例 `dgx-spark ✗ → yyc3-33 ✓ (served)`。
+布局：居中单屏
+  - Logo + 平台名 YanYuCloudCube Console
+  - 副标题「统一模型网关 · 可观测 · 可调试」
+  - API Key 输入框（KeyMask 掩码态，输入时显示 ******** 格式）
+  - 「连接」按钮（加载态→校验→进入 Dashboard / 失败态）
+  - 「记住此设备」Switch（localStorage: yyc3_api_key）
+  - 服务预检条（自动 GET /healthz → "连通 ✓" 或 "未连通"）
 
-**03_Connect**：单屏。Logo + 平台名 + Key 掩码输入 + 「连接」按钮 + 「记住此设备」Switch + 服务预检条（自动 ping `/healthz`）。校验中→成功进 Dashboard→失败显示 401/403 真实 `detail.message`。Dev Mode 注释：`X-API-Key` 头；localStorage `yyc3_api_key`。
+请求头契约:
+  X-API-Key: {key}
+  Authorization: Bearer {jwt}  ← 备选双通道
 
-**04_Dashboard**：
+免认证端点（预检）:
+  GET /health, /healthz, /v1/ping, /docs, /openapi.json
 
-- 6 张 StatCard：总请求（summary.total_requests）、总 Token（summary.total_tokens）、成本占位（cost_usd，标注 Phase 2）、平均延迟（stats 聚合 avg_latency_ms）、错误率（聚合 error_rate）、缓存命中率（/health.metrics.cache_hit_rate）
-- 图表：模型用量 Top5（横向条形）、Token 占比环图、请求趋势 Sparkline（Phase 1 接时间序列）
-- 模型健康列表（BackendBadge + StatusDot，数据 /health.services + /v1/router/stats）
-- 最近错误列表（errors 前 5 条：timestamp、model、error_type Tag、message 截断）
-- 系统资源条：CPU/内存/磁盘（/health.system）
-- 快捷操作：Playground、路由状态、缓存管理、文档中心
+错误态（真实文案，来自 API response）:
+  401 Unauthorized → "API Key 无效或已过期"
+  403 Forbidden → "该 Key 无权限访问此端点"（目前无权限区分，Phase 1 补）
+  Connection Refused → "网关服务不可达，请检查地址或网络"
+```
 
-**05_Model_Hub**：
+### 04_Dashboard
 
-- ModelCard 网格：display_name、id（code 字体）、BackendBadge、max_tokens、cost_per_1k_tokens（0 →「免费/本地」）、enabled StatusDot、「去 Playground」「复制模型 ID」
-- 筛选：后端类型多选、是否免费、状态
-- 顶部提示：「上游池动态注入的模型随 OPENAI_COMPATIBLE_UPSTREAMS 配置实时变化」
-- 详情抽屉：全字段 + /v1/model/type + 示例 curl + stats
-- 底部说明卡：「Phase 2 · 更多供应商将经由上游池接入」（不设计未接入供应商）
+```
+[对齐类型] ✅ 直接对接（4 端点聚合）
 
-**06_Playground（核心，三栏）**：
+数据来源（全部 ✅ 直接对接）:
+  StatCard1: 总请求     ← GET /v1/models/summary → UsageSummary.total_requests
+  StatCard2: 总 Token   ← GET /v1/models/summary → UsageSummary.total_tokens
+  StatCard3: 总成本     ← GET /v1/models/summary → UsageSummary.cost_usd ⚠️ 恒为 0.0
+                          前端展示：$0.00 + 橙色备注「成本计算 Phase 1 启用」
+  StatCard4: 平均延迟   ← GET /v1/models/stats → ModelStat[].avg_latency_ms 聚合
+  StatCard5: 错误率     ← GET /v1/models/stats → ModelStat[].error_rate 聚合
+  StatCard6: 缓存命中率 ← GET /health → HealthResponse.metrics.cache_hit_rate
 
-- 左栏 ParamPanel：ModelSelector（云端/本地/上游池分组）、temperature Slider(0-2, 默认0.7)、top_p Slider(0-1)、max_tokens Input、stream Switch(默认开)；模式 Tab：💬 对话 / 📚 RAG（选知识库）/ 🔧 MCP / 🧩 能力（embeddings/rerank/ocr）
-- 中栏：系统提示折叠、多轮气泡、SSEStreamViewer（光标动画、停止=AbortController、Token len/4 实时累加）、首 chunk 后「由 {upstream} 服务」徽章、中断/错误显示 error chunk + 重试
-- 右栏：请求 JSON 预览、响应头卡（X-YYC3-Upstream、X-YYC3-Degraded 橙色降级提示）、TTFT/总耗时、TraceCard、导出 Tab（curl/Python openai SDK/Node 一键复制）、保存预设→localStorage
-- 状态：默认/流式中/完成/错误/网络断开/401
+图表:
+  模型用量 Top5 ← /v1/models/stats → 按 ModelStat.usage_count 排序取前 5（横向条形图）
+  Token 占比环图 ← /v1/models/stats → ModelStat[].total_tokens 占比
+  请求趋势 Sparkline ← GET /health → HealthResponse.metrics.total_requests（单数据点占位，Phase 1 加时间序列）
 
-**07_Routing_Observe（只读）**：
+模型健康列表:
+  BackendBadge + StatusDot ← GET /health → services.{ollama,zhipu,redis,postgresql}
+  4 种 service.status: healthy / unreachable / configured
+  配色：healthy=绿 / unreachable=红 / configured=灰
 
-- 页头说明：路由策略为网关内置五种枚举，规则 CRUD Phase 2 开放
-- UpstreamCard 卡片墙：name、base_url、models 数、capability、priority/weight、BreakerBadge 三态、EWMA 延迟（LatencyBar）、错误率、负载/容量进度条、累计请求/失败、last_error 截断悬浮
-- 「刷新健康检查」→ /v1/router/health（检查中动画）
-- 节点动态权重表：node、dynamic_weight、current_load、ewma_latency、ewma_error_rate
-- 空态：OPENAI_COMPATIBLE_UPSTREAMS JSON 配置指引
+最近错误列表（前 5 条）:
+  ← GET /v1/models/errors → ErrorRecord[]
+  字段：timestamp · model_id · error_type Tag(4 枚举) · message（截断 60 字符）
+  错误类型映射：timeout=橙 / validation=红 / quota=黄 / internal=灰
 
-**08_Knowledge_RAG（双 Tab）**：
+系统资源条:
+  ← GET /health → system.{cpu_percent, memory_percent, disk_percent}
+  进度条：0-100%，≥80% 变橙色
 
-- Tab1 知识库：KB 卡片（name、description、文档数、chunks、创建时间）、创建/编辑/删除（ConfirmDialog）、详情抽屉（stats + 文档列表）
-- Tab2 文档与检索：拖拽上传（上传中/解析中/完成/失败 + reprocess 重试）、检索试验台（query + KB 多选 + top_k → 相似度分数条 + 片段高亮）、问答试验台（答案 + 引用来源折叠）
+快捷操作: 去 Playground · 路由状态 · 缓存管理 · 文档中心
+```
 
-**09_MCP_Tools**：左侧工具树（搜索/读取/执行/本地 MCP 四组 + local/status 健康灯）；右侧参数 JSON 编辑 → POST /v1/mcp/execute → 响应 JSON + 耗时 + 错误态；常用工具一键模板。
+### 05_Model_Hub
 
-**10_Cache_Admin**：StatCard（命中率、条目数、TTL）；按模型失效（选择器 + Toast 显示失效数）；全量清空（ConfirmDialog + 输入 "CLEAR" 确认）。
+```
+[对齐类型] ✅ 直接对接（/v1/models + /v1/models/stats 组合）
 
-**11_Monitor_Logs**：
+数据来源:
+  主数据: GET /v1/models → ModelConfig[]（6 种 backend 枚举）
+  统计增强: GET /v1/models/stats → ModelStat[]（usage_count 附加）
 
-- 上半错误表：timestamp、model、error_type（network 蓝/api 黄/timeout 橙/validation 红）、message；筛选类型/模型/时间；行详情 Drawer（完整错误 + TraceCard）
-- 下半系统健康：services 四卡（ollama 带延迟、zhipu 配置态、redis、postgresql）+ uptime + version + /healthz 呼吸灯
-- 说明条：「请求级日志将于 Phase 2 开放」
+ModelCard 字段映射:
+  display_name    ← ModelConfig.display_name
+  id              ← ModelConfig.id（code 字体）
+  backend         ← ModelConfig.backend → BackendBadge（6 枚举 → 4 色映射：
+                     local/ollama → 绿 · zhipu → 蓝 · deepseek → 紫 · openai/upstream → 青）
+  max_tokens      ← ModelConfig.max_tokens
+  cost_per_1k     ← ModelConfig.cost_per_1k_tokens → $0.00 / 免费（值为 0 时）
+  enabled         ← ModelConfig.enabled → StatusDot（绿/灰）
+  usage_count     ← ModelStat.usage_count（来自 stats 端点）
 
-**12_Settings**：连接设置（网关地址只读、Key 掩码、断开连接）、偏好（主题/语言/时区）、默认 Playground 参数、缓存入口、关于（version、/v1/versions）。
+筛选器:
+  backend 多选（6 种）
+  是否免费（cost_per_1k == 0）
+  enabled 状态
 
-**13_Docs_API**：左侧导航（快速开始、认证、模型、聊天补全同步+SSE 双示例、知识库、MCP、错误码表、健康检查）；右侧 CodeBlock 三语言切换；底部外链卡 → `/docs`（Swagger UI）。
+顶部提示条（固定显示）:
+  「上游池动态注入的模型随 OPENAI_COMPATIBLE_UPSTREAMS 配置实时变化」
 
-**14_Roadmap_Phase2**：四张线框卡：API Keys 管理（.env→数据库化）、Usage_Billing（usage_log 加 cost 列）、Alerts_Webhooks（预算/阈值）、Team_RBAC（用户/角色/项目）；标注后端改造点。
+详情抽屉（展开 ModelCard）:
+  全部 ModelConfig 字段 + /v1/model/type + ModelStat（stats）+ 示例 curl
 
-**15_Prototype_Flows**（每流程含 默认/加载/空/错误/成功 五态）：
+底部说明卡:
+  「Phase 2 · 更多供应商将经由上游池接入」← 📋 Phase 2 占位
+```
 
-- Flow 1：Connect → Dashboard → Playground → SSE 流式动画 → 右栏上游徽章 → 回 Dashboard
-- Flow 2：Model Hub → 筛「本地免费」→ 详情抽屉 → 去 Playground → 模型自动选中
-- Flow 3：RAG → 建库 → 传文档（进度）→ 检索 → 引用高亮
-- Flow 4：MCP → 选 web_search → 执行 → 结果 JSON
-- Flow 5：Routing → 发现 open 熔断 → 刷新健康检查 → half_open 恢复 → Dashboard 联动
-- Flow 6：Cache → 查命中率 → 按模型失效 → Toast
+### 06_Playground · 三栏核心页
 
-**16_QA_Self_Check**：覆盖矩阵、测试用例、状态、证据、修复记录；执行智能自检循环：生成→检查→修复→再检查→报告。
+```
+[对齐类型] ✅ 直接对接（/v1/chat/completions + SSE）
 
-**17_Handoff_DevMode**：路由映射 + Code Connect + API 契约全表（复制本文 §1.1–§1.5）。
+左栏 · ParamPanel:
+  ModelSelector ← GET /v1/models（按 backend 分组：云端/本地/上游池）
+  temperature Slider 0-2（默认 0.7）
+  top_p Slider 0-1（默认 0.9）
+  max_tokens Input（默认 4096）
+  stream Switch（默认开）
+  模式 Tab: 💬 对话 / 📚 RAG（选 KB）/ 🔧 MCP / 🧩 能力
 
-### QA 自检清单（13 条）
+中栏 · 对话流（SSEStreamViewer）:
+  系统提示折叠
+  多轮气泡
+  SSE 光标动画（仅在流式中显示）
+  停止按钮 → AbortController
+  Token 累加 → len(content) // 4（粗略估算）
+  首 chunk 后显示「由 {upstream} 服务」徽章（_yyc3_upstream 字段）
+  中断态：error chunk + 「重试」按钮
+  流式错误：data: {"error":{"message":"...","type":"stream_error"}} → [DONE]
 
-1. 所有颜色/间距/圆角/字体绑定 Variables，无游离样式
-2. 组件化覆盖 8 种 state
-3. 全部 Auto Layout，支持增长/截断/换行
-4. 响应式 1440/1280/1024/768；侧边栏 1024 折叠；Playground 三栏→两栏（右栏折叠为抽屉）
-5. 对比度 ≥4.5:1、焦点态、键盘顺序、触控 ≥44px
-6. 6 条 Flow 可点击跑通，含返回/关闭/确认/取消
-7. 每页五态（默认/加载/空/错误/成功）；Playground 加流式中/中断；Connect 加 401
-8. 表格：排序/筛选/分页/行悬停/行详情
-9. 表单：必填/校验/错误提示/提交中
-10. 数据真实性：字段与 §1.1–§1.5 完全一致（error_rate 是 0-1 小数；cost=0 显示「本地/免费」）
-11. 命名符合规范
-12. Dev Mode 绑定真实端点（禁止出现 /v1/keys、/v1/billing 等不存在端点）
-13. 失败项立即修复重检，直到通过或标记阻塞
+右栏 · 调试面板:
+  请求 JSON 预览（CompletionRequest schema）
+  响应头卡:
+    X-YYC3-Upstream（灰色徽章）
+    X-YYC3-Degraded（橙色徽章 "降级路径" + 主备对比）
+  TTFT / 总耗时计时
+  TraceCard：「primary_upstream ✗ → degraded_upstream ✓ (served in XXXms)」
+  导出 Tab（curl / Python openai SDK / Node 一键复制）
+  保存预设 → localStorage（非后端持久化，Phase 1 加后端存储）
 
-### QA 报告格式
+请求头:
+  X-API-Key: {key}
+  Content-Type: application/json
 
-表格：模块 | 检查项 | 状态 | 证据/链接 | 修复建议
-结论：通过 / 有条件通过 / 失败 + 阻塞项 + 已修复项 + 待确认项
+SSE 流式读取契约（前端必须遵循）:
+  禁用 EventSource（不支持 POST / 自定义头）
+  使用 fetch + ReadableStream
+  解析 data: {json}\n\n 分隔块
+  结束标记: data: [DONE]\n\n
+```
 
-### 执行顺序
+### 07_Routing_Observe · 上游池熔断观测
 
-1. 18 Pages + 全部 Variables（含 backend 四色、breaker 三态）
-2. Foundations（重点：ErrorState 文案库、SSE 动画规范）
-3. Components + Variants
-4. Connect、Dashboard、Model Hub、Playground
-5. Routing_Observe、Knowledge_RAG、MCP_Tools、Cache_Admin
-6. Monitor_Logs、Settings、Docs_API、Roadmap_Phase2
-7. Prototype Flows（6 条）
-8. QA 自检循环
-9. Handoff DevMode（含全量 API 契约表）
-10. 输出 QA_REPORT
+```
+[对齐类型] ✅ 直接对接（/v1/router/stats + /v1/router/health，只读）
+
+数据来源:
+  UpstreamCard ← GET /v1/router/stats（上游池完整快照）
+  健康探测 ← GET /v1/router/health（手动触发）
+
+UpstreamCard 字段（来自 upstream_registry.py）:
+  name            上游名称
+  base_url        端点地址
+  models          支持模型列表
+  capability      能力标签（chat/embedding/rerank/vision...）
+  priority        优先级
+  weight          配置权重
+  dynamic_weight  动态权重（熔断恢复中自动调整）
+  breaker_state   三态：closed(绿) / open(红) / half_open(橙)
+  ewma_latency    指数加权平均延迟（ms）→ LatencyBar
+  ewma_error_rate 指数加权平均错误率 → ErrorRateBadge（0-1 → 0%-100%）
+  total_requests  累计请求数
+  total_failures  累计失败数
+  last_error      最近错误消息（Tooltip 悬浮显示）
+  load            当前负载
+  capacity        容量上限
+
+页头固定说明:
+  「路由策略为网关内置五种枚举，规则 CRUD Phase 2 开放」
+  五种：ADAPTIVE / WEIGHTED_LATENCY / LEAST_CONNECTIONS / RANDOM / ROUND_ROBIN
+
+节点动态权重表:
+  node / dynamic_weight / current_load / ewma_latency / ewma_error_rate
+
+空态:
+  显示 OPENAI_COMPATIBLE_UPSTREAMS JSON 配置指引
+```
+
+### 08_Knowledge_RAG · 双 Tab
+
+```
+[对齐类型] ✅ 直接对接（9 端点）
+
+Tab1 · 知识库管理:
+  KB 卡片网格 ← GET /v1/knowledge-bases
+  字段: name · description · 文档数（GET /v1/knowledge-bases/{id}/stats）
+        · chunks · 创建时间
+  操作: 创建 / 编辑 / 删除（ConfirmDialog）
+  详情抽屉: 完整 stats + 文档列表（GET /v1/documents?kb_id={id}）
+
+Tab2 · 文档与检索:
+  拖拽上传 ← POST /v1/documents/upload
+    状态：上传中 → 解析中 → 完成 / 失败 → reprocess 重试
+  检索试验台:
+    query + KB 多选 + top_k → POST /v1/rag/search → SearchResponse
+    相似度分数条 + 片段高亮
+  问答试验台:
+    query + KB 多选 → POST /v1/rag/ask
+    答案 + 引用来源折叠
+
+DocumentResponse 关键字段:
+  id / kb_id / name / status(pending/parsing/ready/error) / chunk_count
+  支持 GET /v1/documents/{id}/chunks 查看分块
+  支持 POST /v1/documents/{id}/reprocess 重处理
+```
+
+### 09_MCP_Tools · 14 端点工具调试台
+
+```
+[对齐类型] ✅ 直接对接（14 个 MCP 端点）
+
+左侧工具树（按类别分组）:
+  /v1/mcp/search           跨工具搜索
+  /v1/mcp/tools            工具列表
+  local/                   本地 MCP
+    /v1/mcp/local/status   健康灯
+    /v1/mcp/local/tools    工具列表
+    /v1/mcp/local/execute  执行
+  web/                     网页能力
+    /v1/mcp/web/read
+    /v1/mcp/web/search
+  github/                  GitHub
+    /v1/mcp/github/search
+    /v1/mcp/github/structure
+  filesystem/              文件系统
+    /v1/mcp/filesystem/read
+    /v1/mcp/filesystem/list
+  docker/                  Docker
+    /v1/mcp/docker/containers
+    /v1/mcp/docker/logs
+  database/                数据库
+    /v1/mcp/database/query
+    /v1/mcp/database/tables
+
+右侧调试面板:
+  参数 JSON 编辑（根据选中工具的 Schema 动态生成）
+  执行按钮 → POST /v1/mcp/execute → MCPToolRequest
+  响应：MCPToolResponse（JSON Viewer + 耗时 + 错误态）
+  常用工具一键模板（搜索网页 / 查容器 / 查数据库表）
+```
+
+### 10_Cache_Admin
+
+```
+[对齐类型] ✅ 直接对接（4 端点）
+
+StatCard（来自 GET /v1/cache/stats /info）:
+  命中率 / 条目数 / TTL
+
+操作:
+  按模型失效: ModelSelector → POST /v1/cache/invalidate/{model} → Toast
+  全量清空: DELETE /v1/cache/all → ConfirmDialog（输入 "CLEAR" 二次确认）
+```
+
+### 11_Monitor_Logs
+
+```
+[对齐类型] ✅ 直接对接（错误部分）+ 📋 Phase 2 占位（请求级日志）
+
+上半 · 错误记录:
+  ← GET /v1/models/errors → ErrorRecord[]
+  表格列:
+    timestamp · model_id · error_type(4 枚举) · message
+  行详情 Drawer: 完整错误 + TraceCard（如有降级路径）
+  筛选: error_type / model_id / 时间范围
+
+  ⚠️ ErrorRecord.error_type 枚举只有 4 种：
+     timeout(橙) / validation(红) / quota(黄) / internal(灰)
+     不是 v3.0 假设的 "network/api/timeout/validation"
+
+下半 · 系统健康:
+  ← GET /health → services / system / uptime_seconds / version
+  4 张服务卡: ollama · zhipu · redis · postgresql
+    status: healthy(绿) / unreachable(红) / configured(灰)
+    ollama 额外显示延迟（如可达）
+  系统进度条: CPU / 内存 / 磁盘
+  版本号: /v1/versions
+  呼吸灯: /healthz
+
+底部说明条:
+  📋 「请求级日志将于 Phase 2 开放」← /v1/logs 端点待新增
+```
+
+### 12_Settings
+
+```
+[对齐类型] ✅ 直接对接
+
+连接设置卡:
+  网关地址（只读，https://api.0379.world）
+  API Key 掩码显示 + 「重新输入」按钮
+  「断开连接」→ 清除 localStorage yyc3_api_key → 重定向 Connect
+
+偏好设置:
+  主题切换（Dark/Light，对应 Mode）
+  密度切换（Comfortable/Compact）
+  语言时区
+
+默认 Playground 参数:
+  temperature / top_p / max_tokens / stream 默认值
+
+关于:
+  ← GET /v1/versions（版本信息）
+  ← GET /health → version + uptime_seconds
+  版权 YanYuCloudCube
+```
+
+### 13_Docs_API
+
+```
+[对齐类型] ✅ 直接对接
+
+左侧导航:
+  快速开始 · 认证说明 · 模型列表 · 聊天补全(同步+SSE 双示例)
+  · 知识库 · MCP · 错误码表 · 健康检查
+
+右侧 CodeBlock:
+  三语言 Tab: curl / Python openai SDK / Node.js
+
+底部外链卡:
+  → GET /docs（Swagger UI，免认证）
+  → GET /openapi.json（OpenAPI 规范，免认证）
+```
+
+### 14_Roadmap_Phase2 · 规划占位
+
+```
+[对齐类型] 📋 Phase 2 分期（线框占位，不设计完整 UI）
+
+四张线框卡 + 后端改造标注:
+  1. API Keys 管理
+     后端改造：api_keys 表 + /v1/keys CRUD 端点
+     .env 静态迁移 → 数据库化（归属/权限/过期/白名单）
+  2. Usage Billing
+     后端改造：usage_log 加 cost_usd/api_key_hash/latency_ms/request_id/status/error_code
+     /v1/logs + /v1/usage/timeline 端点
+  3. Alerts Webhooks
+     后端改造：alerts/webhooks 表 + 规则引擎
+     预算/阈值告警触发 HTTP POST
+  4. Team RBAC
+     后端改造：users/roles/projects 表
+     Key 按项目分组 + 角色权限
+```
+
+### 15_Prototype_Flows · 6 条闭环
+
+```
+[对齐类型] ✅ 直接对接（全部使用真实端点）
+
+Flow 1: Connect → Dashboard → Playground → SSE 流式动画 → 右栏上游徽章 → 回 Dashboard
+Flow 2: Model Hub → 筛「本地免费」→ 详情抽屉 → 去 Playground → 模型自动选中
+Flow 3: RAG → 建库(POST KB) → 传文档(P upload) → 检索(P search) → 引用高亮
+Flow 4: MCP → 选 web_search → 执行(P execute) → 结果 JSON
+Flow 5: Routing → 查看 open 熔断(router/stats) → 刷新健康(router/health) → half_open 恢复 → Dashboard 联动
+Flow 6: Cache → 查命中率(cache/stats) → 按模型失效(P invalidate) → Toast
+
+每条 Flow 含五态: 默认 / 加载 / 空 / 错误 / 成功
+Playground 额外: 流式中 / 中断
+Connect 额外: 401 Unauthorized
+```
+
+### 16_QA_Self_Check · 自检矩阵
+
+```
+[对齐类型] ✅ QA 框架（13 条增强）
+
+基础 8 条 + v4.0 新增 5 条后端对齐专项:
+
+  1. 变量绑定：颜色/间距/圆角/字体全部 Variables
+  2. 组件化：8 种 state × 变体矩阵全覆盖
+  3. Auto Layout：所有 Frame/Card/Table/Nav/Form
+  4. 响应式：1440/1280/1024/768；Playground 三栏→两栏
+  5. 可访问性：对比度 ≥4.5、焦点态、键盘顺序、触控 ≥44px
+  6. 6 条 Flow 跑通（含返回/关闭/确认/取消）
+  7. 每页五态 + 流式中 + 中断 + 401
+
+v4.0 新增后端对齐专项 ⚠️:
+  8. 【字段真实】所有数据字段与 §1.2 Schema 完全一致
+     - ErrorRecord.model_id（不是 model）
+     - ErrorType 仅 4 枚举
+     - ModelConfig.backend 仅 6 枚举
+     - cost_usd 恒 0.0 → 显示占位
+  9. 【端点真实】Dev Mode 绑定真实端点（禁止 /v1/keys、/v1/billing）
+  10.【数值范围】error_rate 0-1 → 0%-100%；latency 按颜色分级
+  11.【SSE 协议】前端使用 fetch+ReadableStream（不是 EventSource）
+  12.【熔断颜色】closed=绿/open=红/half_open=橙
+  13.【空态处理】router/stats 空态显示 UPSTREAMS JSON 指引
+
+QA 报告格式: 表格 + 结论 + 阻塞项 + 修复记录
+```
+
+### 17_Handoff_DevMode
+
+```
+[对齐类型] ✅ 交付基线
+
+内容:
+  - 18 页路由映射 → Next.js 16 App Router
+  - 全部组件的 Code Connect（Figma 组件 ↔ 代码路径）
+  - 完整 API 契约（复制本文档 §1.1–§1.5）
+  - 后端 Backlog 链接 → 本文档第四部分
+```
 
 ---
 
-## 第三部分 · 前端技术栈基线（2026-09 最新稳定版）
+## 第三部分 · 前端技术栈基线（锁定）
 
-### 3.1 核心框架版本
+### 3.1 核心框架（禁止降级）
 
-| 技术 | 版本基线 | 说明 |
-| ------ | --------- | ------ |
-| **Next.js** | **16.3.x（Active LTS）** | 当前最新稳定版；2026-10-21 起为唯一 LTS 主线，EOL 2027-10；要求 Node.js ≥ 20.9；默认 Turbopack（16.3 dev 内存最高降 90%）；安全补丁跟进至 16.3.3+ |
-| React | 19.x | Next.js 16 内置，shadcn/ui 全组件已适配（移除 forwardRef） |
-| TypeScript | 5.9+ | strict 模式 |
-| Tailwind CSS | 4.3+ | CSS-First 配置（@theme 指令）；构建快 5×、增量快 100×；Figma Variables 直接映射 @theme token |
-| shadcn/ui | latest（Tailwind v4 + React 19 版） | CLI 支持新 @theme；Base UI 封装趋势 |
+| 技术 | 版本 | 锁定理由 |
+| ------ | ------ | ---------- |
+| **Next.js** | **16.3.x Active LTS** | 2026-10 起唯一 LTS 主线；EOL 2027-10；Node ≥20.9；Turbopack 默认 |
+| **React** | **19.x** | Next.js 16 内置；shadcn/ui 全组件已适配 |
+| **TypeScript** | **5.9+ strict** | 类型安全 |
+| **Tailwind CSS** | **4.3+** | CSS-First @theme；构建快 5×；Figma Variables 直接映射 |
+| **shadcn/ui** | **React 19 版** | CLI 支持新 @theme；Base UI 封装趋势 |
 
 ### 3.2 状态与数据层
 
@@ -295,96 +765,290 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 | ------ | ------ | ------ |
 | TanStack Query | v5.x（5.90+） | 服务端状态：summary/stats/health 轮询、缓存失效联动 |
 | Zustand | v5.x | 客户端状态：连接态、Playground 会话、主题偏好 |
-| SSE 方案 | 原生 fetch + ReadableStream | **禁用 EventSource**（需 POST + 自定义头 X-API-Key） |
+| SSE 方案 | 原生 fetch + ReadableStream | **禁用 EventSource**（需 POST + 自定义头） |
 
 ### 3.3 辅助库
 
-| 用途 | 选型 | 备注 |
-| ------ | ------ | ------ |
-| 图表 | Recharts（或 shadcn/charts） | 与 shadcn 视觉同源 |
-| 表格 | TanStack Table v8 | DataGrid 排序/筛选/分页 |
-| 表单 | react-hook-form + zod | Connect/KB 创建/告警表单 |
-| 图标 | lucide-react | shadcn 默认 |
-| 日期 | date-fns | 时间格式统一 |
+| 用途 | 选型 |
+| ------ | ------ |
+| 图表 | Recharts（shadcn 同源） |
+| 表格 | TanStack Table v8 |
+| 表单 | react-hook-form + zod |
+| 图标 | lucide-react |
+| 日期 | date-fns |
 
-### 3.4 Code Connect 映射（写入 Figma Dev Mode）
+### 3.4 Code Connect 映射
 
-| Figma 组件 | 代码组件 |
+| Figma 组件 | 代码路径 |
 | ----------- | --------- |
 | Button/Input/Select/Switch/Slider/Table/Tabs/Tooltip/Toast/Dialog/Drawer | shadcn/ui 同名组件 |
-| ModelCard | `components/console/ModelCard.tsx` |
-| SSEStreamViewer | `components/console/SSEViewer.tsx` |
-| TraceCard | `components/console/UpstreamTrace.tsx` |
-| BreakerBadge | `components/console/BreakerBadge.tsx` |
-| JsonViewer | `components/console/JsonViewer.tsx` |
-| Figma color/* Variables | Tailwind `@theme` token（globals.css 单一真源） |
+| ModelCard | `apps/console/components/console/ModelCard.tsx` |
+| SSEStreamViewer | `apps/console/components/console/SSEViewer.tsx` |
+| TraceCard | `apps/console/components/console/UpstreamTrace.tsx` |
+| BreakerBadge | `apps/console/components/console/BreakerBadge.tsx` |
+| JsonViewer | `apps/console/components/console/JsonViewer.tsx` |
+| 所有 color/* Variables | Tailwind `@theme` token（`apps/console/app/globals.css` 单一真源） |
 
-### 3.5 前端路由映射（Next.js 16 App Router）
+### 3.5 前端路由（Next.js 16 App Router）
 
 ```
-/                → Connect（未连接全局重定向至此）
-/dashboard       → 04
-/models          → 05
-/playground      → 06
-/routing         → 07
-/knowledge       → 08
-/mcp             → 09
-/cache           → 10
-/monitor         → 11
-/settings        → 12
-/docs            → 13
-/roadmap         → 14
+/                → Connect
+/dashboard       → 04_Dashboard
+/models          → 05_Model_Hub
+/playground      → 06_Playground
+/routing         → 07_Routing_Observe
+/knowledge       → 08_Knowledge_RAG
+/mcp             → 09_MCP_Tools
+/cache           → 10_Cache_Admin
+/monitor         → 11_Monitor_Logs
+/settings        → 12_Settings
+/docs            → 13_Docs_API
+/roadmap         → 14_Roadmap_Phase2
 ```
 
 ---
 
-## 第四部分 · 分阶段落地路线图
+## 第四部分 · 后端补全 Backlog（可执行清单）
+
+> 本 Backlog 是前端 Phase 0→1 闭环的依赖项。每项标注影响的前端页面。
+
+### BL-01: UsageLog 加 6 字段
+
+```
+影响前端: 04_Dashboard（成本）、11_Monitor_Logs（请求级日志）
+优先级: P0（Phase 1 启动时立即迁移）
+
+DDL:
+ALTER TABLE usage_log ADD COLUMN api_key_hash VARCHAR(64);
+ALTER TABLE usage_log ADD COLUMN cost_usd     NUMERIC(12,6) DEFAULT 0;
+ALTER TABLE usage_log ADD COLUMN latency_ms    INTEGER DEFAULT 0;
+ALTER TABLE usage_log ADD COLUMN request_id   VARCHAR(36);
+ALTER TABLE usage_log ADD COLUMN status       VARCHAR(20) DEFAULT 'success';
+ALTER TABLE usage_log ADD COLUMN error_code   VARCHAR(20);
+
+索引:
+CREATE INDEX idx_usage_log_api_key_hash ON usage_log(api_key_hash);
+CREATE INDEX idx_usage_log_status        ON usage_log(status);
+CREATE INDEX idx_usage_log_request_id    ON usage_log(request_id);
+```
+
+### BL-02: cost_usd 真实计算
+
+```
+影响前端: 04_Dashboard StatCard3
+优先级: P0
+
+实现:
+  公式: cost = (prompt_tokens + completion_tokens) / 1000
+              × model.cost_per_1k_tokens
+  触发: log_usage() 时同步写入
+  来源: ModelConfig.cost_per_1k_tokens（已存在）
+
+同步修改 /v1/models/summary:
+  cost_usd = SELECT SUM(total_tokens) / 1000 * cost_per_1k_tokens
+             JOIN model_registry ON model_registry.id = usage_log.model
+```
+
+### BL-03: latency_ms 记录
+
+```
+影响前端: 04_Dashboard StatCard4（真实端到端延迟）、06_Playground（TTFT）
+优先级: P0
+
+实现:
+  - 中间件层记录请求开始时间
+  - /v1/chat/completions 响应完成时计算 elapsed
+  - log_usage() 时同步写入 latency_ms
+  - 含 SSE 流式：最后一个 chunk [DONE] 后记录
+```
+
+### BL-04: request_id 全链路注入
+
+```
+影响前端: 06_Playground（TraceCard）、11_Monitor_Logs（追踪）
+优先级: P1
+
+实现:
+  - 中间件生成 UUID v4
+  - 响应头：X-Request-Id
+  - SSE 每个 chunk 含 _request_id 字段
+  - log_usage() 时同步写入
+```
+
+### BL-05: api_keys 表 + CRUD 端点
+
+```
+影响前端: 14_Roadmap_Phase2 → Phase 1 移主界面
+优先级: P1
+
+DDL:
+CREATE TABLE api_keys (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key_hash      VARCHAR(64) UNIQUE NOT NULL,
+  name          VARCHAR(100) NOT NULL,
+  created_at    TIMESTAMP DEFAULT NOW(),
+  expires_at    TIMESTAMP,
+  last_used_at  TIMESTAMP,
+  is_active     BOOLEAN DEFAULT TRUE,
+  owner_id      VARCHAR(100),
+  permissions   JSONB DEFAULT '{}',
+  daily_limit   INTEGER,
+  monthly_limit INTEGER
+);
+
+端点:
+  POST   /v1/keys              创建（返回明文仅一次）
+  GET    /v1/keys              列表（返回 hash，不返回明文）
+  GET    /v1/keys/{id}         详情
+  PATCH  /v1/keys/{id}         更新权限/限额
+  DELETE /v1/keys/{id}         撤销
+  POST   /v1/keys/{id}/rotate  轮换
+
+同步修改认证中间件:
+  VALID_API_KEYS = SELECT key_hash FROM api_keys WHERE is_active = TRUE
+  （替换当前 .env 静态集合匹配）
+```
+
+### BL-06: /v1/usage/timeline + /v1/logs 端点
+
+```
+影响前端: 04_Dashboard（请求趋势时间序列）、11_Monitor_Logs（请求级日志）
+优先级: P1
+
+端点:
+  GET /v1/usage/timeline?from=YYYY-MM-DD&to=YYYY-MM-DD&granularity=hour|day
+    → [{timestamp, total_requests, total_tokens, cost_usd, avg_latency_ms, error_rate}]
+
+  GET /v1/logs?model=&error_type=&status=&from=&to=&limit=100
+    → UsageLog[]（扩展 6 字段后）
+```
+
+### BL-07: status/error_code 写入
+
+```
+影响前端: 11_Monitor_Logs（请求级日志）
+优先级: P1
+
+实现:
+  - 成功: status='success', error_code=null
+  - 429 限流: status='rate_limited', error_code='RATE_LIMITED'
+  - 上游熔断: status='degraded', error_code='UPSTREAM_OPEN'
+  - 网络超时: status='error', error_code='NETWORK_TIMEOUT'
+  - 4xx 客户端错误: status='validation', error_code 映射
+```
+
+### BL-08: /v1/router/health 扩展（熔断恢复触发）
+
+```
+影响前端: 07_Routing_Observe「刷新健康检查」按钮
+优先级: P2（当前 router/health 已可用，仅需返回更详细结果）
+
+当前返回足够，仅需：
+  - 在响应中显式标记哪些熔断被探测关闭
+  - 动态权重变更记录
+```
+
+### 依赖关系图
+
+```
+BL-01 (UsageLog 扩展) ──┬──→ BL-02 (cost) ──→ BL-06 (timeline/summary)
+                         ├──→ BL-03 (latency)
+                         ├──→ BL-04 (request_id)
+                         └──→ BL-07 (status/error)
+
+BL-05 (api_keys CRUD) ← 独立，但需同步改 auth middleware
+BL-08 (router health) ← 独立增强
+```
+
+### 验收清单（每个 BL 完成）
+
+- [ ] SQL 迁移脚本 + rollback 脚本
+- [ ] `/v1/versions` 端点版本号递增（feature 数字）
+- [ ] pytest 测试覆盖新字段/端点
+- [ ] `/health` 端点新增能力说明
+- [ ] Postman/Swagger 示例更新
+
+---
+
+## 第五部分 · 分阶段落地路线图（闭环版）
 
 ### Phase 0：纯前端可交付（后端零改动）
 
-- `create-next-app@latest`（Next.js 16.3 + TS + Tailwind v4）+ shadcn/ui init
-- 页面：Connect、Dashboard（summary/stats/health）、Model Hub、Playground（SSE）、Routing 只读、Cache、Docs 外链
-- 认证：Key 输入 → localStorage → 请求头注入；`/healthz` 预检
-- **验收**：连 `https://api.0379.world` 全链路可操作
+```
+✅ 所有 18 页面中 15 个为直接对接
+✅ Dashboard（summary/stats/health 三端点）
+✅ Playground（SSE 全链路）
+✅ Model Hub + Routing + RAG + MCP + Cache 全部可操作
+✅ 认证：Key 输入 → localStorage → 请求头注入
+✅ 预检：/healthz 免认证端点
+验收: 连 api.0379.world 全链路可操作（52 端点中 43 个已通）
+```
 
-### Phase 1：计费闭环（后端小改）
+### Phase 1：计费 + 日志闭环（后端轻量扩展）
 
-- 后端：api_keys 表、usage_log 加 cost/api_key_hash/request_id/latency/status 列、`GET /v1/logs`、`/v1/keys` CRUD、`GET /v1/usage/timeline`
-- 前端：API Keys 管理页、Usage_Billing 页、Logs 完整版
-- **验收**：创建 Key → Playground 调用 → 账单页真实成本
+```
+后端 Backlog: BL-01 → BL-02 → BL-03 → BL-04 → BL-05 → BL-06 → BL-07
+前端新增: API Keys 管理页、Usage Billing 页、请求级日志完整表
+前端修复: Dashboard 成本卡变真实值、请求趋势从单数据点变时间序列
+验收: 创建 Key → Playground 调用 → 日志可查 → 成本真实
+```
 
-### Phase 2：团队与策略
+### Phase 2：团队 + 策略闭环
 
-- 后端：users/roles/projects、routing_rules、alerts/webhooks、SSO 预研
-- 前端：Team_RBAC、Routing 策略 CRUD+模拟器、Alerts_Webhooks
-- **验收**：邀成员→分角色→按 Key 权限调用→预算告警收 Webhook
+```
+后端: users/roles/projects、routing_rules CRUD、alerts/webhooks
+前端: Team RBAC、Routing 策略 CRUD + 模拟器、Alerts Webhooks
+验收: 邀成员 → 分角色 → Key 按权限 → 预算告警 Webhook
+```
 
 ### Phase 3：生态扩展（按需）
 
-支付（Stripe/支付宝）、SSO/SCIM（OIDC）、多供应商上游（改 OPENAI_COMPATIBLE_UPSTREAMS 配置即生效）
+```
+支付（Stripe/支付宝）、SSO/SCIM（OIDC）、多供应商上游（仅改 env 配置）
+```
 
 ---
 
-## 第五部分 · 工程决策记录
+## 第六部分 · 工程决策记录
 
 | 决策点 | 结论 | 理由 |
 | -------- | ------ | ------ |
 | 前端仓库位置 | `apps/console/`（pnpm workspace） | 与 core 解耦，CI 独立 |
-| Next.js 版本 | 16.3.x LTS（禁用 14/15 新建项目） | 16 为当前唯一 Active LTS；Turbopack 默认；性能与安全补丁窗口最长 |
-| Node.js | 22 LTS | Next.js 16 要求 ≥20.9 |
-| 状态管理 | TanStack Query v5 + Zustand v5 | SSE 流式 + 服务端缓存最优解 |
-| 图表 | Recharts | shadcn 生态一致 |
-| 是否等后端再设计 | 否 | 40% 页面无后端依赖，设计并行 |
-| SSE 实现 | fetch 流式解析 | EventSource 不支持 POST/自定义头 |
+| Next.js 版本 | **16.3.x LTS**（禁用 14/15） | 唯一 Active LTS；Turbopack；Node ≥20.9 |
+| Node.js | **22 LTS** | Next.js 16 要求 ≥20.9 |
+| 状态管理 | TanStack Query v5 + Zustand v5 | SSE + 服务端缓存最优 |
+| 图表 | Recharts | shadcn 同源 |
+| 设计-后端并行 | Phase 0 即启动 | 82.7% 端点可直接对接 |
+| SSE | fetch + ReadableStream | EventSource 不支持 POST/自定义头 |
+| Token 估算口径 | `len(content) // 4` | 与后端 sse_wrapper 一致 |
 
 ---
 
-## 附录 · 历史文档处置记录
+## 附录 · 版本演进
 
-| 原文档 | 处置 |
-| -------- | ------ |
-| docs/Token调用平台完整前端设计提示词.md（V1） | 合并后删除（多租户假设已修正） |
-| docs/Token调用平台完整前端设计提示词-V2落地版.md（V2） | 合并后删除（内容全部并入 §第二部分） |
-| docs/设计理念/落地衔接指导-Token调用平台前端.md | 合并后删除（内容全部并入 §第一/四/五部分） |
+| 版本 | 日期 | 关键变更 |
+| ------ | ------ | ---------- |
+| V1 | 2026-09-01 | 初稿，多租户假设（已废弃） |
+| V2 | 2026-09-02 | 落地版，删除超纲设计 |
+| V3.0 | 2026-09-03 | 合并三合一，Next.js 16 |
+| **V4.0** | **2026-09-17** | **闭环对齐版：逐页对齐类型标注、真实 Schema 字段级契约、完整可执行 Backlog** |
 
-**本文档为唯一真源，后续修订直接更新本文档并递增 version。**
+### 与 v3.0 的关键差异
+
+| 项 | v3.0 | v4.0 |
+| ---- | ------ | ------ |
+| ErrorRecord.model vs model_id | 用 model | **model_id（OpenAPI 实况）** |
+| error_type 枚举 | network/api/timeout/validation | **timeout/validation/quota/internal（4 枚举）** |
+| backend 枚举 | 4 色映射 | **6 枚举 → 4 色（含 local/openai）** |
+| 对齐比例 | 40/35/25 | **82.7/7.7/0**（精确端点级） |
+| cost_usd | 占位提示 | **明确标注恒 0.0 + BL-02 计算方案** |
+| UsageLog 缺失 | 笼统 5 字段 | **精确 6 字段 + DDL + 索引** |
+| 后端 Backlog | 无 | **8 项可执行清单 + 依赖图 + 验收清单** |
+
+### 历史文档处置
+
+| 文档　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 处置　　　　　　　　　　　　　　　 |
+| -----------------------------------------------------------------| ------------------------------------|
+| docs/设计理念/Token调用平台前端-全维度设计与落地文档.md（v3.0） | **保留，但标注「已被 v4.0 取代」** |
+
+**本文档为唯一真源，后续修订直接更新并递增 version。**
