@@ -4,15 +4,18 @@ description: YYC³ Console 前端设计提示词 + 后端能力审计 + 落地�
 author: AI Tutor
 version: v3.0.0
 created: 2026-09-03
-updated: 2026-09-03
-status: active
+updated: 2026-09-17
+status: **deprecated**（已被 v4.0 取代，见同目录 `-v4闭环对齐版.md`）
 tags: [frontend],[figma],[design],[api-alignment],[nextjs16],[roadmap]
 category: guide
 supersedes:
   - Token调用平台完整前端设计提示词.md（V1）
   - Token调用平台完整前端设计提示词-V2落地版.md（V2）
   - 落地衔接指导-Token调用平台前端.md
+superseded_by: Token调用平台前端-全维度设计与落地文档-v4闭环对齐版.md
 ---
+
+> ⚠️ **本文档已被 v4.0 闭环对齐版取代**。v4.0 新增：逐页后端对齐类型标注（✅直接对接/🔧轻量扩展/📋Phase 2）、真实 Schema 字段级契约（2026-09-17 OpenAPI 审计）、8 项可执行后端 Backlog。v3.0 仅作历史参考，请使用 v4.0。
 
 # Token调用平台前端 · 全维度设计与落地文档
 
@@ -25,7 +28,7 @@ supersedes:
 ### 1.1 网关真实路由清单（52 个端点，来源 core/api 代码审计）
 
 | 类别 | 端点 | 状态 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 聊天 | `POST /v1/chat/completions`（SSE 流式）、`WS /ws/chat`、`WS /ws/monitor` | ✅ 生产 |
 | 模型 | `GET /v1/models`、`/v1/models/stats`、`/v1/models/errors`、`/v1/models/summary`、`/v1/model/type` | ✅ 生产 |
 | 路由 | `GET /v1/router/stats`、`/v1/router/health` | ✅ 真实 EWMA/熔断数据 |
@@ -49,6 +52,7 @@ supersedes:
 usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
            total_tokens, user_id(可选), created_at
 ```
+
 缺失：api_key_hash、请求ID、延迟、成本、错误码、状态、项目归属（Phase 1/2 补齐）。
 
 ### 1.4 模型矩阵现状
@@ -134,6 +138,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ### 设计系统 Foundations
 
 **颜色变量**
+
 - color/bg/default、subtle、elevated、overlay
 - color/text/primary、secondary、tertiary、inverse
 - color/border/default、strong、focus
@@ -143,11 +148,13 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 - color/breaker/closed(绿)、open(红)、half_open(橙)（熔断三态专用）
 
 **间距与形状**
+
 - space/0=0、1=4、2=8、3=12、4=16、5=20、6=24、8=32、10=40、12=48、16=64
 - radius/sm=6、md=10、lg=16、xl=24、full=999
 - shadow/sm、md、lg、focus
 
 **字体**
+
 - display/lg、display/md、h1、h2、h3、body/lg、body/md、body/sm、caption、code/md、code/sm
 
 ### 组件库（含专属组件）
@@ -169,6 +176,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 **03_Connect**：单屏。Logo + 平台名 + Key 掩码输入 + 「连接」按钮 + 「记住此设备」Switch + 服务预检条（自动 ping `/healthz`）。校验中→成功进 Dashboard→失败显示 401/403 真实 `detail.message`。Dev Mode 注释：`X-API-Key` 头；localStorage `yyc3_api_key`。
 
 **04_Dashboard**：
+
 - 6 张 StatCard：总请求（summary.total_requests）、总 Token（summary.total_tokens）、成本占位（cost_usd，标注 Phase 2）、平均延迟（stats 聚合 avg_latency_ms）、错误率（聚合 error_rate）、缓存命中率（/health.metrics.cache_hit_rate）
 - 图表：模型用量 Top5（横向条形）、Token 占比环图、请求趋势 Sparkline（Phase 1 接时间序列）
 - 模型健康列表（BackendBadge + StatusDot，数据 /health.services + /v1/router/stats）
@@ -177,6 +185,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 - 快捷操作：Playground、路由状态、缓存管理、文档中心
 
 **05_Model_Hub**：
+
 - ModelCard 网格：display_name、id（code 字体）、BackendBadge、max_tokens、cost_per_1k_tokens（0 →「免费/本地」）、enabled StatusDot、「去 Playground」「复制模型 ID」
 - 筛选：后端类型多选、是否免费、状态
 - 顶部提示：「上游池动态注入的模型随 OPENAI_COMPATIBLE_UPSTREAMS 配置实时变化」
@@ -184,12 +193,14 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 - 底部说明卡：「Phase 2 · 更多供应商将经由上游池接入」（不设计未接入供应商）
 
 **06_Playground（核心，三栏）**：
+
 - 左栏 ParamPanel：ModelSelector（云端/本地/上游池分组）、temperature Slider(0-2, 默认0.7)、top_p Slider(0-1)、max_tokens Input、stream Switch(默认开)；模式 Tab：💬 对话 / 📚 RAG（选知识库）/ 🔧 MCP / 🧩 能力（embeddings/rerank/ocr）
 - 中栏：系统提示折叠、多轮气泡、SSEStreamViewer（光标动画、停止=AbortController、Token len/4 实时累加）、首 chunk 后「由 {upstream} 服务」徽章、中断/错误显示 error chunk + 重试
 - 右栏：请求 JSON 预览、响应头卡（X-YYC3-Upstream、X-YYC3-Degraded 橙色降级提示）、TTFT/总耗时、TraceCard、导出 Tab（curl/Python openai SDK/Node 一键复制）、保存预设→localStorage
 - 状态：默认/流式中/完成/错误/网络断开/401
 
 **07_Routing_Observe（只读）**：
+
 - 页头说明：路由策略为网关内置五种枚举，规则 CRUD Phase 2 开放
 - UpstreamCard 卡片墙：name、base_url、models 数、capability、priority/weight、BreakerBadge 三态、EWMA 延迟（LatencyBar）、错误率、负载/容量进度条、累计请求/失败、last_error 截断悬浮
 - 「刷新健康检查」→ /v1/router/health（检查中动画）
@@ -197,6 +208,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 - 空态：OPENAI_COMPATIBLE_UPSTREAMS JSON 配置指引
 
 **08_Knowledge_RAG（双 Tab）**：
+
 - Tab1 知识库：KB 卡片（name、description、文档数、chunks、创建时间）、创建/编辑/删除（ConfirmDialog）、详情抽屉（stats + 文档列表）
 - Tab2 文档与检索：拖拽上传（上传中/解析中/完成/失败 + reprocess 重试）、检索试验台（query + KB 多选 + top_k → 相似度分数条 + 片段高亮）、问答试验台（答案 + 引用来源折叠）
 
@@ -205,6 +217,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 **10_Cache_Admin**：StatCard（命中率、条目数、TTL）；按模型失效（选择器 + Toast 显示失效数）；全量清空（ConfirmDialog + 输入 "CLEAR" 确认）。
 
 **11_Monitor_Logs**：
+
 - 上半错误表：timestamp、model、error_type（network 蓝/api 黄/timeout 橙/validation 红）、message；筛选类型/模型/时间；行详情 Drawer（完整错误 + TraceCard）
 - 下半系统健康：services 四卡（ollama 带延迟、zhipu 配置态、redis、postgresql）+ uptime + version + /healthz 呼吸灯
 - 说明条：「请求级日志将于 Phase 2 开放」
@@ -216,6 +229,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 **14_Roadmap_Phase2**：四张线框卡：API Keys 管理（.env→数据库化）、Usage_Billing（usage_log 加 cost 列）、Alerts_Webhooks（预算/阈值）、Team_RBAC（用户/角色/项目）；标注后端改造点。
 
 **15_Prototype_Flows**（每流程含 默认/加载/空/错误/成功 五态）：
+
 - Flow 1：Connect → Dashboard → Playground → SSE 流式动画 → 右栏上游徽章 → 回 Dashboard
 - Flow 2：Model Hub → 筛「本地免费」→ 详情抽屉 → 去 Playground → 模型自动选中
 - Flow 3：RAG → 建库 → 传文档（进度）→ 检索 → 引用高亮
@@ -268,7 +282,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ### 3.1 核心框架版本
 
 | 技术 | 版本基线 | 说明 |
-|------|---------|------|
+| ------ | --------- | ------ |
 | **Next.js** | **16.3.x（Active LTS）** | 当前最新稳定版；2026-10-21 起为唯一 LTS 主线，EOL 2027-10；要求 Node.js ≥ 20.9；默认 Turbopack（16.3 dev 内存最高降 90%）；安全补丁跟进至 16.3.3+ |
 | React | 19.x | Next.js 16 内置，shadcn/ui 全组件已适配（移除 forwardRef） |
 | TypeScript | 5.9+ | strict 模式 |
@@ -278,7 +292,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ### 3.2 状态与数据层
 
 | 技术 | 版本 | 职责 |
-|------|------|------|
+| ------ | ------ | ------ |
 | TanStack Query | v5.x（5.90+） | 服务端状态：summary/stats/health 轮询、缓存失效联动 |
 | Zustand | v5.x | 客户端状态：连接态、Playground 会话、主题偏好 |
 | SSE 方案 | 原生 fetch + ReadableStream | **禁用 EventSource**（需 POST + 自定义头 X-API-Key） |
@@ -286,7 +300,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ### 3.3 辅助库
 
 | 用途 | 选型 | 备注 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 图表 | Recharts（或 shadcn/charts） | 与 shadcn 视觉同源 |
 | 表格 | TanStack Table v8 | DataGrid 排序/筛选/分页 |
 | 表单 | react-hook-form + zod | Connect/KB 创建/告警表单 |
@@ -296,7 +310,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ### 3.4 Code Connect 映射（写入 Figma Dev Mode）
 
 | Figma 组件 | 代码组件 |
-|-----------|---------|
+| ----------- | --------- |
 | Button/Input/Select/Switch/Slider/Table/Tabs/Tooltip/Toast/Dialog/Drawer | shadcn/ui 同名组件 |
 | ModelCard | `components/console/ModelCard.tsx` |
 | SSEStreamViewer | `components/console/SSEViewer.tsx` |
@@ -354,7 +368,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ## 第五部分 · 工程决策记录
 
 | 决策点 | 结论 | 理由 |
-|--------|------|------|
+| -------- | ------ | ------ |
 | 前端仓库位置 | `apps/console/`（pnpm workspace） | 与 core 解耦，CI 独立 |
 | Next.js 版本 | 16.3.x LTS（禁用 14/15 新建项目） | 16 为当前唯一 Active LTS；Turbopack 默认；性能与安全补丁窗口最长 |
 | Node.js | 22 LTS | Next.js 16 要求 ≥20.9 |
@@ -368,7 +382,7 @@ usage_log: id, model, backend_type, prompt_tokens, completion_tokens,
 ## 附录 · 历史文档处置记录
 
 | 原文档 | 处置 |
-|--------|------|
+| -------- | ------ |
 | docs/Token调用平台完整前端设计提示词.md（V1） | 合并后删除（多租户假设已修正） |
 | docs/Token调用平台完整前端设计提示词-V2落地版.md（V2） | 合并后删除（内容全部并入 §第二部分） |
 | docs/设计理念/落地衔接指导-Token调用平台前端.md | 合并后删除（内容全部并入 §第一/四/五部分） |
