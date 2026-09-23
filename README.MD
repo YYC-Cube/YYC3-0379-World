@@ -9,7 +9,7 @@
 > **🟢 09-14 生产实况**（详见 `docs/架构与部署/API全链路闭环文档.md` §十-ter）：
 > 生产域名 `https://api.0379.world`（ECS Traefik 边缘 → NAS 网关:8000 → DGX 双机推理池）；
 > **公网三能力** chat(`deepseek-v4-flash` TP=2 双 GB10)/embeddings(1024维)/rerank 全绿，响应头 `X-YYC3-Upstream` 契约；
-> 上游池 env 化（`OPENAI_COMPATIBLE_UPSTREAMS`）+ 熔断降级 + 24 pytest + CI 五段 + 四层冒烟保障；
+> 上游池 env 化（`OPENAI_COMPATIBLE_UPSTREAMS`）+ 熔断降级 + 67 pytest（快速层 1.6s / 全量分层）+ CI 五段 + 四层冒烟保障；
 > 8 Agent+治理中枢容器化运行于 N2（:25600-07/:25700）。
 
 > **_YanYuCloudCube_**
@@ -42,7 +42,7 @@
 <br/>
 
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/version-v2.3.0-brightgreen?style=flat-square" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-v2.2.0-brightgreen?style=flat-square" alt="Version"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/status-stable-success?style=flat-square" alt="Status"/>
@@ -51,7 +51,7 @@
   <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/tests-52%20passing-brightgreen?style=flat-square" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-67%20passing-brightgreen?style=flat-square" alt="Tests"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/CI-five--stage--pipeline-blue?style=flat-square" alt="CI"/>
@@ -562,6 +562,7 @@ hotfix/*    → 紧急修复分支
 
 | 版本 | 日期 | 变更内容 |
 | :----: | :----: | :--------- |
+| v2.3.0 | 2026-09-23 | 网关加固闭环：三云 Key 前置校验同构化（401 明确报错）；4xx 确定性失败跳过重试（OBS-1）；流式 SSE chunk 级 PII 脱敏；vk 看板 + e2e 基建；IDE 解析三件套；CHANGELOG/README 版本链对齐 |
 | v2.2.0 | 2026-09-14 | 全链路实况：DGX 双机 TP=2 公网三能力全绿；上游池 env 化+熔断降级；文档体系 SSOT 对齐（架构/部署/CI-CD/前端设计三合一）；CI 五段+四层冒烟 |
 | v2.1.0 | 2026-07-10 | 安全加固：消除全部硬编码密钥，统一环境变量配置；docs/ 移出版本控制 |
 | v2.0.0 | 2026-04-08 | 架构升级：自适应路由引擎、RAG 知识库、MCP 工具集成 |

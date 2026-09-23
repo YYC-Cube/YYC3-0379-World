@@ -60,6 +60,9 @@ from app.config import settings as _settings  # noqa: E402
 from app.main import app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+# P1-1 分层：TestClient 全链路 → integration 层（pytest -m integration 运行；默认快速层跳过）
+pytestmark = pytest.mark.integration
+
 _BIZ_KEY = "biz-key-1"
 _ADMIN_KEY = "admin-key-1"
 

@@ -101,7 +101,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-asyncio respx
 
-      - name: 运行单元测试
+      - name: 运行测试（分层 P1-1）
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -111,7 +111,14 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           AUTH_ENABLED: "false"
-        run: pytest tests/ -v --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+        # 分层策略：PR 快速层（~0.3s 快速反馈）+ main 全量（含 TestClient 集成层 ~8min）
+        # PR 上的快速层仍会执行全部非 integration 用例，防回归；集成层留 main 门禁
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" != "main" ]; then
+            pytest tests/ -v -m "not integration" --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+          else
+            pytest tests/ -v -m "" --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+          fi
 
       - name: 上传覆盖率报告
         if: always()
