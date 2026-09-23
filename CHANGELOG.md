@@ -39,6 +39,7 @@ language: zh-CN
 - 🆕 docs 内链检查器 `core/scripts/check_doc_links.py`（P2-5）：markdown 相对链接→文件存在性静态检查，进 CI lint job 正式门禁
 - 🆕 ADMIN_API_KEYS 分离语义测试 `tests/test_admin_key_separation.py`（P2-6，6 用例：回退/互斥/容错/模板锚）
 - 🆕 API认证使用指南「管理面密钥分离」章节：语义契约 + 生产 runbook + 90 天轮换策略
+- 🆕 ADMIN_API_KEYS 生产验证脚本 `core/scripts/verify_admin_keys.sh`（三连验证一键化：403/200/200 + 精准处置提示）
 
 ### 变更 (Changed)
 

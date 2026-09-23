@@ -99,13 +99,15 @@ ADMIN_API_KEYS=<上一步生成的 key>
 # ③ 滚动重启网关（部署桥 2 分钟周期自动生效，或手动）
 #    ~/yyc3-deploy/watch.sh 观察 auto-deploy.log
 
-# ④ 验证三连（vk 看板数据面回归）
-curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/admin/vk
-# 期望 403（业务 Key 被管理面拒）
-curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <ADMIN_KEY>" https://api.0379.world/v1/admin/vk
-# 期望 200（admin Key 放行）
+# ④ 验证三连（一键脚本，见 core/scripts/verify_admin_keys.sh）
+bash core/scripts/verify_admin_keys.sh <业务KEY> <ADMIN_KEY> https://api.0379.world
+#   ① 业务Key → /v1/admin/virtual-keys → 期望 403（管理面拒业务 Key）
+#   ② 管理Key → /v1/admin/virtual-keys → 期望 200（管理面放行）
+#   ③ 业务Key → /v1/models             → 期望 200（推理面不受影响）
+# 手动等价：
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/admin/virtual-keys
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <ADMIN_KEY>" https://api.0379.world/v1/admin/virtual-keys
 curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/models
-# 期望 200（推理面不受影响）
 ```
 
 ### 轮换建议
