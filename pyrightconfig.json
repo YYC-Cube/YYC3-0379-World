@@ -1,0 +1,11 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  // app 包 = core/api 的运行时映射（Docker: core/api → /app/app；tests/conftest.py 与
+  // scripts/importlinter_boot 同机制）。仓库根 app 符号链接 + 此处 extraPaths 三路对齐
+  "extraPaths": [".", "core/api", "scripts/importlinter_boot"],
+  "typeCheckingMode": "standard",
+  "reportMissingImports": "error",
+  "reportMissingTypeStubs": "none",
+  "exclude": ["**/node_modules", "**/__pycache__", ".venv", "tests/e2e/test-results"]
+}

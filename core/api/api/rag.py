@@ -10,7 +10,7 @@
 import time
 from typing import List, Optional
 
-from app.db import async_session
+from app.services.db_access import get_db
 from app.services.rag_service import rag_service
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -52,7 +52,7 @@ class SearchResponse(BaseModel):
 async def search(
     request: SearchRequest,
     user_id: Optional[str] = Query(None, description="用户ID"),
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     执行 RAG 检索
@@ -112,7 +112,7 @@ async def search(
 async def ask_with_context(
     request: SearchRequest,
     user_id: Optional[str] = Query(None, description="用户ID"),
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     基于知识库的问答

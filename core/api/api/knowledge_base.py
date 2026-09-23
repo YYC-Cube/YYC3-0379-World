@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from app.db import Document, DocumentChunk, KnowledgeBase, async_session
+from app.services.db_access import Document, DocumentChunk, KnowledgeBase, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -59,7 +59,7 @@ class KnowledgeBaseResponse(BaseModel):
 
 @router.post("", response_model=KnowledgeBaseResponse, summary="创建知识库")
 async def create_knowledge_base(
-    kb_data: KnowledgeBaseCreate, db: AsyncSession = Depends(async_session)
+    kb_data: KnowledgeBaseCreate, db: AsyncSession = Depends(get_db)
 ):
     """
     创建新的知识库
@@ -90,7 +90,7 @@ async def list_knowledge_bases(
     status: Optional[str] = Query(None, description="按状态筛选"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量"),
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     获取知识库列表
@@ -109,7 +109,7 @@ async def list_knowledge_bases(
 
 
 @router.get("/{kb_id}", response_model=KnowledgeBaseResponse, summary="获取知识库详情")
-async def get_knowledge_base(kb_id: str, db: AsyncSession = Depends(async_session)):
+async def get_knowledge_base(kb_id: str, db: AsyncSession = Depends(get_db)):
     """
     获取指定知识库的详细信息
     """
@@ -123,7 +123,7 @@ async def get_knowledge_base(kb_id: str, db: AsyncSession = Depends(async_sessio
 
 @router.patch("/{kb_id}", response_model=KnowledgeBaseResponse, summary="更新知识库")
 async def update_knowledge_base(
-    kb_id: str, kb_data: KnowledgeBaseUpdate, db: AsyncSession = Depends(async_session)
+    kb_id: str, kb_data: KnowledgeBaseUpdate, db: AsyncSession = Depends(get_db)
 ):
     """
     更新知识库信息
@@ -146,7 +146,7 @@ async def update_knowledge_base(
 
 
 @router.delete("/{kb_id}", summary="删除知识库")
-async def delete_knowledge_base(kb_id: str, db: AsyncSession = Depends(async_session)):
+async def delete_knowledge_base(kb_id: str, db: AsyncSession = Depends(get_db)):
     """
     删除知识库及其所有文档和切片
 
@@ -164,7 +164,7 @@ async def delete_knowledge_base(kb_id: str, db: AsyncSession = Depends(async_ses
 
 
 @router.get("/{kb_id}/stats", summary="获取知识库统计信息")
-async def get_knowledge_base_stats(kb_id: str, db: AsyncSession = Depends(async_session)):
+async def get_knowledge_base_stats(kb_id: str, db: AsyncSession = Depends(get_db)):
     """
     获取知识库的统计信息
 

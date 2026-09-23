@@ -21,6 +21,7 @@ from .exceptions import (
     YYC3Error,
 )
 from .handler import ErrorHandler
+from .key_guard import ensure_api_key
 
 __all__ = [
     "YYC3Error",
@@ -31,4 +32,5 @@ __all__ = [
     "ModelNotFoundError",
     "BackendUnavailableError",
     "ErrorHandler",
+    "ensure_api_key",
 ]

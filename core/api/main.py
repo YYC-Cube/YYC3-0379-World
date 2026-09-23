@@ -18,27 +18,26 @@
 # @copyright Copyright (c) 2026 YanYuCloudCube Team
 # @tags python,fastapi,api
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 import psutil
-from app.api import chat, documents, knowledge_base, mcp, rag, websocket
+from app.api import chat, documents, knowledge_base, mcp, proxy, rag, websocket
 from app.config import settings
 from app.db import ModelRegistry, async_session
+
+logger = logging.getLogger(__name__)
 from app.middleware import AuthMiddleware, RateLimitMiddleware, VersioningMiddleware
-from app.models import (
-    ErrorRecord,
-    ModelConfig,
-    ModelStat,
-    PingResponse,
-    UsageSummary,
-)
-from fastapi import FastAPI, Query
+from app.models import ErrorRecord, ModelConfig, ModelStat, PingResponse, UsageSummary
+from app.errors.handler import error_handler
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel
 from sqlalchemy import select
 
 app = FastAPI(
@@ -157,10 +156,22 @@ async def validate_critical_config():
     logger = logging.getLogger(__name__)
 
     critical_checks = [
-        ("JWT_SECRET_KEY", settings.jwt_secret_key, lambda v: v and v != "change_me_in_production"),
+        (
+            "JWT_SECRET_KEY",
+            settings.jwt_secret_key,
+            lambda v: v and v != "change_me_in_production",
+        ),
         ("API_KEYS", settings.api_keys, lambda v: bool(v)),
-        ("POSTGRES_PASSWORD", settings.db_password, lambda v: v and v != "change_me_in_production"),
-        ("REDIS_PASSWORD", settings.redis_password, lambda v: v and v != "change_me_in_production"),
+        (
+            "POSTGRES_PASSWORD",
+            settings.db_password,
+            lambda v: v and v != "change_me_in_production",
+        ),
+        (
+            "REDIS_PASSWORD",
+            settings.redis_password,
+            lambda v: v and v != "change_me_in_production",
+        ),
     ]
 
     errors = []
@@ -212,6 +223,12 @@ app.include_router(websocket.router, tags=["🔌 WebSocket"])
 app.include_router(knowledge_base.router, tags=["📚 知识库管理"])
 app.include_router(documents.router, tags=["📄 文档管理"])
 app.include_router(rag.router, tags=["🔍 RAG检索"])
+app.include_router(proxy.router, tags=["🧩 能力代理(embeddings/rerank/asr/ocr)"])
+
+# vk 管理看板（零依赖单页，受全局 Auth 中间件保护）
+from app.services.admin_ui import router as admin_ui_router  # noqa: E402
+
+app.include_router(admin_ui_router, tags=["📊 管理看板"])
 
 
 @app.get("/health")
@@ -358,10 +375,14 @@ async def clear_cache():
 
 @app.get("/v1/router/stats")
 async def get_router_stats():
-    """获取模型路由器节点统计（动态权重、EWMA延迟、错误率）"""
+    """获取路由统计（上游池快照 + 节点 EWMA 动态权重）"""
     from app.services.model_router import model_router
+    from app.services.upstream_registry import registry as upstream_registry
 
-    return model_router.get_node_stats()
+    return {
+        "upstream_pool": upstream_registry.snapshot(),
+        "nodes": model_router.get_node_stats(),
+    }
 
 
 @app.get("/v1/router/health")
@@ -522,6 +543,28 @@ async def list_models():
     """
     models = list(DEFAULT_MODELS)
 
+    # 上游池模型（OPENAI_COMPATIBLE_UPSTREAMS 注入）
+    from app.services.upstream_registry import registry as upstream_registry
+
+    for u in upstream_registry.upstreams.values():
+        if u.capability != "chat":
+            continue
+        for m in u.models:
+            if "*" in m or "?" in m:
+                m = m.replace("*", "").replace("?", "") or u.name
+            models.append(
+                ModelConfig(
+                    id=m,
+                    display_name=f"{m} @ {u.name}",
+                    backend="upstream",
+                    enabled=True,
+                    max_tokens=128000,
+                    temperature=0.7,
+                    top_p=0.9,
+                    cost_per_1k_tokens=0.0,
+                )
+            )
+
     # 从数据库加载动态注册的Ollama模型
     try:
         async with async_session() as session:
@@ -552,36 +595,69 @@ async def list_models():
 
 @app.get("/v1/models/stats", response_model=List[ModelStat])
 async def get_stats():
-    """获取所有模型统计信息"""
-    async with async_session() as session:
-        from app.db import UsageLog
-        from sqlalchemy import func
+    """获取所有模型统计信息（上游池为真实 EWMA 数据，云/Ollama 为 DB 用量）"""
+    from app.services.upstream_registry import registry as upstream_registry
 
-        result = await session.execute(
-            select(
-                UsageLog.model,
-                func.count(UsageLog.id).label("usage_count"),
-                func.sum(UsageLog.total_tokens).label("total_tokens"),
-            ).group_by(UsageLog.model)
+    stats: dict = {}
+    # 上游池：真实延迟/错误率
+    for u in upstream_registry.upstreams.values():
+        stats[u.name] = ModelStat(
+            model_id=u.name,
+            usage_count=u.total_requests,
+            avg_latency_ms=round(u.ewma_latency, 1),
+            error_rate=round(u.ewma_error_rate, 4),
+            total_tokens=0,
         )
-        stats = []
-        for row in result:
-            stats.append(
-                ModelStat(
-                    model_id=row.model,
-                    usage_count=row.usage_count or 0,
-                    avg_latency_ms=0.0,
-                    error_rate=0.0,
-                    total_tokens=row.total_tokens or 0,
-                )
+    # DB 用量（DB 不可达时仅返回上游数据）
+    try:
+        async with async_session() as session:
+            from app.db import UsageLog
+            from sqlalchemy import func
+
+            result = await session.execute(
+                select(
+                    UsageLog.model,
+                    func.count(UsageLog.id).label("usage_count"),
+                    func.sum(UsageLog.total_tokens).label("total_tokens"),
+                ).group_by(UsageLog.model)
             )
-        return stats
+            for row in result:
+                if row.model in stats:
+                    stats[row.model].usage_count += row.usage_count or 0
+                    stats[row.model].total_tokens += row.total_tokens or 0
+                else:
+                    stats[row.model] = ModelStat(
+                        model_id=row.model,
+                        usage_count=row.usage_count or 0,
+                        avg_latency_ms=0.0,
+                        error_rate=0.0,
+                        total_tokens=row.total_tokens or 0,
+                    )
+    except Exception as e:
+        logger.warning(f"models/stats DB 查询失败（仅返回上游池数据）: {e}")
+    return list(stats.values())
 
 
 @app.get("/v1/models/errors", response_model=List[ErrorRecord])
 async def get_errors():
-    """获取所有错误记录"""
-    return []
+    """获取上游池错误记录（真实数据）"""
+    from datetime import datetime, timezone
+
+    from app.services.upstream_registry import registry as upstream_registry
+
+    out = []
+    for i, e in enumerate(upstream_registry.errors()):
+        out.append(
+            ErrorRecord(
+                id=f"upstream-{i}",
+                timestamp=datetime.now(timezone.utc),
+                model_id=e["upstream"],
+                error_type="internal",
+                message=e["error"] or "unknown",
+                stack=None,
+            )
+        )
+    return out
 
 
 @app.get("/v1/models/summary", response_model=UsageSummary)
@@ -605,6 +681,184 @@ async def get_summary():
             total_tokens=total_tokens,
             cost_usd=0.0,
         )
+
+
+# ── P0-2: 上游池主动验活（学 one-api 渠道自愈）────────────────
+
+_probe_task: Optional[asyncio.Task] = None
+
+
+async def _probe_loop():
+    """周期探活：probe_interval_seconds 一轮；连续 2 败 degraded 权重减半，恢复复原"""
+    from app.services.upstream_registry import registry as upstream_registry
+
+    while True:
+        await asyncio.sleep(settings.probe_interval_seconds)
+        try:
+            results = await upstream_registry.probe_all()
+            degraded = [r["name"] for r in results if r["probe_degraded"]]
+            if degraded:
+                logger.warning(f"验活降级上游: {', '.join(degraded)}")
+        except Exception as e:
+            logger.warning(f"验活轮次异常（下轮继续）: {e}")
+
+
+@app.post("/v1/admin/upstreams/probe")
+async def probe_upstreams():
+    """手动触发一轮上游验活（受全局 Auth 中间件保护），返回各上游健康明细"""
+    from app.services.upstream_registry import registry as upstream_registry
+
+    return {"probes": await upstream_registry.probe_all()}
+
+
+# ── P0-1 收口：虚拟密钥管理端点（学 litellm /key 管理面）──────
+
+
+class VKCreateRequest(BaseModel):
+    name: str
+    owner: str = "yanyu"
+    model_whitelist: List[str] = []
+    monthly_budget_usd: float = 0.0
+    rate_limit_tpm: int = 0
+    expires_at: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+@app.get("/v1/providers")
+async def list_providers():
+    """供应商运维面：已登记的 provider 实现（配置 OPENAI_COMPATIBLE_UPSTREAMS.provider 用）"""
+    from app.services.providers.registry import known_providers
+
+    return {"providers": known_providers()}
+
+
+@app.post("/v1/admin/virtual-keys")
+async def admin_vk_create(req: VKCreateRequest):
+    """创建虚拟密钥。明文只在本响应出现一次，请妥善保管"""
+    from app.services.virtual_key_manager import vk_create
+
+    try:
+        return await vk_create(
+            name=req.name,
+            owner=req.owner,
+            model_whitelist=req.model_whitelist,
+            monthly_budget_usd=req.monthly_budget_usd,
+            rate_limit_tpm=req.rate_limit_tpm,
+            expires_at=req.expires_at,
+            metadata=req.metadata,
+        )
+    except Exception as e:
+        error_response = await error_handler.handle(e, context={"operation": "vk_create"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+
+@app.get("/v1/admin/virtual-keys")
+async def admin_vk_list(owner: Optional[str] = None, active_only: bool = False):
+    """列虚拟密钥（key 脱敏为前 8 位 hint）"""
+    from app.services.virtual_key_manager import vk_list
+
+    try:
+        return {"keys": await vk_list(owner=owner, include_disabled=not active_only)}
+    except Exception as e:
+        error_response = await error_handler.handle(e, context={"operation": "vk_list"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+
+class VKUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    monthly_budget_usd: Optional[float] = None
+    rate_limit_tpm: Optional[int] = None
+    model_whitelist: Optional[List[str]] = None
+
+
+@app.patch("/v1/admin/virtual-keys/{key_id}")
+async def admin_vk_update(key_id: str, req: VKUpdateRequest):
+    """更新虚拟密钥：启停（status=active|disabled）/ 编辑预算、TPM、模型白名单"""
+    from app.services.virtual_key_manager import vk_update_fields, vk_update_status
+
+    if req.status is None and (
+        req.monthly_budget_usd is None
+        and req.rate_limit_tpm is None
+        and req.model_whitelist is None
+    ):
+        raise HTTPException(status_code=422, detail="至少提供 status / monthly_budget_usd / rate_limit_tpm / model_whitelist 之一")
+
+    try:
+        updated = {"status": False, "fields": False}
+        if req.status is not None:
+            updated["status"] = await vk_update_status(key_id, req.status)
+        if (
+            req.monthly_budget_usd is not None
+            or req.rate_limit_tpm is not None
+            or req.model_whitelist is not None
+        ):
+            updated["fields"] = await vk_update_fields(
+                key_id,
+                monthly_budget_usd=req.monthly_budget_usd,
+                rate_limit_tpm=req.rate_limit_tpm,
+                model_whitelist=req.model_whitelist,
+            )
+        return {"updated": updated, "key_id": key_id}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        error_response = await error_handler.handle(e, context={"operation": "vk_update"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+
+@app.delete("/v1/admin/virtual-keys/{key_id}")
+async def admin_vk_delete(key_id: str):
+    """删除虚拟密钥（消费流水保留，key_id 置空以存审计）"""
+    from app.services.virtual_key_manager import vk_delete
+
+    try:
+        deleted = await vk_delete(key_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"虚拟密钥不存在: {key_id}")
+        return {"deleted": True, "key_id": key_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_response = await error_handler.handle(e, context={"operation": "vk_delete"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+
+@app.get("/v1/admin/virtual-keys/{key_id}/usage")
+async def admin_vk_usage(key_id: str, days: int = 30):
+    """用量查询：近 N 天按模型聚合成本（供看板/预算复盘）"""
+    from app.services.virtual_key_manager import vk_usage
+
+    try:
+        return await vk_usage(key_id, days=days)
+    except Exception as e:
+        error_response = await error_handler.handle(e, context={"operation": "vk_usage"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+
+@app.on_event("startup")
+async def start_probe_loop():
+    global _probe_task
+    if settings.probe_enabled and settings.router_enabled:
+        _probe_task = asyncio.create_task(_probe_loop())
+        logger.info(
+            f"上游验活已启动（间隔 {settings.probe_interval_seconds}s，PROBE_ENABLED=false 可关闭）"
+        )
+    # ── P0-1: 虚拟密钥记账管道（批量落库 spend_logs）──
+    from app.services.virtual_key_manager import vk_manager
+
+    await vk_manager.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 003 SQL 迁移管）
+    await vk_manager.start_ledger()
+
+
+@app.on_event("shutdown")
+async def stop_probe_loop():
+    global _probe_task
+    if _probe_task is not None:
+        _probe_task.cancel()
+        _probe_task = None
+    from app.services.virtual_key_manager import vk_manager
+
+    await vk_manager.stop_ledger()
 
 
 if __name__ == "__main__":

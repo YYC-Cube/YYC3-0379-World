@@ -45,7 +45,7 @@ class MCPClient:
         """查找MCP配置文件"""
         possible_paths = [
             "/app/config/mcp_config.json",
-            "/Volumes/Development/0379-world/智谱AI文档/MCP集成/claude/mcp-servers/mcp-config.json",
+            os.getenv("MCP_CONFIG_PATH", ""),
             os.path.expanduser("~/.config/claude/mcp_config.json"),
             "./mcp_config.json",
         ]

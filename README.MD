@@ -6,6 +6,12 @@
 
 ### 全链路 AI 模型网关 · 智能协同平台
 
+> **🟢 09-14 生产实况**（详见 `docs/架构与部署/API全链路闭环文档.md` §十-ter）：
+> 生产域名 `https://api.0379.world`（ECS Traefik 边缘 → NAS 网关:8000 → DGX 双机推理池）；
+> **公网三能力** chat(`deepseek-v4-flash` TP=2 双 GB10)/embeddings(1024维)/rerank 全绿，响应头 `X-YYC3-Upstream` 契约；
+> 上游池 env 化（`OPENAI_COMPATIBLE_UPSTREAMS`）+ 熔断降级 + 67 pytest（快速层 1.6s / 全量分层）+ CI 五段 + 四层冒烟保障；
+> 8 Agent+治理中枢容器化运行于 N2（:25600-07/:25700）。
+
 > **_YanYuCloudCube_**
 > _言启象限 | 语枢未来_
 > **_Words Initiate Quadrants, Language Serves as Core for Future_**
@@ -36,7 +42,7 @@
 <br/>
 
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/version-v2.1.0-brightgreen?style=flat-square" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-v2.3.0-brightgreen?style=flat-square" alt="Version"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/status-stable-success?style=flat-square" alt="Status"/>
@@ -45,7 +51,10 @@
   <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/coverage-80%25-yellow?style=flat-square" alt="Coverage"/>
+  <img src="https://img.shields.io/badge/tests-67%20passing-brightgreen?style=flat-square" alt="Tests"/>
+</a>
+<a href="https://github.com/YYC-Cube/YYC3-0379-World">
+  <img src="https://img.shields.io/badge/CI-five--stage--pipeline-blue?style=flat-square" alt="CI"/>
 </a>
 <a href="https://0379.world">
   <img src="https://img.shields.io/badge/domain-0379.world-orange?style=flat-square" alt="Domain"/>
@@ -90,7 +99,7 @@
 ### 核心价值
 
 | 维度 | 能力 | 说明 |
-|:----:|:----|:----|
+| :----: | :---- | :---- |
 | **统一接入** | 多模型路由 | 智谱GLM、DeepSeek、Ollama 本地模型，一个接口全适配 |
 | **智能调度** | 自适应路由 | 基于 EWMA 延迟 + 错误率 + 负载的动态权重反馈循环 |
 | **知识增强** | RAG 系统 | 文档解析、向量检索、语义问答全链路覆盖 |
@@ -224,14 +233,22 @@ Client Request
 
 ### 多模型统一接入
 
-| Provider | 模型 | 类型 | 特性 |
-|:--------:|:-----|:----:|:-----|
-| **智谱 AI** | glm-4-flash, glm-4-plus | 云端 | 128K上下文, 高性价比 |
-| **DeepSeek** | deepseek-chat, deepseek-coder | 云端 | 代码专精, 64K上下文 |
-| **Ollama** | llama3.2, qwen2.5, codegeex4 | 本地 | 隐私安全, 零成本 |
+**生产实况能力矩阵（09-14）**——云适配器（zhipu/deepseek/openai 前缀路由）+ **本地推理池（`OPENAI_COMPATIBLE_UPSTREAMS` env 单行 JSON）**双层：
+
+| 能力 | 生产上游 | 模型 | 状态 |
+| :----: | :-------- | :----- | :----: |
+| chat | DGX 双机 TP=2（N1:8001） | `deepseek-v4-flash` | ✅ 公网 |
+| embeddings | N1:8100 | `qwen3-embedding-0.6b`（1024 维） | ✅ 公网 |
+| rerank | N1:8101 | `qwen3-reranker-0.6b`（judge 生成式打分） | ✅ 公网 |
+| asr | N2:8004（09-21 迁自 N1，worker 0.72+asr 0.08 共存） | `qwen3-asr-1.7b`（whisper-1 别名自动改写） | ✅ 公网 |
+| ocr | 待上游 | 端点已就绪（capability 路由） | 🟡 方案见 docs/架构与部署 |
+| video | Mac yyc3-22 数字人生产线 | MiniMax-H3（异步任务 API 规划中） | 🟠 第五能力 |
+
+上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。
 
 ### 智能路由与负载均衡
 
+- **上游池三段式路由**（现行）：云前缀 → 上游池（fnmatch 模型匹配+分层优先级）→ Ollama 兜底；`ROUTER_ENABLED` 一键灰度回退
 - **ADAPTIVE 策略**：基于 EWMA 平滑延迟 + 错误率 + 实时负载的加权随机选择
 - **动态权重反馈循环**：请求完成后上报真实数据，周期性重新计算节点权重
 - **自动降级与恢复**：错误率 >15% 自动降级，恢复后自动升级
@@ -255,7 +272,7 @@ Client Request
 ## 技术栈
 
 | 层级 | 技术 | 版本 | 用途 |
-|:----:|:-----|:----:|:-----|
+| :----: | :----- | :----: | :----- |
 | **运行时** | Python | 3.11+ | 主语言 |
 | **框架** | FastAPI | 0.109+ | 异步 Web 框架 |
 | **数据库** | PostgreSQL | 15 | 主数据库 + pgvector |
@@ -323,15 +340,17 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key" \
   -d '{
-    "model": "glm-4-flash",
+    "model": "deepseek-v4-flash",
     "messages": [{"role": "user", "content": "你好"}]
   }'
+# 生产部署（实况）：ECS Traefik 边缘 → NAS 网关 → DGX 推理池；发版走 GitOps
+# （Mac 桥 watch.sh → NAS rebuild-gateway.sh → CI 公网冒烟），详见 docs/架构与部署/CI-CD部署配置指南.md
 ```
 
 ### 5. 访问文档
 
 | 服务 | 地址 | 说明 |
-|:----:|:----|:----|
+| :----: | :---- | :---- |
 | **Swagger UI** | <http://localhost:8000/docs> | 交互式 API 文档 |
 | **ReDoc** | <http://localhost:8000/redoc> | 优雅的 API 文档 |
 | **Prometheus** | <http://localhost:9090> | 监控指标 |
@@ -345,29 +364,40 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 YYC3-0379-World/
 ├── core/                        # 核心代码
 │   ├── api/                     # API 服务
-│   │   ├── api/                 # 路由模块 (chat, rag, mcp, websocket)
+│   │   ├── api/                 # 路由模块 (chat, proxy, rag, mcp, websocket,
+│   │   │                        #   knowledge_base, documents, schemas)
 │   │   ├── middleware/          # 中间件 (auth, rate_limit, versioning)
-│   │   ├── services/            # 业务服务 (model_router, zhipu, deepseek)
-│   │   ├── utils/               # 工具模块 (cache, metrics, logger)
+│   │   ├── services/            # 业务服务 (model_router, upstream_registry,
+│   │   │                        #   openai_compatible, zhipu, deepseek, rag_service...)
+│   │   ├── errors/              # 统一错误处理 (exceptions, handler)
+│   │   ├── utils/               # 工具模块 (cache, metrics, logger, filter, crypto)
 │   │   ├── config.py            # 配置管理
-│   │   ├── db.py                # 数据库模型与连接
+│   │   ├── db.py                # 数据库模型与连接 (UsageLog, ModelRegistry)
 │   │   ├── cache.py             # Redis 缓存管理
-│   │   └── main.py              # FastAPI 应用入口
+│   │   └── main.py              # FastAPI 应用入口（52 端点）
 │   ├── config/                  # 配置文件
-│   │   ├── nginx/               # Nginx 配置
-│   │   ├── prometheus/          # Prometheus 配置
-│   │   ├── postgresql/          # PostgreSQL 配置
-│   │   └── redis/               # Redis 配置
-│   ├── database/                # 数据库初始化
-│   ├── models/                  # 模型配置与 MCP 配置
-│   └── scripts/                 # 运维脚本
+│   │   ├── .env.example         # 环境变量模板（含上游池 OPENAI_COMPATIBLE_UPSTREAMS）
+│   │   ├── prometheus/          # Prometheus 配置与告警规则
+│   │   ├── grafana/             # Grafana 仪表盘 (api-gateway-overview, model-usage-stats)
+│   │   ├── nginx|haproxy|loki/  # 边缘/负载/日志栈配置
+│   │   └── postgresql|redis/    # 主从数据库与缓存配置
+│   ├── database/                # 数据库初始化 (knowledge_base_schema)
+│   ├── models/                  # 模型配置与 MCP 配置 (14 个 MCP 工具)
+│   └── scripts/                 # 运维脚本 (api_key_manager, health-check, 备份)
 ├── deploy/                      # 部署配置
-│   ├── docker-compose.ha.yml    # 高可用部署
-│   └── scripts/                 # 部署脚本
-├── scripts/                     # 项目脚本
+│   ├── dgx/                     # DGX 双机 TP=2 (dsv4_head/worker, compose×4)
+│   ├── nas/                     # NAS 网关部署 (docker-compose.nas.yml + smoke-test)
+│   └── scripts/                 # 高可用部署脚本
+├── scripts/                     # 项目脚本 (deploy-nas-gateway, pg-failover, verify-full-link)
 ├── tests/                       # 测试套件
-│   ├── e2e/                     # 端到端测试
-│   └── performance/             # 性能测试
+│   ├── e2e/                     # Cypress + Playwright E2E
+│   ├── performance/             # k6 + Locust 性能测试
+│   ├── test_gateway_api.py      # 网关单元测试（24 用例）
+│   └── test_proxy_api.py        # 能力代理测试
+├── .github/                     # CI/CD
+│   ├── workflows/ci.yml         # 五段流水线 (lint→test+security→build→deploy→smoke)
+│   └── dependabot.yml           # 依赖漏洞扫描
+├── docs/                        # 文档体系（索引见 docs/README.md）
 ├── public/                      # 静态资源
 ├── .env.example                 # 环境变量模板
 ├── Dockerfile                   # 多阶段 Docker 构建
@@ -379,12 +409,26 @@ YYC3-0379-World/
 
 ---
 
+## 文档中心
+
+完整文档架构索引见 **[docs/README.md](./docs/README.md)**，五大分区：
+
+| 分区 | 内容 |
+| :---- | :----- |
+| 核心参考 | 系统上下文、项目结构、变量清单 |
+| 操作指南 | API 认证、网关使用、配置管理、压测、CI-CD |
+| 架构与部署 | **[SSOT] API 全链路闭环文档**、DGX 双机、ASR 方案、网络拓扑 |
+| 团队规范 | 标规五件套、验收系统 13 阶段、验收总结 |
+| 设计理念 | 五维九曲哲学、战略规划、Console 前端全维度设计 |
+
+---
+
 ## 核心服务
 
 ### 服务端口矩阵
 
 | 服务 | 端口 | 协议 | 说明 |
-|:----:|:----:|:----:|:----|
+| :----: | :----: | :----: | :---- |
 | API Gateway | 8000 | HTTP | 主 API 服务，OpenAI 兼容 |
 | WebSocket | 8000 | WS | 流式聊天与实时监控 |
 | PostgreSQL | 5432 | TCP | 主数据库 |
@@ -395,16 +439,21 @@ YYC3-0379-World/
 ### API 端点概览
 
 | 端点 | 方法 | 说明 |
-|:-----|:----:|:-----|
+| :----- | :----: | :----- |
 | `/v1/chat/completions` | POST | 聊天补全（同步 + SSE 流式） |
-| `/v1/models` | GET | 可用模型列表 |
+| `/v1/models` | GET | 可用模型列表（含上游池动态注入） |
+| `/v1/models/stats` | GET | 模型用量统计（EWMA 真实数据） |
+| `/v1/router/stats` | GET | 上游池快照（熔断态/延迟/权重） |
+| `/v1/cache/*` | GET/POST/DELETE | 缓存统计/失效/清空 |
+| `/v1/embeddings` `/v1/rerank` | POST | 能力代理（公网已通） |
+| `/v1/audio/transcriptions` `/v1/ocr` | POST | 能力代理（端点就绪，上游待接） |
 | `/v1/knowledge-bases` | CRUD | 知识库管理 |
 | `/v1/documents` | POST | 文档上传与处理 |
 | `/v1/rag/search` | POST | 语义检索 |
 | `/v1/rag/ask` | POST | 知识库问答 |
-| `/v1/mcp/*` | POST | MCP 工具调用 |
+| `/v1/mcp/*` | GET/POST | MCP 工具调用（14 个工具） |
 | `/ws/chat` | WS | WebSocket 流式聊天 |
-| `/health` | GET | 健康检查 |
+| `/health` `/healthz` | GET | 完整健康检查 / 轻量探活 |
 | `/metrics` | GET | Prometheus 指标 |
 
 ---
@@ -431,10 +480,12 @@ YYC3-0379-World/
 
 - **敏感信息隔离**：所有密钥、密码通过环境变量注入，零硬编码
 - **双重认证**：JWT + API Key 灵活组合
-- **速率限制**：令牌桶算法防止 API 滥用
-- **内容过滤**：输入/输出双向内容安全过滤
+- **分布式限流**：Redis 滑动窗口（Lua 原子脚本），IP+User 双维度，故障自动降级内存
+- **内容过滤**：输入/输出双向内容安全过滤（含内网 IP 防泄漏）
 - **非 Root 运行**：Docker 容器使用 appuser 非特权用户
 - **CORS 控制**：生产环境建议配置具体域名（非 `*`）
+- **启动配置校验**：关键密钥缺失/默认值时拒绝启动（生产模式）
+- **依赖漏洞扫描**：Dependabot 持续监控（pip/npm/github-actions）+ OSV 脚本
 - **密钥文件保护**：WireGuard 私钥等通过 .gitignore 排除
 
 ### 安全建议
@@ -452,7 +503,7 @@ YYC3-0379-World/
 ### Prometheus 指标
 
 | 指标 | 类型 | 说明 |
-|:-----|:----:|:-----|
+| :----- | :----: | :----- |
 | `http_requests_total` | Counter | HTTP 请求总数 |
 | `http_request_duration_seconds` | Histogram | 请求延迟分布 |
 | `active_requests` | Gauge | 当前活跃请求数 |
@@ -510,7 +561,9 @@ hotfix/*    → 紧急修复分支
 ## 变更历史
 
 | 版本 | 日期 | 变更内容 |
-|:----:|:----:|:---------|
+| :----: | :----: | :--------- |
+| v2.3.0 | 2026-09-23 | 网关加固闭环：三云 Key 前置校验同构化（401 明确报错）；4xx 确定性失败跳过重试（OBS-1）；流式 SSE chunk 级 PII 脱敏；vk 看板 + e2e 基建；IDE 解析三件套；CHANGELOG/README 版本链对齐 |
+| v2.2.0 | 2026-09-14 | 全链路实况：DGX 双机 TP=2 公网三能力全绿；上游池 env 化+熔断降级；文档体系 SSOT 对齐（架构/部署/CI-CD/前端设计三合一）；CI 五段+四层冒烟 |
 | v2.1.0 | 2026-07-10 | 安全加固：消除全部硬编码密钥，统一环境变量配置；docs/ 移出版本控制 |
 | v2.0.0 | 2026-04-08 | 架构升级：自适应路由引擎、RAG 知识库、MCP 工具集成 |
 | v1.0.0 | 2026-03-14 | 初始版本：基础 API 网关、多模型接入、容器化部署 |

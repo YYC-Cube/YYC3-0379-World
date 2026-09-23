@@ -42,9 +42,11 @@ from sqlalchemy.orm import Mapped, declarative_base, mapped_column, relationship
 
 Base = declarative_base()
 
-DATABASE_URL = (
+# DATABASE_URL 环境变量可整体覆盖（本地 e2e/开发无 PG 时用 sqlite+aiosqlite；生产保持默认组装）
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
     f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}"
-    f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    f"@{settings.db_host}:{settings.db_port}/{settings.db_name}",
 )
 
 echo_sql = os.getenv("ENVIRONMENT", "production") != "production"

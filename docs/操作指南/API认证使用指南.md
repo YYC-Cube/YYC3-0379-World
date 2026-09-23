@@ -14,8 +14,8 @@ priority: critical
 
 # YYC³ API 认证使用指南
 
-**文档说明**: 本文档说明如何使用 JWT 和 API Key 认证访问 YYC³ API  
-**更新时间**: 2026-04-08 02:15  
+**文档说明**: 本文档说明如何使用 JWT 和 API Key 认证访问 YYC³ API
+**更新时间**: 2026-04-08 02:15
 **当前版本**: v1.0.0
 
 ---
@@ -76,6 +76,113 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 
 ---
 
+## 🛡️ 管理面密钥分离（ADMIN_API_KEYS）
+
+> P2-6 生产落地：推理面与 `/v1/admin/**` 管理面密钥分离，实现最小权限。
+
+### 语义契约（已由 `tests/test_admin_key_separation.py` 锁定）
+
+| 场景 | 行为 |
+|------|------|
+| `ADMIN_API_KEYS` 未配置/为空 | **回退** `API_KEYS`（单机部署兼容，不破坏既有 admin 入口） |
+| `ADMIN_API_KEYS` 配置后 | 管理面**仅认** admin Key；业务 Key 访问 `/v1/admin/**` → 403 |
+
+### 生产落地 runbook
+
+#### ① 生成独立管理面 Key（Mac/NAS 均可，与业务 Key 不同源）
+
+```bash
+python3 -c "import secrets; print(f'sk-admin-{secrets.token_hex(16)}')"
+# 输出示例: sk-admin-3f9a1c8e7b2d4f6a9c0e5d8b1a4f7c2e
+```
+
+#### ② 写入 NAS 生产 .env（幂等防重复追加）
+
+```bash
+# 在 NAS yyc3-45 上执行；ENV_FILE 按实际部署路径调整（通常在 gateway compose 同目录）
+ENV_FILE="/volume1/docker/yyc3-gateway/.env"
+
+ADMIN_KEY="sk-admin-3f9a1c8e7b2d4f6a9c0e5d8b1a4f7c2e"  # ← 替换为①生成值
+
+# 幂等写入：已有旧值则替换，无则追加
+if grep -q '^ADMIN_API_KEYS=' "$ENV_FILE"; then
+    sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=${ADMIN_KEY}|" "$ENV_FILE"
+else
+    echo "ADMIN_API_KEYS=${ADMIN_KEY}" >> "$ENV_FILE"
+fi
+
+# 确认写入（只计数键名行，避免整文件泄露其他密钥）
+grep -c '^ADMIN_API_KEYS=' "$ENV_FILE"   # 期望 1
+
+# 收紧权限（如尚未收紧）
+chmod 600 "$ENV_FILE"
+```
+
+> `.bak` 备份由 sed 自动生成，确认无误后可删除。
+
+#### ③ 滚动生效（部署桥自动 or 手动）
+
+```bash
+# 方式A：等部署桥自动同步（Mac 上 ~/yyc3-deploy/watch.sh，~2 分钟周期）
+tail -f ~/yyc3-deploy/auto-deploy.log
+
+# 方式B：NAS 上手动立即重启网关容器
+docker restart yyc3-gateway && docker logs -f --tail 20 yyc3-gateway
+```
+
+#### ④ 三连验证（Mac 上，对应 core/scripts/verify_admin_keys.sh）
+
+```bash
+bash core/scripts/verify_admin_keys.sh <业务KEY> <ADMIN_KEY> https://api.0379.world
+#   ① 业务Key → /v1/admin/virtual-keys → 期望 403（管理面拒业务 Key）
+#   ② 管理Key → /v1/admin/virtual-keys → 期望 200（管理面放行）
+#   ③ 业务Key → /v1/models             → 期望 200（推理面不受影响）
+# 手动等价：
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/admin/virtual-keys
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <ADMIN_KEY>" https://api.0379.world/v1/admin/virtual-keys
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/models
+```
+
+### 轮换（90 天）
+
+推荐使用 runbook 脚本（`core/scripts/rotate_admin_key.sh`，双写两阶段零中断）：
+
+```bash
+# NAS 上执行；status 可随时脱敏查看当前态
+bash core/scripts/rotate_admin_key.sh status
+
+# 阶段①双写: 旧,新 并存 → 验证双 Key 均 200 → 终端展示新 Key（仅一次，立即分发）
+bash core/scripts/rotate_admin_key.sh stage1
+#   ……此间切换看板/客户端到新 Key（旧 Key 仍有效，零中断窗口）……
+
+# 阶段②收敛: 预检新 Key 可用（未切换完不动 .env）→ 只留新 Key → 验证旧 403/新 200
+bash core/scripts/rotate_admin_key.sh stage2
+
+# 异常恢复: 恢复最近一次轮换备份（.env.bak-rotate-<时间戳>）并重启网关
+bash core/scripts/rotate_admin_key.sh rollback
+```
+
+脚本内置保障：每次变更前自动备份 `.env.bak-rotate-<时间戳>`；stage2 预检不过**不修改**任何文件直接退出；stage1 重复执行会被双写态守卫拦截（先 stage2 或 rollback）；重启失败时给出手动命令指引。
+
+手工等价（脚本不可用时的备查）：
+
+```bash
+NEW_KEY=$(python3 -c "import secrets; print(f'sk-admin-{secrets.token_hex(16)}')")
+cp -p "$ENV_FILE" "$ENV_FILE.bak-rotate-$(date +%Y%m%d-%H%M%S)"
+sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=旧KEY,${NEW_KEY}|" "$ENV_FILE"
+bash -lc "docker restart 0379-world-gateway-1"
+# ……切换完成后：
+sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=${NEW_KEY}|" "$ENV_FILE"
+bash -lc "docker restart 0379-world-gateway-1"
+```
+
+### 安全注意与回滚
+
+- 生成的 Key 只经终端短暂展示，**勿写入任何 git 跟踪文件**（`.env` 已在 `.gitignore`）
+- 回滚预案：删除 `ADMIN_API_KEYS=` 行即回退到「业务/管理同源」兼容态，无破坏性
+
+---
+
 ## 🎫 JWT Token 认证
 
 ### 获取 JWT Token
@@ -83,6 +190,7 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 **端点**: `POST /v1/auth/token`
 
 **请求体**:
+
 ```json
 {
   "username": "admin",
@@ -91,6 +199,7 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 ```
 
 **响应**:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -287,6 +396,7 @@ RATE_LIMIT_WINDOW = 60     # 时间窗口（秒）
 **状态码**: `401 Unauthorized`
 
 **响应体**:
+
 ```json
 {
   "detail": "Invalid API key"
@@ -372,6 +482,5 @@ RATE_LIMIT_WINDOW = 60     # 时间窗口（秒）
 
 ## 🔗 相关文档
 
-- [四机职责分配总览](四机职责分配总览.md)
-- [生产环境实际运行状态](../生产环境实际运行状态.md)
-- [YYC3-战略规划v2](YYC3-战略规划v2.md)
+- [多设备网络拓扑与架构链路](../架构与部署/多设备网络拓扑与架构链路.md)
+- [API 全链路闭环文档（SSOT）](../架构与部署/API全链路闭环文档.md)

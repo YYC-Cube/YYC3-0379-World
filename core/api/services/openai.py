@@ -27,8 +27,24 @@ import httpx
 from app.config import settings
 from app.utils import http_client
 
-_OPENAI_BASE = "https://api.openai.com/v1"
-_OPENAI_KEY = settings.openai_api_key
+
+def _base() -> str:
+    """基址外部化（settings.openai_base_url，默认=原硬编码）"""
+    return settings.openai_base_url
+
+
+def _get_openai_key() -> str:
+    """延迟读取 OpenAI Key（OBS-2：原模块级快照 import 时定格，env 运行时更新失效）"""
+    import os
+
+    return os.getenv("OPENAI_API_KEY", "") or settings.openai_api_key
+
+
+def _ensure_key() -> str:
+    """空 Key 前置校验：401 明确报错（OBS-2；原实现无任何校验，空 Key 直接拼非法头）"""
+    from app.errors.key_guard import ensure_api_key
+
+    return ensure_api_key(_get_openai_key, provider="OpenAI", env_name="OPENAI_API_KEY", apply_url="platform.openai.com")
 
 
 async def chat_completion(
@@ -44,7 +60,10 @@ async def chat_completion(
 
     注意：stream参数仅为接口兼容，流式请求请使用 chat_completion_stream()
     """
-    headers = {"Authorization": f"Bearer {_OPENAI_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_ensure_key()}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -59,9 +78,7 @@ async def chat_completion(
     if top_p:
         payload["top_p"] = top_p
 
-    response = await http_client.post(
-        f"{_OPENAI_BASE}/chat/completions", headers=headers, json=payload
-    )
+    response = await http_client.post(f"{_base()}/chat/completions", headers=headers, json=payload)
     response.raise_for_status()
     return response.json()
 
@@ -79,7 +96,10 @@ async def chat_completion_stream(
     Yields:
         dict: 统一格式的流式响应块 (chat.completion.chunk)
     """
-    headers = {"Authorization": f"Bearer {_OPENAI_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_ensure_key()}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -97,7 +117,7 @@ async def chat_completion_stream(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
-                "POST", f"{_OPENAI_BASE}/chat/completions", headers=headers, json=payload
+                "POST", f"{_base()}/chat/completions", headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
 

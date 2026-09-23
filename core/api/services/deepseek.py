@@ -16,8 +16,24 @@ import httpx
 from app.config import settings
 from app.utils.logger import logger
 
-_DEEPSEEK_BASE = "https://api.deepseek.com/v1"
-_DEEPSEEK_KEY = settings.deepseek_api_key
+
+def _base() -> str:
+    """基址外部化（settings.deepseek_base_url，默认=原硬编码）"""
+    return settings.deepseek_base_url
+
+
+def _get_deepseek_key() -> str:
+    """延迟读取 DeepSeek Key（OBS-2：原模块级快照 import 时定格，env 运行时更新失效）"""
+    import os
+
+    return os.getenv("DEEPSEEK_API_KEY", "") or settings.deepseek_api_key
+
+
+def _ensure_key() -> str:
+    """空 Key 前置校验：401 明确报错（OBS-2；原实现 502 + 模块级快照）"""
+    from app.errors.key_guard import ensure_api_key
+
+    return ensure_api_key(_get_deepseek_key, provider="DeepSeek", env_name="DEEPSEEK_API_KEY", apply_url="platform.deepseek.com")
 
 
 async def chat_completion(
@@ -42,14 +58,10 @@ async def chat_completion(
     Returns:
         dict: API响应
     """
-    if not _DEEPSEEK_KEY:
-        from app.errors import APIError
-
-        raise APIError(
-            message="DeepSeek API Key未配置", details={"error": "请配置DEEPSEEK_API_KEY环境变量"}
-        )
-
-    headers = {"Authorization": f"Bearer {_DEEPSEEK_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_ensure_key()}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -67,7 +79,7 @@ async def chat_completion(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
-                f"{_DEEPSEEK_BASE}/chat/completions", headers=headers, json=payload
+                f"{_base()}/chat/completions", headers=headers, json=payload
             )
 
             response.raise_for_status()
@@ -101,14 +113,10 @@ async def chat_completion_stream(
     Yields:
         dict: 流式响应块
     """
-    if not _DEEPSEEK_KEY:
-        from app.errors import APIError
-
-        raise APIError(
-            message="DeepSeek API Key未配置", details={"error": "请配置DEEPSEEK_API_KEY环境变量"}
-        )
-
-    headers = {"Authorization": f"Bearer {_DEEPSEEK_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {_ensure_key()}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "model": model,
@@ -126,7 +134,7 @@ async def chat_completion_stream(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
-                "POST", f"{_DEEPSEEK_BASE}/chat/completions", headers=headers, json=payload
+                "POST", f"{_base()}/chat/completions", headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
 

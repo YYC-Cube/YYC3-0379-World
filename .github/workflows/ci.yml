@@ -3,6 +3,7 @@ name: YYC3 CI/CD Pipeline
 on:
   push:
     branches: [main, develop]
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main, develop]
   # 允许手动触发
@@ -40,6 +41,24 @@ jobs:
       - run: flake8 core/ --max-line-length=100 --exclude=__pycache__,migrations --ignore=E402,W503
       - name: mypy 类型检查（advisory，不阻塞）
         run: mypy core/ --ignore-missing-imports || true
+
+      - name: 架构依赖契约检查（P2-2 importlinter，正式门禁）
+        run: |
+          pip install import-linter
+          PYTHONPATH=$GITHUB_WORKSPACE/scripts/importlinter_boot lint-imports --config .importlinter
+
+      - name: docs 内链检查（P2-5：markdown 相对链接防幽灵引用，正式门禁）
+        run: python core/scripts/check_doc_links.py
+
+      - name: pnpm 门禁（P2-3：e2e 测试包依赖完整性，正式门禁）
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: pnpm 安装与锁文件校验
+        run: |
+          cd tests/e2e
+          pnpm install --frozen-lockfile
+          pnpm audit --prod || echo "::warning::pnpm audit 有漏洞（审计类不阻塞，依赖升级跟进）"
 
   # ==================== 单元测试 ====================
   test:
@@ -84,9 +103,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-asyncio
+          pip install pytest pytest-cov pytest-asyncio respx
 
-      - name: 运行单元测试
+      - name: 运行测试（分层 P1-1）
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -96,7 +115,14 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           AUTH_ENABLED: "false"
-        run: pytest tests/ -v --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+        # 分层策略：PR 快速层（~0.3s 快速反馈）+ main 全量（含 TestClient 集成层 ~8min）
+        # PR 上的快速层仍会执行全部非 integration 用例，防回归；集成层留 main 门禁
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" != "main" ]; then
+            pytest tests/ -v -m "not integration" --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+          else
+            pytest tests/ -v -m "" --cov=core --cov-report=xml --cov-report=term-missing --tb=short
+          fi
 
       - name: 上传覆盖率报告
         if: always()
@@ -225,3 +251,79 @@ jobs:
             fi
           done
           [ "$FAIL" = "0" ] && echo "部署验证通过" || { echo "部署验证失败——请检查 NAS auto-deploy.log 与 Mac watch.log"; exit 1; }
+
+      - name: 旗舰公网冒烟（上游池路由 + 响应头契约）
+        env:
+          PROD_API_KEY: ${{ secrets.PROD_API_KEY }}
+        run: |
+          echo "── /v1/models 含旗舰 ──"
+          MODELS=$(curl -s -m 20 -H "X-API-Key: $PROD_API_KEY" https://api.0379.world/v1/models)
+          echo "$MODELS" | python3 -c "import json,sys; ids=[m['id'] for m in json.load(sys.stdin)]; sys.exit(0 if 'deepseek-v4-flash' in ids else 1)" \
+            && echo "✅ deepseek-v4-flash 已在公网模型列表" || { echo "❌ 公网模型列表缺旗舰"; exit 1; }
+          echo "── 旗舰对话 + X-YYC3-Upstream 头 ──"
+          curl -s -m 180 -D /tmp/h -o /tmp/r -H "X-API-Key: $PROD_API_KEY" -H "Content-Type: application/json" \
+            -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"回复ok即可"}],"max_tokens":16}' \
+            https://api.0379.world/v1/chat/completions
+          grep -qi "^x-yyc3-upstream" /tmp/h && echo "✅ 头: $(grep -i '^x-yyc3-upstream' /tmp/h | tr -d '\r')" || { echo "❌ 缺 X-YYC3-Upstream 头"; exit 1; }
+          python3 -c "import json;d=json.load(open('/tmp/r'));c=d['choices'][0]['message']['content'];assert c.strip();print('✅ 回复:', c[:40])" || { echo "❌ 响应异常"; cat /tmp/r; exit 1; }
+
+  # ==================== 发布自动化（P2-4：tag 推送 → 版本一致性门禁 + GitHub Release）====================
+  release:
+    name: 发布 (tag 驱动)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    # 版本一致性是发布红线：lint+test 过了才允许出 Release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本一致性门禁（CHANGELOG 定版 + README 徽章 + tag 三方对齐）
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "── 发布版本: v$TAG ──"
+          # ① CHANGELOG.md 必须存在对应定版段（## [x.y.z] - 日期）
+          if ! grep -qE "^## \[$TAG\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+            echo "❌ CHANGELOG.md 缺少 [$TAG] 定版段（格式: ## [$TAG] - YYYY-MM-DD）"
+            echo "   → 先将 Unreleased 段定版提交，再打 tag"
+            exit 1
+          fi
+          echo "✅ CHANGELOG 已定版 [$TAG]"
+          # ② CHANGELOG 定版段必须晚于（或等于）最新 Unreleased 位置之后的历史版本，且不得残留 [Unreleased] 于定版段之后
+          LINE_TAG=$(grep -nE "^## \[$TAG\] - " CHANGELOG.md | head -1 | cut -d: -f1)
+          LINE_UNREL=$(grep -nE "^## \[Unreleased\]" CHANGELOG.md | head -1 | cut -d: -f1 || echo 0)
+          if [ "${LINE_UNREL:-0}" -gt 0 ] && [ "$LINE_UNREL" -lt "$LINE_TAG" ]; then
+            echo "❌ [Unreleased] 段出现在 [$TAG] 定版段之前，段落顺序异常"
+            exit 1
+          fi
+          # ③ README 版本徽章与 tag 一致
+          if ! grep -q "version-v${TAG}-" README.MD; then
+            echo "❌ README.MD 版本徽章未对齐 v$TAG（期望: version-v${TAG}-...）"
+            exit 1
+          fi
+          echo "✅ README 徽章已对齐 v$TAG"
+
+      - name: 提取 Release Notes（CHANGELOG 定版段）
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          # 取定版段到下一个 '---' 或下一个版本头之间（index 精确匹配，避免版本号中 . 的正则歧义）
+          awk -v tag="## [$TAG] - " '
+            index($0, tag) == 1 {found=1; next}
+            found && /^---$/ {exit}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > /tmp/release-notes.md
+          # 空段落兜底
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "（本版本变更详见 CHANGELOG.md）" > /tmp/release-notes.md
+          fi
+          echo "── Release Notes 预览 ──"
+          head -30 /tmp/release-notes.md
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release-notes.md
+          generate_release_notes: false
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

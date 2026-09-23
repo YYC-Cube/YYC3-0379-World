@@ -294,7 +294,7 @@ claude mcp remove <server-name>
 
 - [MCP 官方文档](https://modelcontextprotocol.io/)
 - [Claude Code MCP 配置指南](https://docs.anthropic.com/en/docs/claude-code/mcp)
-- [YYC³ 项目文档](../README.md)
+- [YYC³ 项目文档](../../README.md)
 - [集成配置文件](./integrated-mcp-config.json)
 - [部署脚本](./deploy-integrated-mcp.sh)
 

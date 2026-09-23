@@ -27,11 +27,26 @@ from typing import Any, Dict, List, Optional
 import httpx
 from app.config import settings
 
-_OLLAMA_ENDPOINTS = [
-    "http://ollama:11434",
-    f"http://{settings.ollama_host}:{settings.ollama_port}",
-    "http://10.200.0.3:11434",
-]
+
+def _normalize_host(host: str) -> str:
+    """兼容 OLLAMA_HOST 两种格式：纯 host（127.0.0.1）或完整 URL（http://127.0.0.1:11434，
+    Ollama 官方 CLI 即后者）——统一剥 scheme/端口只留纯 host，端口恒由 ollama_port 决定"""
+    h = host.strip()
+    for p in ("http://", "https://"):
+        if h.startswith(p):
+            h = h[len(p):]
+    if ":" in h:
+        h = h.split(":", 1)[0]
+    return h
+
+
+def _endpoints() -> list:
+    """Ollama 地址列表：主地址必选；OLLAMA_BACKUP_HOST 配置时追加备机"""
+    eps = [f"http://{_normalize_host(settings.ollama_host)}:{settings.ollama_port}"]
+    if settings.ollama_backup_host:
+        eps.append(f"http://{_normalize_host(settings.ollama_backup_host)}:{settings.ollama_port}")
+    return eps
+
 
 _TIMEOUT = httpx.Timeout(120.0, read=120.0)
 
@@ -69,7 +84,7 @@ async def chat_completion(
         payload["options"]["top_p"] = top_p
 
     last_err = None
-    for ep in _OLLAMA_ENDPOINTS:
+    for ep in _endpoints():
         try:
             raw = await _call_one(ep, payload)
             return {
@@ -125,7 +140,7 @@ async def chat_completion_stream(
         payload["options"]["top_p"] = top_p
 
     last_err = None
-    for ep in _OLLAMA_ENDPOINTS:
+    for ep in _endpoints():
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 async with client.stream("POST", f"{ep}/api/chat", json=payload) as response:
