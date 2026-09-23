@@ -42,7 +42,7 @@
 <br/>
 
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/version-v2.2.0-brightgreen?style=flat-square" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-v2.3.0-brightgreen?style=flat-square" alt="Version"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/status-stable-success?style=flat-square" alt="Status"/>

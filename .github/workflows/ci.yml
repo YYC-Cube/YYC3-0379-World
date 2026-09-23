@@ -3,6 +3,7 @@ name: YYC3 CI/CD Pipeline
 on:
   push:
     branches: [main, develop]
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main, develop]
   # 允许手动触发
@@ -262,3 +263,64 @@ jobs:
             https://api.0379.world/v1/chat/completions
           grep -qi "^x-yyc3-upstream" /tmp/h && echo "✅ 头: $(grep -i '^x-yyc3-upstream' /tmp/h | tr -d '\r')" || { echo "❌ 缺 X-YYC3-Upstream 头"; exit 1; }
           python3 -c "import json;d=json.load(open('/tmp/r'));c=d['choices'][0]['message']['content'];assert c.strip();print('✅ 回复:', c[:40])" || { echo "❌ 响应异常"; cat /tmp/r; exit 1; }
+
+  # ==================== 发布自动化（P2-4：tag 推送 → 版本一致性门禁 + GitHub Release）====================
+  release:
+    name: 发布 (tag 驱动)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    # 版本一致性是发布红线：lint+test 过了才允许出 Release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本一致性门禁（CHANGELOG 定版 + README 徽章 + tag 三方对齐）
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "── 发布版本: v$TAG ──"
+          # ① CHANGELOG.md 必须存在对应定版段（## [x.y.z] - 日期）
+          if ! grep -qE "^## \[$TAG\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+            echo "❌ CHANGELOG.md 缺少 [$TAG] 定版段（格式: ## [$TAG] - YYYY-MM-DD）"
+            echo "   → 先将 Unreleased 段定版提交，再打 tag"
+            exit 1
+          fi
+          echo "✅ CHANGELOG 已定版 [$TAG]"
+          # ② CHANGELOG 定版段必须晚于（或等于）最新 Unreleased 位置之后的历史版本，且不得残留 [Unreleased] 于定版段之后
+          LINE_TAG=$(grep -nE "^## \[$TAG\] - " CHANGELOG.md | head -1 | cut -d: -f1)
+          LINE_UNREL=$(grep -nE "^## \[Unreleased\]" CHANGELOG.md | head -1 | cut -d: -f1 || echo 0)
+          if [ "${LINE_UNREL:-0}" -gt 0 ] && [ "$LINE_UNREL" -lt "$LINE_TAG" ]; then
+            echo "❌ [Unreleased] 段出现在 [$TAG] 定版段之前，段落顺序异常"
+            exit 1
+          fi
+          # ③ README 版本徽章与 tag 一致
+          if ! grep -q "version-v${TAG}-" README.MD; then
+            echo "❌ README.MD 版本徽章未对齐 v$TAG（期望: version-v${TAG}-...）"
+            exit 1
+          fi
+          echo "✅ README 徽章已对齐 v$TAG"
+
+      - name: 提取 Release Notes（CHANGELOG 定版段）
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          # 取定版段到下一个 '---' 或下一个版本头之间（index 精确匹配，避免版本号中 . 的正则歧义）
+          awk -v tag="## [$TAG] - " '
+            index($0, tag) == 1 {found=1; next}
+            found && /^---$/ {exit}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > /tmp/release-notes.md
+          # 空段落兜底
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "（本版本变更详见 CHANGELOG.md）" > /tmp/release-notes.md
+          fi
+          echo "── Release Notes 预览 ──"
+          head -30 /tmp/release-notes.md
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release-notes.md
+          generate_release_notes: false
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

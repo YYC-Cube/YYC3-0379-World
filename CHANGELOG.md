@@ -31,16 +31,27 @@ language: zh-CN
 ## [Unreleased] - 待发布
 
 ### 新增 (Added)
+
 - 🆕 pytest 分层体系（P1-1）：默认快速回归层 `-m "not integration"`（34 用例 ~1.6s）；`make test-fast` / `make test-integration` / `make test`（全量）三目标；CI 按事件分层分发（PR 快速层 / main 全量）
 - 🆕 三云适配器 + ollama 全链路测试套件 `tests/test_cloud_adapters_fullpath.py`（15 用例：同步/流式 × 参数化、reasoning 折叠、错误分支、主备切换、全塔断路、host 归一）
 - 🆕 pytest.ini 注册 `fast` marker，`integration` marker 语义明确化
+- 🆕 CI release job（P2-4）：tag 推送 → 版本一致性门禁（tag ↔ CHANGELOG 定版段 ↔ README 徽章三方对齐）→ ReleaseNotes 自动提取 → GitHub Release（tag 含 `-` 自动 prerelease）
 
 ### 变更 (Changed)
+
 - 🔄 test_gateway_api / test_admin_rbac / test_proxy_api 三文件标记 `integration`（TestClient 全链路归集成层，语义不变）
 - 🔄 CI test job 分层：`pull_request` 且非目标 main 时跑快速层；push/PR→main 跑全量
+- 🔄 CI 触发器补 `tags: ["v*.*.*"]`
 
 ### 修复 (Fixed)
+
 - 🔧 覆盖率缺口补齐：deepseek 24→87% / openai 27→83% / ollama 53→84% / zhipu 13→86% / key_guard 30→100%
+- 🔧 README 版本徽章漂移修复（v9 提交意外回退 v2.2.0 → 恢复 v2.3.0，由 release 门禁逻辑在验证时发现）
+
+### 移除 (Removed)
+
+- 🗑️ core/scripts 旧本地模型路线 5 文件：cogagent_chat.py / cogvideox_generator.py / deploy-cogvideox.sh / test-local-models.py / update-model-configs.sql（全仓零引用；推理已 DGX 化）
+- 🗑️ 变量清单 MODEL_COGAGENT_*/ MODEL_COGVIDEOX_* 环境变量 6 行（消费者已删）
 
 ---
 
