@@ -145,12 +145,35 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api
 
 ### 轮换（90 天）
 
+推荐使用 runbook 脚本（`core/scripts/rotate_admin_key.sh`，双写两阶段零中断）：
+
 ```bash
-# 双写新旧两把 → 看板切换到新 Key → 再移除旧
+# NAS 上执行；status 可随时脱敏查看当前态
+bash core/scripts/rotate_admin_key.sh status
+
+# 阶段①双写: 旧,新 并存 → 验证双 Key 均 200 → 终端展示新 Key（仅一次，立即分发）
+bash core/scripts/rotate_admin_key.sh stage1
+#   ……此间切换看板/客户端到新 Key（旧 Key 仍有效，零中断窗口）……
+
+# 阶段②收敛: 预检新 Key 可用（未切换完不动 .env）→ 只留新 Key → 验证旧 403/新 200
+bash core/scripts/rotate_admin_key.sh stage2
+
+# 异常恢复: 恢复最近一次轮换备份（.env.bak-rotate-<时间戳>）并重启网关
+bash core/scripts/rotate_admin_key.sh rollback
+```
+
+脚本内置保障：每次变更前自动备份 `.env.bak-rotate-<时间戳>`；stage2 预检不过**不修改**任何文件直接退出；stage1 重复执行会被双写态守卫拦截（先 stage2 或 rollback）；重启失败时给出手动命令指引。
+
+手工等价（脚本不可用时的备查）：
+
+```bash
 NEW_KEY=$(python3 -c "import secrets; print(f'sk-admin-{secrets.token_hex(16)}')")
+cp -p "$ENV_FILE" "$ENV_FILE.bak-rotate-$(date +%Y%m%d-%H%M%S)"
 sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=旧KEY,${NEW_KEY}|" "$ENV_FILE"
+bash -lc "docker restart 0379-world-gateway-1"
 # ……切换完成后：
 sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=${NEW_KEY}|" "$ENV_FILE"
+bash -lc "docker restart 0379-world-gateway-1"
 ```
 
 ### 安全注意与回滚
