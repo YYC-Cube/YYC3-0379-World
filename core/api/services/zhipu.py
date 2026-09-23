@@ -40,17 +40,10 @@ def _get_zhipu_key() -> str:
 
 
 def _ensure_key() -> str:
-    """空 Key 前置校验：401 明确报错（原先拼出 'Bearer ' 非法头 → 502 模糊）"""
-    key = _get_zhipu_key()
-    if not key.strip():
-        from app.errors import APIError
+    """空 Key 前置校验：401 明确报错（OBS-2 起委托公共件 app.errors.ensure_api_key）"""
+    from app.errors.key_guard import ensure_api_key
 
-        raise APIError(
-            message="智谱 AI 未配置：请设置 ZHIPU_API_KEY 环境变量",
-            status_code=401,
-            details={"env": "ZHIPU_API_KEY", "hint": "https://open.bigmodel.cn 申请后写入 .env"},
-        )
-    return key
+    return ensure_api_key(_get_zhipu_key, provider="智谱 AI", env_name="ZHIPU_API_KEY", apply_url="open.bigmodel.cn")
 
 
 async def chat_completion(

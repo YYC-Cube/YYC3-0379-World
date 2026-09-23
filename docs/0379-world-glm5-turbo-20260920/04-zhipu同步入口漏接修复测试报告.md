@@ -46,7 +46,7 @@ v5 轮深度扫描复核发现：**修复仅落地了流式入口，同步入口
 
 ### 2.1 缺陷机理
 
-`_get_zhipu_key()` 在空 Key 时返回空串，请求头拼为 `Bearer `（尾随空格的非法 HTTP 头值）。httpx 在本地构造请求时即抛异常，**请求从未发出**，异常消息形如：
+`_get_zhipu_key()` 在空 Key 时返回空串，请求头拼为 `Bearer`（尾随空格的非法 HTTP 头值）。httpx 在本地构造请求时即抛异常，**请求从未发出**，异常消息形如：
 
 ```
 Illegal header value b'Bearer '
@@ -108,6 +108,7 @@ async for _ in zhipu.chat_completion_stream(...)  →  APIError, status_code == 
 ```
 
 **设计要点**：
+
 - 双重隔离（env + settings）防止宿主机残留 `ZHIPU_API_KEY` 导致假阴性；
 - 流式入口为 async generator，`_ensure_key()` 在**首次迭代**时才执行，故用 `async for` 驱动触发，而非仅构造调用；
 - 断言消息含 `ZHIPU_API_KEY`，锁定「可自愈排障」这一行为契约，防未来退化为无消息的裸 401。
@@ -144,8 +145,8 @@ async for _ in zhipu.chat_completion_stream(...)  →  APIError, status_code == 
 | 编号 | 观察 | 影响 | 建议 | 优先级 |
 | --- | --- | --- | --- | --- |
 | OBS-1 | ~~同步路 401 经 `with_retry(max_retries=2)` 仍会重试 2 次（间隔 ~3s）——4xx 配置错误重试必败，纯增延迟~~ | ~~空 Key 场景响应慢 ~3s（仅降级路径与云直连路径）~~ | ✅ **已修复**（2026-09-23）：[handler.py](/Users/yanyu/YYC-Cube/YYC3-0379-World/core/api/errors/handler.py) 新增 `_is_retryable`——YYC3Error/httpx 响应状态码 ∈ [400,500) 且 ≠429 时 `retry` 立即抛出；6 用例回归（含装饰器链路耗时 <0.5s 断言） | ~~P2~~ 已闭环 |
-| OBS-2 | `deepseek.py` / `openai.py` 同类云适配器无 `_ensure_key` 等价前置校验 | 同类空 Key 场景可能复现误导性报错 | 复刻 `_ensure_key` 模式至三云适配器（或抽公共 helper） | P2 |
-| OBS-3 | 03 文档 v4-T1 行声明「双入口」与实际落地不符（流程性缺口：修复声明未经双入口测试锁定） | 已由本报告测试契约补齐 | 声明性修复须伴随「断言面 = 声明面」的测试（本次已示范） | P3（流程） |
+| OBS-2 | ~~`deepseek.py` / `openai.py` 同类云适配器无 `_ensure_key` 等价前置校验~~ | ~~同类空 Key 场景可能复现误导性报错~~ | ✅ **已修复**（2026-09-23，v7）：① 新建 [errors/key_guard.py](/Users/yanyu/YYC-Cube/YYC3-0379-World/core/api/errors/key_guard.py) 公共件 `ensure_api_key`（落位 errors：services 平级互 import 被 importlinter 禁止，errors 为三适配器既有合法依赖）；② zhipu 切换委托（消息语义不变）；③ deepseek：502→401 + **模块级快照改延迟读取**（原 `_DEEPSEEK_KEY` import 时定格，运行时 env 更新失效）；④ openai：**原无任何校验**（空 Key 直拼非法头），双入口补齐。测试面：参数化矩阵 `test_cloud_adapter_empty_key_raises_401[zhipu|deepseek|openai]`（双入口 + env 名断言）+`test_cloud_adapter_key_runtime_reload` | ~~P2~~ 已闭环 |
+| OBS-3 | 03 文档 v4-T1 行声明「双入口」与实际落地不符（流程性缺口：修复声明未经双入口测试锁定） | 已由本报告测试契约补齐 | ✅ **已闭环**（2026-09-23，v7）：空 Key 用例升级为三适配器参数化矩阵，**断言面 = 声明面**制度化——矩阵用例含 env 名消息断言 + 状态码语义断言（401 非 502），后续新增云适配器自动纳入 `_CLOUD_ADAPTERS` 表即受契约约束 | ~~P3（流程）~~ 已闭环 |
 
 ---
 

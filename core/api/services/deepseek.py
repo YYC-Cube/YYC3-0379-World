@@ -22,7 +22,18 @@ def _base() -> str:
     return settings.deepseek_base_url
 
 
-_DEEPSEEK_KEY = settings.deepseek_api_key
+def _get_deepseek_key() -> str:
+    """延迟读取 DeepSeek Key（OBS-2：原模块级快照 import 时定格，env 运行时更新失效）"""
+    import os
+
+    return os.getenv("DEEPSEEK_API_KEY", "") or settings.deepseek_api_key
+
+
+def _ensure_key() -> str:
+    """空 Key 前置校验：401 明确报错（OBS-2；原实现 502 + 模块级快照）"""
+    from app.errors.key_guard import ensure_api_key
+
+    return ensure_api_key(_get_deepseek_key, provider="DeepSeek", env_name="DEEPSEEK_API_KEY", apply_url="platform.deepseek.com")
 
 
 async def chat_completion(
@@ -47,16 +58,8 @@ async def chat_completion(
     Returns:
         dict: API响应
     """
-    if not _DEEPSEEK_KEY:
-        from app.errors import APIError
-
-        raise APIError(
-            message="DeepSeek API Key未配置",
-            details={"error": "请配置DEEPSEEK_API_KEY环境变量"},
-        )
-
     headers = {
-        "Authorization": f"Bearer {_DEEPSEEK_KEY}",
+        "Authorization": f"Bearer {_ensure_key()}",
         "Content-Type": "application/json",
     }
 
@@ -110,16 +113,8 @@ async def chat_completion_stream(
     Yields:
         dict: 流式响应块
     """
-    if not _DEEPSEEK_KEY:
-        from app.errors import APIError
-
-        raise APIError(
-            message="DeepSeek API Key未配置",
-            details={"error": "请配置DEEPSEEK_API_KEY环境变量"},
-        )
-
     headers = {
-        "Authorization": f"Bearer {_DEEPSEEK_KEY}",
+        "Authorization": f"Bearer {_ensure_key()}",
         "Content-Type": "application/json",
     }
 
