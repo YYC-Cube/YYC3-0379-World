@@ -23,6 +23,7 @@
 @copyright Copyright (c) 2026 YanYuCloudCube Team
 """
 
+import base64
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -47,7 +48,7 @@ _CAP_PATH = {
     "embedding": "/v1/embeddings",
     "rerank": "/v1/completions",
     "asr": "/v1/audio/transcriptions",
-    "ocr": "/v1/ocr",
+    "ocr": "/v1/chat/completions",  # OCR 走 VLM chat 适配（2026-09-24：vLLM 无 /v1/ocr 原生路由）
 }
 
 # Qwen3-Reranker 官方 judge 三段式模板（生成式打分：取 yes token 概率）
@@ -341,20 +342,58 @@ async def transcriptions(
 
 
 @router.post("/v1/ocr")
-async def ocr(request: Request, file: UploadFile = File(...), model: Optional[str] = Form(None)):
-    """图文识别（multipart；上游池 capability=ocr；vk 白名单+预算+记账）"""
+async def ocr(
+    request: Request,
+    file: UploadFile = File(...),
+    model: Optional[str] = Form(None),
+    prompt: Optional[str] = Form(None),
+):
+    """图文识别（multipart 图片 → VLM chat 适配；上游池 capability=ocr；vk 白名单+预算+记账）
+
+    2026-09-24 改造：vLLM 无原生 /v1/ocr 路由，OCR 上游=多模态 VLM（如 MiniCPM-V），
+    图片转 base64 data URL 走 /v1/chat/completions，取回复文本为 OCR 结果。
+    """
     started = time.time()
     try:
         vk = await _vk_gate(request, "ocr", model or "ocr")
         content = await file.read()
-        files = {"file": (file.filename, content, file.content_type or "application/octet-stream")}
-        data = {}
-        if model:
-            data["model"] = model
-        result, u, degraded = await _forward("ocr", data=data, files=files)
+        mime = file.content_type or "image/png"
+        if not mime.startswith("image/"):
+            mime = "image/png"
+        b64 = base64.b64encode(content).decode("ascii")
+        ocr_prompt = prompt or (
+            "Extract all text from this image. Output the recognized text as plain text, "
+            "preserving natural reading order. Output no explanations."
+        )
+        body = {
+            "model": model or "ocr",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                        {"type": "text", "text": ocr_prompt},
+                    ],
+                }
+            ],
+            "max_tokens": 2048,
+        }
+        result, u, degraded = await _forward("ocr", json_body=body)
+        text = ""
+        choices = result.get("choices") or []
+        if choices:
+            msg = choices[0].get("message") or {}
+            content_out = msg.get("content")
+            if isinstance(content_out, list):  # 某些 VLM 返回分段 content
+                text = "".join(
+                    p.get("text", "") for p in content_out if isinstance(p, dict)
+                )
+            else:
+                text = content_out or ""
+        payload = {"text": text.strip(), "model": u.models[0] if u.models else "ocr"}
         metrics_manager.record_model_usage(model or "ocr", f"ocr:{u.name}")
         _vk_spend(vk, "ocr", model or "ocr", u.name, started, result)
-        return _json_or_502(result, u, degraded)
+        return _json_or_502(payload, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
             e, context={"model": model or "ocr", "capability": "ocr", "operation": "proxy"}

@@ -257,10 +257,14 @@ def test_asr_multipart_passthrough(client):
 
 
 @respx.mock
-def test_ocr_multipart_passthrough(client):
+def test_ocr_vlm_chat_adapter(client):
+    """2026-09-24 契约升级：OCR 走 VLM chat 适配（图片→base64→chat/completions→取文本）"""
     registry.load_from_env()
-    route = respx.post("http://ocr.test:8103/v1/ocr").mock(
-        return_value=httpx.Response(200, json={"text": "识别结果"})
+    route = respx.post("http://ocr.test:8103/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "识别结果"}}]},
+        )
     )
     r = client.post(
         "/v1/ocr",
