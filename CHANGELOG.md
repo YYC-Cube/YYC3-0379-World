@@ -40,6 +40,7 @@ language: zh-CN
 - 🆕 ADMIN_API_KEYS 分离语义测试 `tests/test_admin_key_separation.py`（P2-6，6 用例：回退/互斥/容错/模板锚）
 - 🆕 API认证使用指南「管理面密钥分离」章节：语义契约 + 生产 runbook + 90 天轮换策略
 - 🆕 ADMIN_API_KEYS 生产验证脚本 `core/scripts/verify_admin_keys.sh`（三连验证一键化：403/200/200 + 精准处置提示）
+- 🆕 生产 .env 写入示例命令固化：API认证使用指南 runbook 升级四步可复制（生成/幂等写入/滚动生效/三连验证）+ 轮换与回滚段
 
 ### 变更 (Changed)
 

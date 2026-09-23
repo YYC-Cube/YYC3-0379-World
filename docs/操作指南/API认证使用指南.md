@@ -89,17 +89,50 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 
 ### 生产落地 runbook
 
+#### ① 生成独立管理面 Key（Mac/NAS 均可，与业务 Key 不同源）
+
 ```bash
-# ① 生成独立管理面密钥（与推理面密钥不同源）
 python3 -c "import secrets; print(f'sk-admin-{secrets.token_hex(16)}')"
+# 输出示例: sk-admin-3f9a1c8e7b2d4f6a9c0e5d8b1a4f7c2e
+```
 
-# ② NAS 生产 .env 追加（逗号分隔可多把，支持轮换双活期）
-ADMIN_API_KEYS=<上一步生成的 key>
+#### ② 写入 NAS 生产 .env（幂等防重复追加）
 
-# ③ 滚动重启网关（部署桥 2 分钟周期自动生效，或手动）
-#    ~/yyc3-deploy/watch.sh 观察 auto-deploy.log
+```bash
+# 在 NAS yyc3-45 上执行；ENV_FILE 按实际部署路径调整（通常在 gateway compose 同目录）
+ENV_FILE="/volume1/docker/yyc3-gateway/.env"
 
-# ④ 验证三连（一键脚本，见 core/scripts/verify_admin_keys.sh）
+ADMIN_KEY="sk-admin-3f9a1c8e7b2d4f6a9c0e5d8b1a4f7c2e"  # ← 替换为①生成值
+
+# 幂等写入：已有旧值则替换，无则追加
+if grep -q '^ADMIN_API_KEYS=' "$ENV_FILE"; then
+    sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=${ADMIN_KEY}|" "$ENV_FILE"
+else
+    echo "ADMIN_API_KEYS=${ADMIN_KEY}" >> "$ENV_FILE"
+fi
+
+# 确认写入（只计数键名行，避免整文件泄露其他密钥）
+grep -c '^ADMIN_API_KEYS=' "$ENV_FILE"   # 期望 1
+
+# 收紧权限（如尚未收紧）
+chmod 600 "$ENV_FILE"
+```
+
+> `.bak` 备份由 sed 自动生成，确认无误后可删除。
+
+#### ③ 滚动生效（部署桥自动 or 手动）
+
+```bash
+# 方式A：等部署桥自动同步（Mac 上 ~/yyc3-deploy/watch.sh，~2 分钟周期）
+tail -f ~/yyc3-deploy/auto-deploy.log
+
+# 方式B：NAS 上手动立即重启网关容器
+docker restart yyc3-gateway && docker logs -f --tail 20 yyc3-gateway
+```
+
+#### ④ 三连验证（Mac 上，对应 core/scripts/verify_admin_keys.sh）
+
+```bash
 bash core/scripts/verify_admin_keys.sh <业务KEY> <ADMIN_KEY> https://api.0379.world
 #   ① 业务Key → /v1/admin/virtual-keys → 期望 403（管理面拒业务 Key）
 #   ② 管理Key → /v1/admin/virtual-keys → 期望 200（管理面放行）
@@ -110,10 +143,20 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <ADMIN_KEY>" https://api
 curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/models
 ```
 
-### 轮换建议
+### 轮换（90 天）
 
-- 管理面 Key 泄露风险高于业务 Key（可看 vk 用量/预算全量数据），建议 **90 天轮换**
-- 轮换期双写：`ADMIN_API_KEYS=old,new` → 看板切换 → 移除 old
+```bash
+# 双写新旧两把 → 看板切换到新 Key → 再移除旧
+NEW_KEY=$(python3 -c "import secrets; print(f'sk-admin-{secrets.token_hex(16)}')")
+sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=旧KEY,${NEW_KEY}|" "$ENV_FILE"
+# ……切换完成后：
+sed -i.bak "s|^ADMIN_API_KEYS=.*|ADMIN_API_KEYS=${NEW_KEY}|" "$ENV_FILE"
+```
+
+### 安全注意与回滚
+
+- 生成的 Key 只经终端短暂展示，**勿写入任何 git 跟踪文件**（`.env` 已在 `.gitignore`）
+- 回滚预案：删除 `ADMIN_API_KEYS=` 行即回退到「业务/管理同源」兼容态，无破坏性
 
 ---
 
