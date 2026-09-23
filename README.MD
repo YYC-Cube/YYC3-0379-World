@@ -241,7 +241,7 @@ Client Request
 | embeddings | N1:8100 | `qwen3-embedding-0.6b`（1024 维） | ✅ 公网 |
 | rerank | N1:8101 | `qwen3-reranker-0.6b`（judge 生成式打分） | ✅ 公网 |
 | asr | N2:8004（09-21 迁自 N1，worker 0.72+asr 0.08 共存） | `qwen3-asr-1.7b`（whisper-1 别名自动改写） | ✅ 公网 |
-| ocr | 候选受阻（vLLM↔MiniCPM-V-4.6 权重 qkv 格式不匹配，09-24 实测） | 端点已 VLM chat 适配（图片→base64→chat/completions），上游落地即插即用 | 🟡 适配器已部署 |
+| ocr | 权重格式阻塞**已解**（`deploy/dgx/fuse_qkv.py` 融合手术：hub 分离式 q/k/v→vLLM 融合式，N2 `MiniCPM-V-4.6-vllm` 资产就绪）；**部署让位容量物理**（N2 0.80 负载三次尝试三次扰动 worker——第三服务窗口待旗舰 KV 调优维护窗或负载腾挪） | 端点 VLM chat 适配就绪，上游落位即插即用 | 🟡 资产就绪待窗口 |
 | video | Mac yyc3-22 runner（夜间窗口生产，互斥避让批量） | MiniMax-H3 异步任务 API **已上线**（POST/GET `/v1/video/tasks`，09-24 e2e 字节级验收；runner 管理面 LAN 直连，归档 NAS 卷直写） | ✅ 任务 API 公网 |
 
 上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。
