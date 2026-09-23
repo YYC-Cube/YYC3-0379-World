@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import List, Optional
 
 import aiofiles
-from app.db import Document, DocumentChunk, KnowledgeBase, async_session
+from app.services.db_access import Document, DocumentChunk, KnowledgeBase, get_db
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -76,7 +76,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     knowledge_base_id: str = Query(..., description="知识库ID"),
     file: UploadFile = File(..., description="文档文件"),
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     上传文档到知识库
@@ -162,7 +162,7 @@ async def upload_document(
 
 
 @router.post("", response_model=DocumentResponse, summary="创建文档记录")
-async def create_document(doc_data: DocumentCreate, db: AsyncSession = Depends(async_session)):
+async def create_document(doc_data: DocumentCreate, db: AsyncSession = Depends(get_db)):
     """
     创建文档记录（用于 URL 或其他来源）
 
@@ -199,7 +199,7 @@ async def list_documents(
     status: Optional[str] = Query(None, description="按状态筛选"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量"),
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     获取文档列表
@@ -221,7 +221,7 @@ async def list_documents(
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse, summary="获取文档详情")
-async def get_document(doc_id: str, db: AsyncSession = Depends(async_session)):
+async def get_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     """
     获取指定文档的详细信息
     """
@@ -242,7 +242,7 @@ async def list_document_chunks(
     doc_id: str,
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量"),
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     获取文档的所有切片
@@ -266,7 +266,7 @@ async def list_document_chunks(
 
 
 @router.delete("/{doc_id}", summary="删除文档")
-async def delete_document(doc_id: str, db: AsyncSession = Depends(async_session)):
+async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     """
     删除文档及其所有切片
 
@@ -290,7 +290,7 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(async_session)
 async def reprocess_document(
     doc_id: str,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     重新处理文档（解析、切片、向量化）

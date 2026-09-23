@@ -16,6 +16,7 @@
 @copyright Copyright (c) 2026 YanYuCloudCube Team
 """
 
+import asyncio
 import fnmatch
 import json
 import logging
@@ -44,7 +45,10 @@ class Upstream:
     models: List[str]
     capability: str = "chat"
     fallback_url: str = ""  # 同一上游的备用地址（如 QSFP 主 / Tailscale 备）
-    api_key_env: str = ""  # 从哪个环境变量读 API Key
+    api_key_env: str = ""  # 从哪个环境变量读 API Key（旧单 Key 字段，保留兼容）
+    api_key_envs: List[str] = field(default_factory=list)  # P1-1 多 Key 轮询（429 跳下一把）
+    provider: str = "openai_compat"  # 供应商转换实现（providers/registry：zhipu/deepseek/…）
+    sovereign: bool = False  # 主权标签：敏感数据请求（X-YYC3-Sovereign: required）仅路由到此
     weight: float = 100.0
     priority: int = 10  # 数字越小越优先
     capacity: int = 32
@@ -60,12 +64,26 @@ class Upstream:
     ewma_latency: float = 0.0  # ms
     ewma_error_rate: float = 0.0
     last_error: str = ""
+    consecutive_probe_failures: int = 0  # 主动验活连续失败轮数
+    probe_degraded: bool = False  # 验活降级：权重×0.5（不摘除，恢复即复原）
+    _key_cursor: int = 0
     recent_records: deque = field(default_factory=lambda: deque(maxlen=200))
 
     def api_key(self) -> str:
-        if not self.api_key_env:
+        """P1-1 多 Key 轮询：api_key_envs 非空时计数轮换；否则回退旧单 Key 字段"""
+        envs = self.api_key_envs or ([self.api_key_env] if self.api_key_env else [])
+        if not envs:
             return ""
-        return os.getenv(self.api_key_env, "")
+        key = os.getenv(envs[self._key_cursor % len(envs)], "")
+        self._key_cursor += 1  # 计数轮询：每次调用换下一把
+        return key
+
+    def rotate_key_on_429(self) -> str:
+        """429 限流时立即跳到下一把 Key 并返回新 Key"""
+        envs = self.api_key_envs or ([self.api_key_env] if self.api_key_env else [])
+        if len(envs) > 1:
+            self._key_cursor += 1
+        return self.api_key()
 
     def serves(self, model: str) -> bool:
         return any(fnmatch.fnmatch(model, pat) for pat in self.models)
@@ -93,6 +111,18 @@ class UpstreamRegistry:
             self.upstreams = {}
             return
         pool: Dict[str, Upstream] = {}
+        try:
+            from app.services.providers.registry import is_known_provider
+
+            for i, item in enumerate(items):
+                pname = str(item.get("provider", "openai_compat"))
+                if not is_known_provider(pname):
+                    logger.warning(
+                        f"上游池第 {i} 项（{item.get('name', '?')}）provider '{pname}' 未登记，"
+                        f"运行时将回退 openai_compat"
+                    )
+        except ImportError:
+            pass
         for i, item in enumerate(items):
             try:
                 u = Upstream(
@@ -102,6 +132,9 @@ class UpstreamRegistry:
                     capability=str(item.get("capability", "chat")),
                     fallback_url=str(item.get("fallback_url", "")).rstrip("/"),
                     api_key_env=str(item.get("api_key_env", "")),
+                    api_key_envs=[str(k) for k in item.get("api_key_envs", []) if str(k)],
+                    provider=str(item.get("provider", "openai_compat")),
+                    sovereign=bool(item.get("sovereign", False)),
                     weight=float(item.get("weight", 100)),
                     priority=int(item.get("priority", 10)),
                     capacity=int(item.get("capacity", 32)),
@@ -148,10 +181,29 @@ class UpstreamRegistry:
             return None
         best_tier = min(u.priority for u in avail)
         avail = [u for u in avail if u.priority == best_tier]
+        return self._weighted_pick(avail)
+
+    def select_sovereign(self, model: str, capability: str = "chat") -> Optional[Upstream]:
+        """主权路由：仅在 sovereign=True 上游内选择；无可用返回 None（调用方不得降级到云）"""
+        avail = [
+            u
+            for u in self.candidates(model, capability)
+            if u.sovereign and self._breaker_available(u)
+        ]
+        if not avail:
+            return None
+        best_tier = min(u.priority for u in avail)
+        avail = [u for u in avail if u.priority == best_tier]
+        return self._weighted_pick(avail)
+
+    def _weighted_pick(self, avail: List[Upstream]) -> Optional[Upstream]:
+        """同层内加权随机（负载/错误率/延迟/半开惩罚综合权重）"""
         weights = {}
         for u in avail:
             load_ratio = max(0.01, 1.0 - u.current_load / max(u.capacity, 1))
             penalty = 0.3 if u.breaker_state == "half_open" else 1.0
+            if u.probe_degraded:
+                penalty *= 0.5  # 主动验活降级：权重减半
             latency_norm = min(u.ewma_latency / 500.0, 5.0) if u.ewma_latency else 0.5
             weights[u.name] = max(
                 0.001,
@@ -170,13 +222,18 @@ class UpstreamRegistry:
                 return u
         return avail[-1]
 
-    def fallback_chain(self, primary: Upstream, capability: str = "chat") -> List[Upstream]:
-        """降级链：自身在最前，其后是同 capability 其他上游（按优先级）"""
+    def fallback_chain(
+        self, primary: Upstream, capability: str = "chat", sovereign_only: bool = False
+    ) -> List[Upstream]:
+        """降级链：自身在最前，其后是同 capability 其他上游（按优先级）；
+        sovereign_only=True 时链内仅含 sovereign 上游（硬过滤，不降级到云）"""
         chain = [primary]
-        same_cap = sorted(
-            [u for u in self.upstreams.values() if u.capability == capability],
-            key=lambda u: (u.priority, -u.weight),
-        )
+        pool = [
+            u
+            for u in self.upstreams.values()
+            if u.capability == capability and (u.sovereign or not sovereign_only)
+        ]
+        same_cap = sorted(pool, key=lambda u: (u.priority, -u.weight))
         for u in same_cap:
             if u.name != primary.name:
                 chain.append(u)
@@ -216,6 +273,53 @@ class UpstreamRegistry:
                     f"{BREAKER_OPEN_SECONDS:.0f}s 后半开探测"
                 )
 
+    # ── 主动验活（学 one-api 渠道自愈）─────────────────────
+
+    PROBE_FAILURE_THRESHOLD = 2  # 连续 2 轮探活失败 → degraded（权重减半，不摘除）
+
+    async def probe_all(self) -> List[Dict]:
+        """并发探测所有上游 health_path；连续失败达标者标 degraded（权重×0.5），恢复即复原。
+        不与熔断状态机耦合：probe 只影响权重，熔断仍由真实流量驱动。"""
+        import httpx
+
+        results: List[Dict] = []
+
+        async def _probe_one(u: Upstream) -> None:
+            url = f"{u.base_url}{u.health_path}"
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(url)
+                ok = resp.status_code < 500
+            except Exception:
+                ok = False
+            if ok:
+                u.consecutive_probe_failures = 0
+                if u.probe_degraded:
+                    u.probe_degraded = False
+                    logger.info(f"上游 {u.name} 验活恢复（权重复原）")
+            else:
+                u.consecutive_probe_failures += 1
+                if (
+                    not u.probe_degraded
+                    and u.consecutive_probe_failures >= self.PROBE_FAILURE_THRESHOLD
+                ):
+                    u.probe_degraded = True
+                    logger.warning(
+                        f"上游 {u.name} 验活连续失败 {u.consecutive_probe_failures} 轮 → degraded（权重×0.5）"
+                    )
+            results.append(
+                {
+                    "name": u.name,
+                    "url": url,
+                    "ok": ok,
+                    "probe_degraded": u.probe_degraded,
+                    "consecutive_probe_failures": u.consecutive_probe_failures,
+                }
+            )
+
+        await asyncio.gather(*(_probe_one(u) for u in self.upstreams.values()))
+        return results
+
     # ── 观测快照 ──────────────────────────────────────────
 
     def snapshot(self) -> List[Dict]:
@@ -227,6 +331,7 @@ class UpstreamRegistry:
                     "base_url": u.base_url,
                     "fallback_url": u.fallback_url,
                     "capability": u.capability,
+                    "sovereign": u.sovereign,
                     "models": u.models,
                     "priority": u.priority,
                     "weight": u.weight,

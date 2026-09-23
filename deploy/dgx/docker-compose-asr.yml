@@ -1,14 +1,19 @@
 # file: docker-compose-asr.yml
-# description: ASR 第四能力上游——Qwen3-ASR-1.7B vLLM 原生 serve（N1 :8004）
-# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-14
+# description: ASR 第四能力上游——Qwen3-ASR-1.7B vLLM 原生 serve（N2 :8004；2026-09-21 迁自 N1）
+# author: YanYuCloudCube Team | version: v1.1.0 | created: 2026-09-14 | updated: 2026-09-21
 #
 # 要点（实测）：
 #   - vLLM nightly 原生支持 Qwen3ASRForConditionalGeneration（/v1/audio/transcriptions OpenAI 兼容开箱）
-#   - 容器需 soundfile（音频解析依赖）：首选固化镜像 docker.m.daocloud.io/yyc3/asr-qwen3:v1；
-#     用原版 nightly 起则需先 docker exec 装 soundfile（--ignore-installed，debian 包冲突）
+#   - 容器需 soundfile（音频解析依赖）：固化镜像 docker.m.daocloud.io/yyc3/asr-qwen3:v1
 #   - qwen-asr PyPI 包与 nightly transformers 装饰器签名不兼容（check_model_inputs），勿用包路线
-#   - util 0.05 + eager + len 8192 与旗舰/RAG 共存（N1 总占用 ~0.85 稳定线内）
-# 网关接入：池加 {"name":"asr-n1","base_url":"http://<N1>:8004","models":["qwen3-asr*"],"capability":"asr","priority":1}
+#   - 迁移原因（09-21）：N1 四服务共存 0.85 死线挤兑（Exited 137）→ N2 与旗舰 worker 共存
+#   - N2 实测（09-21）：**util 0.05 不可用**（权重 4.38G+CUDA ctx 后 KV 无空间 → No available
+#     memory for cache blocks）；**util 0.08 通过**——worker 0.72 + asr 0.08 = 0.80 < 0.88 崩线
+#   - 启动顺序铁律：先旗舰（head→worker 完全就绪）后 ASR；ASR 在 worker 装载窗口抢跑会
+#     EngineCore 连锁失败并扰动 worker（09-21 实证）
+#   - 权重路径：N2 /home/yyc3/yyc3-102-projects/models/Qwen3-ASR-1.7B（4.4G，QSFP 同步自 N1）
+# 网关接入：池 {"name":"asr-n2","base_url":"http://<N2>:8004","models":["qwen3-asr*"],"capability":"asr","priority":1}
+#   网关已支持模型别名改写（whisper-1 等自动映射注册模型，2026-09-21）
 services:
   asr:
     image: docker.m.daocloud.io/yyc3/asr-qwen3:v1
@@ -18,11 +23,11 @@ services:
     ipc: host
     gpus: all
     volumes:
-      - /home/yyc3/yyc3-101-projects/models/Qwen3-ASR-1.7B:/model:ro
+      - /home/yyc3/yyc3-102-projects/models/Qwen3-ASR-1.7B:/model:ro
     command: >
       /model
       --served-model-name qwen3-asr-1.7b
       --port 8004
       --max-model-len 8192
-      --gpu-memory-utilization 0.05
+      --gpu-memory-utilization 0.08
       --enforce-eager

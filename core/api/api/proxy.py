@@ -31,7 +31,7 @@ import httpx
 from app.errors.handler import error_handler
 from app.services.upstream_registry import Upstream, registry
 from app.utils import metrics_manager
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -121,6 +121,17 @@ async def _forward(
             continue
         registry.acquire(u)
         started = time.time()
+        # 模型别名改写：请求 model 不在上游注册清单（如 OpenAI 客户端默认 whisper-1）
+        # 时，改写为该上游首个注册模型，避免上游 404 model-not-found
+        payload_json = dict(json_body) if json_body else None
+        payload_data = dict(data) if data else None
+        if u.models:
+            req_model = (payload_json or payload_data or {}).get("model")
+            if req_model and not u.serves(req_model):
+                if payload_json is not None:
+                    payload_json["model"] = u.models[0]
+                if payload_data is not None:
+                    payload_data["model"] = u.models[0]
         for addr in _addresses(u):
             url = f"{addr}{_CAP_PATH[capability]}"
             headers = {}
@@ -131,7 +142,7 @@ async def _forward(
             try:
                 async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                     resp = await client.post(
-                        url, json=json_body, data=data, files=files, headers=headers
+                        url, json=payload_json, data=payload_data, files=files, headers=headers
                     )
                 resp.raise_for_status()
                 registry.release(u, (time.time() - started) * 1000, True)
@@ -151,6 +162,79 @@ def _json_or_502(payload: Dict, upstream: Upstream, degraded: List[str], status_
     return JSONResponse(content=payload, status_code=status_hint, headers=headers)
 
 
+def _vk_from_request(request) -> Optional[Dict]:
+    """从 request.state 提取虚拟密钥上下文（Auth 中间件写入），非 vk 返回 None"""
+    user_ctx = getattr(request.state, "user", None)
+    return user_ctx.get("vk") if isinstance(user_ctx, dict) else None
+
+
+async def _vk_gate(request, capability: str, model: str) -> Optional[Dict]:
+    """P1-3 能力收口治理：vk 模型白名单 + 预算闸门（对齐 chat 语义）。拒绝时抛 HTTPException"""
+    from fastapi import HTTPException
+
+    from app.services.virtual_key_manager import vk_manager
+
+    vk = _vk_from_request(request)
+    if vk is None:
+        return None
+    if not vk_manager.check_model_allowed(vk, model):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"message": f"虚拟密钥无权访问模型 {model}", "type": "model_not_allowed"}},
+        )
+    if not vk_manager.check_budget(vk, est_cost=0.0):
+        raise HTTPException(
+            status_code=402,
+            detail={"error": {"message": "虚拟密钥预算已耗尽", "type": "budget_exceeded"}},
+        )
+    if not await vk_manager.check_tpm(vk):
+        raise HTTPException(
+            status_code=429,
+            detail={"error": {"message": "虚拟密钥 TPM 限流触发", "type": "rate_limit_exceeded"}},
+        )
+    return vk
+
+
+def _vk_spend(
+    vk: Optional[Dict],
+    capability: str,
+    model: str,
+    upstream_name: str,
+    started: float,
+    payload: Optional[Dict] = None,
+):
+    """proxy 能力（asr/ocr/embedding/rerank）响应后异步记账。无 vk 跳过"""
+    if vk is None:
+        return
+    try:
+        from app.services.pricing import pricing
+        from app.services.virtual_key_manager import vk_manager
+
+        usage = (payload or {}).get("usage", {}) or {}
+        pt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        ct = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+        cost = pricing.completion_cost(model, pt, ct)
+
+        import asyncio
+
+        asyncio.get_running_loop().create_task(
+            vk_manager.enqueue_spend(
+                {
+                    "key_id": vk.get("id"),
+                    "model": model,
+                    "upstream": upstream_name,
+                    "capability": capability,
+                    "prompt_tokens": pt,
+                    "completion_tokens": ct,
+                    "cost_usd": cost,
+                    "latency_ms": int((time.time() - started) * 1000),
+                }
+            )
+        )
+    except Exception as e:
+        logger.warning(f"[{capability}] vk 记账失败（不影响响应）: {e}")
+
+
 def _yes_probability(choice: Dict) -> float:
     """从 completions choice 的 top_logprobs 里提取 yes 概率（Qwen3-Reranker 语义）"""
     import math
@@ -168,14 +252,17 @@ def _yes_probability(choice: Dict) -> float:
 
 
 @router.post("/v1/embeddings")
-async def embeddings(req: EmbeddingRequest):
-    """向量嵌入（OpenAI 兼容；上游池 capability=embedding）"""
+async def embeddings(req: EmbeddingRequest, request: Request):
+    """向量嵌入（OpenAI 兼容；上游池 capability=embedding；vk 白名单+预算+记账）"""
+    started = time.time()
     try:
+        vk = await _vk_gate(request, "embedding", req.model)
         body = {"model": req.model, "input": req.input}
         if req.dimensions:
             body["dimensions"] = req.dimensions
         result, u, degraded = await _forward("embedding", json_body=body)
         metrics_manager.record_model_usage(req.model, f"embedding:{u.name}")
+        _vk_spend(vk, "embedding", req.model, u.name, started, result)
         return _json_or_502(result, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
@@ -188,9 +275,11 @@ async def embeddings(req: EmbeddingRequest):
 
 
 @router.post("/v1/rerank")
-async def rerank(req: RerankRequest):
-    """重排序（Cohere 风格对外；上游 Qwen3-Reranker 生成式打分）"""
+async def rerank(req: RerankRequest, request: Request):
+    """重排序（Cohere 风格对外；上游 Qwen3-Reranker 生成式打分；vk 白名单+预算+记账）"""
+    started = time.time()
     try:
+        vk = await _vk_gate(request, "rerank", req.model)
         # Qwen3-Reranker 生成式打分：批量 prompt → completions(max_tokens=1, logprobs)
         prompts = [_rerank_prompt(req.query, doc) for doc in req.documents]
         score_body = {
@@ -214,6 +303,7 @@ async def rerank(req: RerankRequest):
             "usage": result.get("usage", {}),
         }
         metrics_manager.record_model_usage(req.model, f"rerank:{u.name}")
+        _vk_spend(vk, "rerank", req.model, u.name, started, payload)
         return _json_or_502(payload, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
@@ -226,14 +316,19 @@ async def rerank(req: RerankRequest):
 
 
 @router.post("/v1/audio/transcriptions")
-async def transcriptions(file: UploadFile = File(...), model: str = Form(...)):
-    """语音转写（Whisper 风格 multipart；上游池 capability=asr）"""
+async def transcriptions(
+    request: Request, file: UploadFile = File(...), model: str = Form(...)
+):
+    """语音转写（Whisper 风格 multipart；上游池 capability=asr；vk 白名单+预算+记账）"""
+    started = time.time()
     try:
+        vk = await _vk_gate(request, "asr", model)
         content = await file.read()
         files = {"file": (file.filename, content, file.content_type or "application/octet-stream")}
         data = {"model": model}
         result, u, degraded = await _forward("asr", data=data, files=files)
         metrics_manager.record_model_usage(model, f"asr:{u.name}")
+        _vk_spend(vk, "asr", model, u.name, started, result)
         return _json_or_502(result, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
@@ -246,9 +341,11 @@ async def transcriptions(file: UploadFile = File(...), model: str = Form(...)):
 
 
 @router.post("/v1/ocr")
-async def ocr(file: UploadFile = File(...), model: Optional[str] = Form(None)):
-    """图文识别（multipart；上游池 capability=ocr）"""
+async def ocr(request: Request, file: UploadFile = File(...), model: Optional[str] = Form(None)):
+    """图文识别（multipart；上游池 capability=ocr；vk 白名单+预算+记账）"""
+    started = time.time()
     try:
+        vk = await _vk_gate(request, "ocr", model or "ocr")
         content = await file.read()
         files = {"file": (file.filename, content, file.content_type or "application/octet-stream")}
         data = {}
@@ -256,6 +353,7 @@ async def ocr(file: UploadFile = File(...), model: Optional[str] = Form(None)):
             data["model"] = model
         result, u, degraded = await _forward("ocr", data=data, files=files)
         metrics_manager.record_model_usage(model or "ocr", f"ocr:{u.name}")
+        _vk_spend(vk, "ocr", model or "ocr", u.name, started, result)
         return _json_or_502(result, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(

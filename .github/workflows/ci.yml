@@ -41,6 +41,21 @@ jobs:
       - name: mypy 类型检查（advisory，不阻塞）
         run: mypy core/ --ignore-missing-imports || true
 
+      - name: 架构依赖契约检查（P2-2 importlinter，正式门禁）
+        run: |
+          pip install import-linter
+          PYTHONPATH=$GITHUB_WORKSPACE/scripts/importlinter_boot lint-imports --config .importlinter
+
+      - name: pnpm 门禁（P2-3：e2e 测试包依赖完整性，正式门禁）
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: pnpm 安装与锁文件校验
+        run: |
+          cd tests/e2e
+          pnpm install --frozen-lockfile
+          pnpm audit --prod || echo "::warning::pnpm audit 有漏洞（审计类不阻塞，依赖升级跟进）"
+
   # ==================== 单元测试 ====================
   test:
     name: 单元测试

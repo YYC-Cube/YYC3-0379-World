@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # 灰度开关：False 时 chat 路由完全走旧逻辑（云前缀+Ollama 兜底）
     router_enabled: bool = True
 
+    # ── 上游池主动验活（P0-2：学 one-api 渠道自愈）──
+    probe_enabled: bool = True
+    probe_interval_seconds: int = 60
+
     prometheus_multiproc_dir: str = "/tmp/prometheus_multiproc"
 
     # 旧拓扑遗留字段（历史默认 10.200.0.2 已废弃，保留字段兼容 env）
@@ -74,6 +78,7 @@ class Settings(BaseSettings):
     jwt_expiration_hours: int = 24
 
     api_keys: str = ""
+    admin_api_keys: str = ""  # 管理面密钥（逗号分隔）；空 = 回退 api_keys（兼容单机部署）
 
     allowed_origins: str = "https://api.0379.world"
 

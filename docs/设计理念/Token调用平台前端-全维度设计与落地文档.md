@@ -31,41 +31,41 @@ supersedes:
 
 ### 1.1 端点总览（52 端点，2026-09-17 OpenAPI 实况）
 
-| # | 类别 | 端点 | 认证 | 当前返回 Schema | 对齐类型 |
-| --- | ------ | ------ | :----: | ---------------- | ---------- |
-| 1 | 聊天 | `POST /v1/chat/completions` | 需 | OpenAI ChatCompletion + SSE | ✅ 直接对接 |
-| 2 | 聊天 | `WS /ws/chat` | 需 | WebSocket 流式 | ✅ 直接对接 |
-| 3 | 聊天 | `WS /ws/monitor` | 需 | WebSocket 监控 | ✅ 直接对接 |
-| 4 | 模型 | `GET /v1/models` | 需 | `ModelConfig[]`（6 种 backend enum） | ✅ 直接对接 |
-| 5 | 模型 | `GET /v1/models/stats` | 需 | `ModelStat[]`（5 字段） | ✅ 直接对接 |
-| 6 | 模型 | `GET /v1/models/errors` | 需 | `ErrorRecord[]`（4 种 error_type） | ✅ 直接对接 |
-| 7 | 模型 | `GET /v1/models/summary` | 需 | `UsageSummary`（cost_usd 恒 0.0） | 🔧 需轻量扩展 |
-| 8 | 模型 | `GET /v1/model/type` | 需 | 模型类型查询 | ✅ 直接对接 |
-| 9 | 路由 | `GET /v1/router/stats` | 需 | 上游池快照（含熔断态） | ✅ 直接对接 |
-| 10 | 路由 | `GET /v1/router/health` | 需 | 上游池健康探测结果 | ✅ 直接对接 |
-| 11 | 缓存 | `GET /v1/cache/stats` | 需 | 缓存统计 | ✅ 直接对接 |
-| 12 | 缓存 | `GET /v1/cache/info` | 需 | 缓存详情 | ✅ 直接对接 |
-| 13 | 缓存 | `POST /v1/cache/invalidate/{model}` | 需 | 失效结果 | ✅ 直接对接 |
-| 14 | 缓存 | `DELETE /v1/cache/all` | 需 | 清空结果 | ✅ 直接对接 |
-| 15 | 能力代理 | `POST /v1/embeddings` | 需 | EmbeddingResponse | ✅ 直接对接 |
-| 16 | 能力代理 | `POST /v1/rerank` | 需 | RerankResponse | ✅ 直接对接 |
-| 17 | 能力代理 | `POST /v1/audio/transcriptions` | 需 | 代理（端点就绪） | ✅ 直接对接 |
-| 18 | 能力代理 | `POST /v1/ocr` | 需 | 代理（端点就绪） | ✅ 直接对接 |
-| 19-23 | RAG | `GET/POST/PATCH/DELETE /v1/knowledge-bases[/stats]` | 需 | KB CRUD + 统计 | ✅ 直接对接 |
-| 24-27 | 文档 | `POST/GET/DELETE /v1/documents[/upload/{doc_id}/chunks/reprocess]` | 需 | 文档完整生命周期 | ✅ 直接对接 |
-| 28 | RAG | `POST /v1/rag/search` | 需 | 语义检索 | ✅ 直接对接 |
-| 29 | RAG | `POST /v1/rag/ask` | 需 | 知识库问答 | ✅ 直接对接 |
-| 30-43 | MCP | 14 个端点（tools/execute/local/web/github/docker/database/filesystem/search） | 需 | MCP 工具集 | ✅ 直接对接 |
-| 44 | 健康 | `GET /health` | **免** | 完整健康（含 system/cache/services） | ✅ 直接对接 |
-| 45 | 健康 | `GET /healthz` | **免** | 轻量探活 | ✅ 直接对接 |
-| 46 | 健康 | `GET /v1/ping` | **免** | `{"status":"ok"}` | ✅ 直接对接 |
-| 47 | 版本 | `GET /v1/versions` | 需 | 版本信息 | ✅ 直接对接 |
-| 48 | 监控 | `GET /metrics` | 需 | Prometheus | ✅ 直接对接 |
-| 49 | 监控 | `GET /docs` | **免** | Swagger UI | ✅ 直接对接 |
-| 50 | 监控 | `GET /openapi.json` | **免** | OpenAPI 规范 | ✅ 直接对接 |
-| -- | 缺失 | **`GET /v1/logs`** | -- | 不存在 | 🔧 需新增 |
-| -- | 缺失 | **`GET /v1/keys` CRUD** | -- | 不存在（.env 静态） | 🔧 需新增 |
-| -- | 缺失 | **`GET /v1/usage/timeline`** | -- | 不存在 | 🔧 需新增 |
+| #     | 类别　　 | 端点　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 认证　 | 当前返回 Schema　　　　　　　　　　　| 对齐类型　　　|
+| -------| ----------| -------------------------------------------------------------------------------| :------:| --------------------------------------| ---------------|
+| 1     | 聊天　　 | `POST /v1/chat/completions`　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | OpenAI ChatCompletion + SSE　　　　　| ✅ 直接对接　　|
+| 2     | 聊天　　 | `WS /ws/chat`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | WebSocket 流式　　　　　　　　　　　 | ✅ 直接对接　　|
+| 3     | 聊天　　 | `WS /ws/monitor`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | WebSocket 监控　　　　　　　　　　　 | ✅ 直接对接　　|
+| 4     | 模型　　 | `GET /v1/models`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | `ModelConfig[]`（6 种 backend enum） | ✅ 直接对接　　|
+| 5     | 模型　　 | `GET /v1/models/stats`　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | `ModelStat[]`（5 字段）　　　　　　　| ✅ 直接对接　　|
+| 6     | 模型　　 | `GET /v1/models/errors`　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | `ErrorRecord[]`（4 种 error_type）　 | ✅ 直接对接　　|
+| 7     | 模型　　 | `GET /v1/models/summary`　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | `UsageSummary`（cost_usd 恒 0.0）　　| 🔧 需轻量扩展 |
+| 8     | 模型　　 | `GET /v1/model/type`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 模型类型查询　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 9     | 路由　　 | `GET /v1/router/stats`　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 上游池快照（含熔断态）　　　　　　　 | ✅ 直接对接　　|
+| 10    | 路由　　 | `GET /v1/router/health`　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | 上游池健康探测结果　　　　　　　　　 | ✅ 直接对接　　|
+| 11    | 缓存　　 | `GET /v1/cache/stats`　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | 缓存统计　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 12    | 缓存　　 | `GET /v1/cache/info`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 缓存详情　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 13    | 缓存　　 | `POST /v1/cache/invalidate/{model}`　　　　　　　　　　　　　　　　　　　　　 | 需　　 | 失效结果　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 14    | 缓存　　 | `DELETE /v1/cache/all`　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 清空结果　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 15    | 能力代理 | `POST /v1/embeddings`　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | EmbeddingResponse　　　　　　　　　　| ✅ 直接对接　　|
+| 16    | 能力代理 | `POST /v1/rerank`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | RerankResponse　　　　　　　　　　　 | ✅ 直接对接　　|
+| 17    | 能力代理 | `POST /v1/audio/transcriptions`　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | 代理（端点就绪）　　　　　　　　　　 | ✅ 直接对接　　|
+| 18    | 能力代理 | `POST /v1/ocr`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 代理（端点就绪）　　　　　　　　　　 | ✅ 直接对接　　|
+| 19-23 | RAG　　　| `GET/POST/PATCH/DELETE /v1/knowledge-bases[/stats]`　　　　　　　　　　　　　 | 需　　 | KB CRUD + 统计　　　　　　　　　　　 | ✅ 直接对接　　|
+| 24-27 | 文档　　 | `POST/GET/DELETE /v1/documents[/upload/{doc_id}/chunks/reprocess]`　　　　　　| 需　　 | 文档完整生命周期　　　　　　　　　　 | ✅ 直接对接　　|
+| 28    | RAG　　　| `POST /v1/rag/search`　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 需　　 | 语义检索　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 29    | RAG　　　| `POST /v1/rag/ask`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 知识库问答　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 30-43 | MCP　　　| 14 个端点（tools/execute/local/web/github/docker/database/filesystem/search） | 需　　 | MCP 工具集　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 44    | 健康　　 | `GET /health`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | **免** | 完整健康（含 system/cache/services） | ✅ 直接对接　　|
+| 45    | 健康　　 | `GET /healthz`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| **免** | 轻量探活　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 46    | 健康　　 | `GET /v1/ping`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| **免** | `{"status":"ok"}`　　　　　　　　　　| ✅ 直接对接　　|
+| 47    | 版本　　 | `GET /v1/versions`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | 版本信息　　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 48    | 监控　　 | `GET /metrics`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 需　　 | Prometheus　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 49    | 监控　　 | `GET /docs`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | **免** | Swagger UI　　　　　　　　　　　　　 | ✅ 直接对接　　|
+| 50    | 监控　　 | `GET /openapi.json`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 | **免** | OpenAPI 规范　　　　　　　　　　　　 | ✅ 直接对接　　|
+| --    | 缺失　　 | **`GET /v1/logs`**　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　| --　　 | 不存在　　　　　　　　　　　　　　　 | 🔧 需新增　　 |
+| --    | 缺失　　 | **`GET /v1/keys` CRUD**　　　　　　　　　　　　　　　　　　　　　　　　　　　 | --　　 | 不存在（.env 静态）　　　　　　　　　| 🔧 需新增　　 |
+| --    | 缺失　　 | **`GET /v1/usage/timeline`**　　　　　　　　　　　　　　　　　　　　　　　　　| --　　 | 不存在　　　　　　　　　　　　　　　 | 🔧 需新增　　 |
 
 ### 1.2 关键 Schema 字段级实况（2026-09-17 审计）
 

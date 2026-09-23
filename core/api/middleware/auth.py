@@ -70,6 +70,13 @@ class AuthConfig:
         """从 settings.api_keys 动态解析，逗号分隔"""
         return {k.strip() for k in settings.api_keys.split(",") if k.strip()}
 
+    @property
+    def ADMIN_API_KEYS(self) -> Set[str]:
+        """管理面密钥（/v1/admin/** 专用）；未配置时回退 VALID_API_KEYS（兼容单机部署）"""
+        raw = getattr(settings, "admin_api_keys", "") or ""
+        keys = {k.strip() for k in raw.split(",") if k.strip()}
+        return keys or self.VALID_API_KEYS
+
 
 auth_config = AuthConfig()
 security = HTTPBearer(auto_error=False)
@@ -196,6 +203,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
+        # ── 管理面 RBAC：/v1/admin/** 需 admin API Key 或 role=admin JWT ──
+        if self._is_admin_request(path):
+            is_admin = bool(auth_result.get("admin")) or auth_result.get("role") == "admin"
+            if not is_admin:
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={
+                        "error": "Forbidden",
+                        "message": "Admin privileges required",
+                        "detail": "/v1/admin/** 需要管理面密钥（ADMIN_API_KEYS）或 admin 角色 JWT",
+                    },
+                )
+
         request.state.user = auth_result
 
         response = await call_next(request)
@@ -221,6 +241,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         return False
 
+    def _is_admin_request(self, path: str) -> bool:
+        """管理面路径判定（/v1/admin/** → 需 ADMIN_API_KEYS 或 admin 角色 JWT）
+
+        看板壳（/v1/admin/dashboard）特例：静态 HTML 无敏感数据，认证即可加载；
+        数据 API（virtual-keys*）仍要求 admin —— UX 闭环：壳内 fetch 403 → prompt 补录。
+        """
+        if path == "/v1/admin/dashboard":
+            return False
+        return path.startswith("/v1/admin")
+
     async def _authenticate(self, request: Request) -> tuple[bool, Optional[dict]]:
         """
         执行认证
@@ -240,6 +270,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     {
                         "type": "jwt",
                         "user_id": payload.get("user_id"),
+                        "role": payload.get("role", ""),
                         "exp": payload.get("exp"),
                     },
                 )
@@ -248,12 +279,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         api_key = self._extract_api_key(request)
         if api_key:
-            if verify_api_key(api_key):
+            # ── P0-1 双层缓存校验链：虚拟密钥（内存→Redis→PG）优先 ──
+            try:
+                from app.services.virtual_key_manager import vk_manager
+
+                vk = await vk_manager.authenticate(api_key)
+                if vk is not None:
+                    # 虚拟密钥非管理身份：管理面直接 403（rbac：vk 只能调推理面）
+                    if self._is_admin_request(request.url.path):
+                        return (True, {"type": "virtual_key", "vk": vk, "admin": False})
+                    return (True, {"type": "virtual_key", "vk": vk})
+            except Exception as e:
+                logger.debug(f"虚拟密钥校验链异常（降级静态 Key）: {e}")
+
+            if verify_api_key(api_key) or api_key in auth_config.ADMIN_API_KEYS:
                 return (
                     True,
                     {
                         "type": "api_key",
                         "key_hash": hash_api_key(api_key),
+                        "admin": api_key in auth_config.ADMIN_API_KEYS,
                     },
                 )
             else:

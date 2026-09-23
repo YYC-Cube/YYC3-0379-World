@@ -1,0 +1,53 @@
+# YYC³ 分层依赖契约（import-linter）
+# 学七大项目对标 P2 项：架构防腐——分层不可逆，违规即 CI 失败
+# 运行: lint-importers --config .importlinter（CI 中 `make check-architecture`）
+# 文档: docs/0379-world-glm5-turbo-20260920/03-优势核心项与落地实施计划.md
+
+[importlinter]
+root_package = app
+# app 包由 conftest.py 动态注册（core/api → app），本地校验方式：
+#   PYTHONPATH=scripts/importlinter_boot:core/api lint-imports --config .importlinter
+# （scripts/importlinter_boot/sitecustomize.py 预注册 app 包，同 tests/conftest.py 机制）
+
+[importlinter:contract:layers]
+name = 分层架构：api → services → (utils|config|db)，禁止逆向
+type = layers
+layers =
+    app.api
+    app.middleware
+    app.services
+    app.utils
+
+[importlinter:contract:api-no-direct-db]
+name = api 层禁止裸连 DB（须经 services 层；services→db 为合法链，忽略传递闭包）
+type = forbidden
+source_modules =
+    app.api
+forbidden_modules =
+    app.db
+# forbidden 契约默认匹配传递闭包；ignore_imports 用通配豁免"经任意模块中转"的链，
+# 仅拦截 api 模块对 app.db 的直接 import（新增 services 模块访问 db 无需改此清单）
+ignore_imports =
+    app.api.** -> app.middleware
+    app.api.** -> app.middleware.auth
+    app.api.** -> app.services.usage_logger
+    app.api.** -> app.services.virtual_key_manager
+    app.api.** -> app.services.db_access
+    app.api.** -> app.services.rag_service
+    app.api.** -> app.services.document_processor
+
+[importlinter:contract:services-independent]
+name = services 内平级模块禁止互相 import（providers 除外），防网状耦合
+type = forbidden
+source_modules =
+    app.services.ollama
+    app.services.zhipu
+    app.services.deepseek
+    app.services.openai
+    app.services.openai_compatible
+forbidden_modules =
+    app.services.ollama
+    app.services.zhipu
+    app.services.deepseek
+    app.services.openai
+    app.services.openai_compatible

@@ -70,6 +70,13 @@ lint: ## 代码检查
 	$(PYTHON) -m flake8 core/ --max-line-length=100 --exclude=__pycache__,migrations
 	@echo "$(GREEN)✅ 代码检查完成$(RESET)"
 
+# 架构依赖契约检查（P2-2: importlinter 分层防腐，正式门禁）
+check-architecture: ## 检查分层依赖契约（3/3 KEPT 方可通过）
+	@echo "$(GREEN)运行架构契约检查...$(RESET)"
+	$(PIP) install import-linter 2>/dev/null || true
+	PYTHONPATH=$$(pwd)/scripts/importlinter_boot lint-imports --config .importlinter
+	@echo "$(GREEN)✅ 架构契约检查完成$(RESET)"
+
 # 代码格式化
 format: ## 代码格式化
 	@echo "$(GREEN)格式化代码...$(RESET)"

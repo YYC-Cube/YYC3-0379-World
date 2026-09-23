@@ -1,0 +1,9 @@
+feat(gateway): v4 全链路——ZHIPU 空 Key 401 明确报错、流式 SSE chunk 级 PII 脱敏、vk 看板与 e2e 基建
+
+- zhipu.py: _ensure_key() 空 Key 抛 401 明确错误（双入口），终结 Illegal header value 模糊 502
+- chat.py: _sanitize_chunk + carry 缓冲（尾 20 字符滞留防跨 chunk 截断漏检）+ 流末 flush，sse_wrapper 接入
+- admin_ui.py: 修 15 处模板误转义（render/patch/del/usage 内插值全坏）+ authFetch 空 Key 不设头（Chrome 空值禁用头 TypeError 致 403 prompt 分支永不可达）
+- vk 管理面: virtual_key_manager CRUD + sqlite 本地兼容四修 + ensure_tables；dashboard 壳 RBAC 特例（数据 API 仍 admin）
+- db.py: DATABASE_URL env 整体覆盖（本地 e2e 用 sqlite+aiosqlite）
+- e2e: dashboard.spec.ts 4 用例（真浏览器 chromium channel=chrome + 本地 Docker 布局复刻）；RBAC+PII 9 用例
+- 门禁: pytest 40/40 全绿、py_compile 0 错误、importlinter 3/3 KEPT

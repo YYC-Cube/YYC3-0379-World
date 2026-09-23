@@ -240,7 +240,8 @@ Client Request
 | chat | DGX 双机 TP=2（N1:8001） | `deepseek-v4-flash` | ✅ 公网 |
 | embeddings | N1:8100 | `qwen3-embedding-0.6b`（1024 维） | ✅ 公网 |
 | rerank | N1:8101 | `qwen3-reranker-0.6b`（judge 生成式打分） | ✅ 公网 |
-| asr / ocr | 待上游 | 端点已就绪（capability 路由） | 🟡 方案见 docs/架构与部署 |
+| asr | N2:8004（09-21 迁自 N1，worker 0.72+asr 0.08 共存） | `qwen3-asr-1.7b`（whisper-1 别名自动改写） | ✅ 公网 |
+| ocr | 待上游 | 端点已就绪（capability 路由） | 🟡 方案见 docs/架构与部署 |
 | video | Mac yyc3-22 数字人生产线 | MiniMax-H3（异步任务 API 规划中） | 🟠 第五能力 |
 
 上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。

@@ -14,6 +14,7 @@
 import json
 import os
 import sys
+import time
 
 # ── 环境必须在 import app 之前就位 ──────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core", "api"))
@@ -43,6 +44,10 @@ os.environ.update(
         "REDIS_PASSWORD": "pytest-only-redis",
         "AUTH_ENABLED": "true",
         "OPENAI_COMPATIBLE_UPSTREAMS": _POOL,
+        # 测试密闭性：宿主机 shell 的 OLLAMA_HOST 可能是完整 URL 格式
+        # （http://127.0.0.1:11434，Ollama 官方变量），强制纯 host 防 mock URL 拼接错位
+        "OLLAMA_HOST": "127.0.0.1",
+        "OLLAMA_PORT": "11434",
     }
 )
 
@@ -139,29 +144,35 @@ def test_chat_upstream_pool_route(client):
     assert "x-yyc3-degraded" not in r.headers
 
 
-@respx.mock
 def test_chat_unknown_model_falls_to_ollama(client):
     """未匹配上游池的模型 → Ollama 兜底（mock Ollama 地址）"""
-    from app.config import settings
+    # 服务端 _endpoints() 用 _normalize_host 剥 scheme/端口——测试须同源取地址，
+    # 否则宿主机 OLLAMA_HOST 为完整 URL（官方 CLI 格式）时拼出 Host='http' 永不匹配
+    from app.services.ollama import _endpoints
 
-    ollama_url = f"http://{settings.ollama_host}:{settings.ollama_port}/api/chat"
-    respx.post(ollama_url).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "message": {"role": "assistant", "content": "local"},
-                "done_reason": "stop",
-                "prompt_eval_count": 1,
-                "eval_count": 1,
-            },
+    ollama_url = f"{_endpoints()[0]}/api/chat"
+    # 带括号 with = 全新 MockRouter 实例；路由必须注册到该实例（as router）上，
+    # respx.post 全局函数注册的是未激活的全局实例（穿透真实网络）；
+    # assert_all_mocked=False 让 TestClient 自身 testserver ASGI 请求 pass-through
+    with respx.mock(assert_all_mocked=False, assert_all_called=False) as router:
+        route = router.post(ollama_url).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "message": {"role": "assistant", "content": "local"},
+                    "done_reason": "stop",
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                },
+            )
         )
-    )
-    r = client.post(
-        "/v1/chat/completions",
-        json=_chat_body(model="some-unknown-model"),
-        headers=_auth(),
-    )
-    assert r.status_code == 200, r.text
+        r = client.post(
+            "/v1/chat/completions",
+            json=_chat_body(model="some-unknown-model"),
+            headers=_auth(),
+        )
+        assert r.status_code == 200, r.text
+        assert route.called, "未知模型应命中 Ollama mock（未命中 = 池或路由被污染）"
     assert r.json()["choices"][0]["message"]["content"] == "local"
 
 
@@ -249,19 +260,26 @@ def test_circuit_breaker_opens_and_falls_back():
 
     # 熔断摘除后：select 直接落到 backup 层，旗舰零请求、无降级头
     fail.calls.clear()
-    with TestClient(app) as c:
-        body = _chat_body()
-        body["messages"][0]["content"] = "post-breaker probe"
-        r = c.post("/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"})
-        assert r.status_code == 200, r.text
+    # 防环境时序脆弱性：本机 Redis 不可达时 TestClient 启动可超 30s（DNS 超时），
+    # 会越过 OPEN 窗口触发 half_open 放行 → 测试期临时放大 OPEN 时长
+    import app.services.upstream_registry as ur
+
+    _old_open_secs = ur.BREAKER_OPEN_SECONDS
+    ur.BREAKER_OPEN_SECONDS = 3600.0
+    try:
+        with TestClient(app) as c:
+            body = _chat_body()
+            body["messages"][0]["content"] = "post-breaker probe"
+            r = c.post("/v1/chat/completions", json=body, headers={"X-API-Key": "test-key-1"})
+            assert r.status_code == 200, r.text
+    finally:
+        ur.BREAKER_OPEN_SECONDS = _old_open_secs
     assert not fail.called, "熔断摘除后不应再请求旗舰"
     assert r.headers.get("x-yyc3-degraded") is None
     assert r.headers.get("x-yyc3-upstream") == "backup"
 
     # 半开探测：时间窗过后 available 放行
-    import app.services.upstream_registry as ur
-
-    flag.breaker_opened_at -= ur.BREAKER_OPEN_SECONDS + 1
+    flag.breaker_opened_at -= _old_open_secs + 1
     assert registry.available(flag) is True
     # 还原
     flag.breaker_state = "closed"
@@ -341,7 +359,20 @@ async def test_stream_sse_and_upstream_disclosure(client, monkeypatch):
     import json as _json
 
     first = _json.loads(lines[0][6:])
-    assert first["choices"][0]["delta"]["content"] == "你好"
+    # PII carry 缓冲语义：每 chunk 尾部 20 字符滞留、流末 flush 补发，
+    # 故内容断言用全流拼接（首 chunk 只可能少尾巴，不会多/错）
+    assembled = []
+    for ln in lines:
+        payload = ln[6:]
+        if payload == "[DONE]":
+            continue
+        chunk = _json.loads(payload)
+        delta = (chunk.get("choices") or [{}])[0].get("delta", {})
+        if delta.get("content"):
+            assembled.append(delta["content"])
+        if chunk.get("_yyc3_upstream"):
+            assert chunk["_yyc3_upstream"] == "flagship"
+    assert "".join(assembled) == "你好"
     assert first["_yyc3_upstream"] == "flagship"
 
 

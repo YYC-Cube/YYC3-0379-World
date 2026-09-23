@@ -28,11 +28,23 @@ import httpx
 from app.config import settings
 
 
+def _normalize_host(host: str) -> str:
+    """兼容 OLLAMA_HOST 两种格式：纯 host（127.0.0.1）或完整 URL（http://127.0.0.1:11434，
+    Ollama 官方 CLI 即后者）——统一剥 scheme/端口只留纯 host，端口恒由 ollama_port 决定"""
+    h = host.strip()
+    for p in ("http://", "https://"):
+        if h.startswith(p):
+            h = h[len(p):]
+    if ":" in h:
+        h = h.split(":", 1)[0]
+    return h
+
+
 def _endpoints() -> list:
     """Ollama 地址列表：主地址必选；OLLAMA_BACKUP_HOST 配置时追加备机"""
-    eps = [f"http://{settings.ollama_host}:{settings.ollama_port}"]
+    eps = [f"http://{_normalize_host(settings.ollama_host)}:{settings.ollama_port}"]
     if settings.ollama_backup_host:
-        eps.append(f"http://{settings.ollama_backup_host}:{settings.ollama_port}")
+        eps.append(f"http://{_normalize_host(settings.ollama_backup_host)}:{settings.ollama_port}")
     return eps
 
 
