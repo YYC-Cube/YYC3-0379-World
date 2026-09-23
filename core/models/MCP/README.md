@@ -40,7 +40,7 @@ language: zh-CN
 - 查找代码解决方案
 - 搜索 API 文档
 
-**详细文档**: [联网搜索-MCP.md](../BigModel/联网搜索-MCP.md)
+**详细文档**: 联网搜索-MCP.md（原 BigModel 目录文档已随旧路线移除）
 
 ---
 
@@ -61,7 +61,7 @@ language: zh-CN
 - 获取仓库的文档和注释
 - 分析项目结构
 
-**详细文档**: [开源仓库-MCP.md](../BigModel/开源仓库-MCP.md)
+**详细文档**: 开源仓库-MCP.md（原 BigModel 目录文档已随旧路线移除）
 
 ---
 
@@ -99,7 +99,7 @@ language: zh-CN
 - 分析网页结构
 - 提取网页数据
 
-**详细文档**: [网页读取-MCP.md](../BigModel/网页读取-MCP.md)
+**详细文档**: 网页读取-MCP.md（原 BigModel 目录文档已随旧路线移除）
 
 ---
 
@@ -122,7 +122,7 @@ language: zh-CN
 - 数据可视化分析
 - 图像和视频内容理解
 
-**详细文档**: [视觉理解-MCP.md](../BigModel/视觉理解-MCP.md)
+**详细文档**: 视觉理解-MCP.md（原 BigModel 目录文档已随旧路线移除）
 
 ---
 
@@ -366,7 +366,7 @@ claude mcp add -s user <server-name> --env KEY=value -- <command>
 
 - [MCP 官方文档](https://modelcontextprotocol.io/)
 - [Claude Code MCP 配置指南](https://docs.anthropic.com/en/docs/claude-code/mcp)
-- [YYC³ 项目文档](../README.md)
+- [YYC³ 项目文档](../../README.md)
 - [集成调用指南](./INTEGRATION_GUIDE.md)
 - [集成配置文件](./integrated-mcp-config.json)
 - [部署脚本](./deploy-integrated-mcp.sh)

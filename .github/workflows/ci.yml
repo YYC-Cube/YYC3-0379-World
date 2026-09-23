@@ -47,6 +47,9 @@ jobs:
           pip install import-linter
           PYTHONPATH=$GITHUB_WORKSPACE/scripts/importlinter_boot lint-imports --config .importlinter
 
+      - name: docs 内链检查（P2-5：markdown 相对链接防幽灵引用，正式门禁）
+        run: python core/scripts/check_doc_links.py
+
       - name: pnpm 门禁（P2-3：e2e 测试包依赖完整性，正式门禁）
         uses: pnpm/action-setup@v4
         with:

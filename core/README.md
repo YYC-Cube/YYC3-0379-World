@@ -25,13 +25,8 @@ language: zh-CN
 
 ```
 core/
-├── docs/              # 核心文档
-│   ├── OVERALL_ARCHITECTURE.md          # 整体架构设计
-│   ├── API_FULL_LINK_ARCHITECTURE.md    # API 全链路架构
-│   ├── PROJECT_STATUS_ANALYSIS.md       # 项目现状分析
-│   ├── YYC3-项目配置指南-各端详情.md    # 各端配置详情
-│   ├── 部署完成总结.md                  # 部署总结
-│   └── README.md                        # 项目说明
+├── api/               # FastAPI 网关（运行时映射为 app 包）
+├── scripts/           # 运维脚本库（见 core/scripts/README.md）
 │
 ├── config/            # 核心配置
 │   ├── docker/        # Docker 配置
@@ -66,18 +61,21 @@ core/
 ## 🚀 快速启动
 
 ### 1. 启动监控服务
+
 ```bash
 cd core/scripts
 ./start-monitoring.sh
 ```
 
 ### 2. 启动 API 服务
+
 ```bash
 cd core/database/docker
 docker-compose -f docker-compose.stable.yml up -d gateway
 ```
 
 ### 3. 启动模型服务
+
 ```bash
 ollama serve
 ollama run codegeex4
@@ -85,21 +83,26 @@ ollama run codegeex4
 
 ## 📖 核心文档
 
+> 文档体系已于 2026-09 SSOT 化重构，见 [docs/README.md](../docs/README.md) 索引。
+
 ### 架构文档
-- [整体架构设计](docs/OVERALL_ARCHITECTURE.md)
-- [API 全链路架构](docs/API_FULL_LINK_ARCHITECTURE.md)
-- [项目现状分析](docs/PROJECT_STATUS_ANALYSIS.md)
+
+- [API 全链路闭环（SSOT）](../docs/架构与部署/API全链路闭环文档.md)
+- [多设备网络拓扑与架构链路](../docs/架构与部署/多设备网络拓扑与架构链路.md)
 
 ### 配置文档
-- [各端配置详情](docs/YYC3-项目配置指南-各端详情.md)
-- [部署总结](docs/部署完成总结.md)
+
+- [变量清单（环境变量 SSOT）](../docs/核心参考/变量清单.md)
+- [统一配置管理指南](../docs/操作指南/统一配置管理指南.md)
 
 ### 模型文档
-- [模型配置方案](models/MODEL_CONFIGURATION_PLAN.md)
+
+- [设备-模型全量信息](../docs/YYC3-设备-模型全量信息文档.md)
 
 ## 🔧 核心功能
 
 ### 已完成
+
 - ✅ 云端集成 API（api.0379.world）
 - ✅ MCP 服务（多个工具）
 - ✅ 后端 API（23个端点）
@@ -108,6 +111,7 @@ ollama run codegeex4
 - ✅ 自动挂载（监控和重连）
 
 ### API 端点
+
 - GET  /v1/ping                    # 健康检查
 - GET  /v1/models                  # 模型列表
 - POST /v1/chat/completions        # 聊天对话
@@ -116,7 +120,7 @@ ollama run codegeex4
 
 ## 📞 联系方式
 
-- **邮箱**: admin@0379.email
+- **邮箱**: <admin@0379.email>
 - **团队**: YanYuCloudCube Team
 
 ---

@@ -36,6 +36,9 @@ language: zh-CN
 - 🆕 三云适配器 + ollama 全链路测试套件 `tests/test_cloud_adapters_fullpath.py`（15 用例：同步/流式 × 参数化、reasoning 折叠、错误分支、主备切换、全塔断路、host 归一）
 - 🆕 pytest.ini 注册 `fast` marker，`integration` marker 语义明确化
 - 🆕 CI release job（P2-4）：tag 推送 → 版本一致性门禁（tag ↔ CHANGELOG 定版段 ↔ README 徽章三方对齐）→ ReleaseNotes 自动提取 → GitHub Release（tag 含 `-` 自动 prerelease）
+- 🆕 docs 内链检查器 `core/scripts/check_doc_links.py`（P2-5）：markdown 相对链接→文件存在性静态检查，进 CI lint job 正式门禁
+- 🆕 ADMIN_API_KEYS 分离语义测试 `tests/test_admin_key_separation.py`（P2-6，6 用例：回退/互斥/容错/模板锚）
+- 🆕 API认证使用指南「管理面密钥分离」章节：语义契约 + 生产 runbook + 90 天轮换策略
 
 ### 变更 (Changed)
 
@@ -47,6 +50,7 @@ language: zh-CN
 
 - 🔧 覆盖率缺口补齐：deepseek 24→87% / openai 27→83% / ollama 53→84% / zhipu 13→86% / key_guard 30→100%
 - 🔧 README 版本徽章漂移修复（v9 提交意外回退 v2.2.0 → 恢复 v2.3.0，由 release 门禁逻辑在验证时发现）
+- 🔧 存量死链修复 32 处：core/README 幽灵架构文档链重指 SSOT 真身；操作指南三文件"相关文档"段四机时代旧链重写；验收系统两文档旧目录名修正；MCP README 四处 BigModel 死链降级；.env.0379-world 两文档根级幽灵链重写
 
 ### 移除 (Removed)
 

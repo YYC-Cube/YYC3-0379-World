@@ -14,8 +14,8 @@ priority: critical
 
 # YYC³ API 认证使用指南
 
-**文档说明**: 本文档说明如何使用 JWT 和 API Key 认证访问 YYC³ API  
-**更新时间**: 2026-04-08 02:15  
+**文档说明**: 本文档说明如何使用 JWT 和 API Key 认证访问 YYC³ API
+**更新时间**: 2026-04-08 02:15
 **当前版本**: v1.0.0
 
 ---
@@ -76,6 +76,45 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 
 ---
 
+## 🛡️ 管理面密钥分离（ADMIN_API_KEYS）
+
+> P2-6 生产落地：推理面与 `/v1/admin/**` 管理面密钥分离，实现最小权限。
+
+### 语义契约（已由 `tests/test_admin_key_separation.py` 锁定）
+
+| 场景 | 行为 |
+|------|------|
+| `ADMIN_API_KEYS` 未配置/为空 | **回退** `API_KEYS`（单机部署兼容，不破坏既有 admin 入口） |
+| `ADMIN_API_KEYS` 配置后 | 管理面**仅认** admin Key；业务 Key 访问 `/v1/admin/**` → 403 |
+
+### 生产落地 runbook
+
+```bash
+# ① 生成独立管理面密钥（与推理面密钥不同源）
+python3 -c "import secrets; print(f'sk-admin-{secrets.token_hex(16)}')"
+
+# ② NAS 生产 .env 追加（逗号分隔可多把，支持轮换双活期）
+ADMIN_API_KEYS=<上一步生成的 key>
+
+# ③ 滚动重启网关（部署桥 2 分钟周期自动生效，或手动）
+#    ~/yyc3-deploy/watch.sh 观察 auto-deploy.log
+
+# ④ 验证三连（vk 看板数据面回归）
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/admin/vk
+# 期望 403（业务 Key 被管理面拒）
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <ADMIN_KEY>" https://api.0379.world/v1/admin/vk
+# 期望 200（admin Key 放行）
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: <业务KEY>" https://api.0379.world/v1/models
+# 期望 200（推理面不受影响）
+```
+
+### 轮换建议
+
+- 管理面 Key 泄露风险高于业务 Key（可看 vk 用量/预算全量数据），建议 **90 天轮换**
+- 轮换期双写：`ADMIN_API_KEYS=old,new` → 看板切换 → 移除 old
+
+---
+
 ## 🎫 JWT Token 认证
 
 ### 获取 JWT Token
@@ -83,6 +122,7 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 **端点**: `POST /v1/auth/token`
 
 **请求体**:
+
 ```json
 {
   "username": "admin",
@@ -91,6 +131,7 @@ API_KEYS=yyc3_api_key_dev_2026,yyc3_api_key_prod_2026,yyc3_api_key_custom_xxx
 ```
 
 **响应**:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -287,6 +328,7 @@ RATE_LIMIT_WINDOW = 60     # 时间窗口（秒）
 **状态码**: `401 Unauthorized`
 
 **响应体**:
+
 ```json
 {
   "detail": "Invalid API key"
@@ -372,6 +414,5 @@ RATE_LIMIT_WINDOW = 60     # 时间窗口（秒）
 
 ## 🔗 相关文档
 
-- [四机职责分配总览](四机职责分配总览.md)
-- [生产环境实际运行状态](../生产环境实际运行状态.md)
-- [YYC3-战略规划v2](YYC3-战略规划v2.md)
+- [多设备网络拓扑与架构链路](../架构与部署/多设备网络拓扑与架构链路.md)
+- [API 全链路闭环文档（SSOT）](../架构与部署/API全链路闭环文档.md)
