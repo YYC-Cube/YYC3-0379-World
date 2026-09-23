@@ -42,7 +42,7 @@
 <br/>
 
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/version-v2.2.0-brightgreen?style=flat-square" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-v2.3.0-brightgreen?style=flat-square" alt="Version"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/status-stable-success?style=flat-square" alt="Status"/>
@@ -51,7 +51,7 @@
   <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/tests-24%20passing-brightgreen?style=flat-square" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-52%20passing-brightgreen?style=flat-square" alt="Tests"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/CI-five--stage--pipeline-blue?style=flat-square" alt="CI"/>
