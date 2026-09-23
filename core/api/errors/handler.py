@@ -68,6 +68,23 @@ class ErrorHandler:
 
         return "api"
 
+    @staticmethod
+    def _is_retryable(error: Exception) -> bool:
+        """4xx 确定性失败不重试（OBS-1 空转重试修复）。
+
+        配置缺失/密钥无效/权限不足/参数错误（400-499，除 429）重试必败，
+        纯增延迟（原 _ensure_key 401 会空转重试 2 次多耗 ~3s）。
+        429 限流保留重试语义（上游建议退避场景）；5xx 与未知异常维持原行为。"""
+        status_code: Optional[int] = None
+        if isinstance(error, YYC3Error):
+            status_code = error.status_code
+        else:
+            # httpx.HTTPStatusError 等带响应对象的异常：上游已给出明确 4xx 判决
+            status_code = getattr(getattr(error, "response", None), "status_code", None)
+        if status_code is None:
+            return True
+        return not (400 <= status_code < 500 and status_code != 429)
+
     async def _log_error(self, error: Exception, context: Optional[Dict[str, Any]] = None):
         """记录错误日志"""
         error_type = self._classify_error(error)
@@ -122,6 +139,11 @@ class ErrorHandler:
                 return await func(*args, **kwargs)
             except Exception as e:
                 last_error = e
+
+                # 4xx 确定性失败（401 配置缺失/403 权限/400 参数等）重试必败，立即抛出
+                if not self._is_retryable(e):
+                    raise e
+
                 error_type = self._classify_error(e)
                 config = self.retry_config.get(error_type, {})
 
