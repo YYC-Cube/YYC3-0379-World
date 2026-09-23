@@ -1,58 +1,88 @@
 {
-  "__inputs": [],
-  "__requires": [],
-  "title": "YYC³ 模型使用统计",
-  "uid": "yyc3-model-stats",
-  "version": 1,
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
   "panels": [
     {
-      "title": "Token 消耗趋势",
-      "type": "graph",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "sum(rate(llm_tokens_total[5m])) by (model)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(model_usage_total[5m])) by (model)",
           "legendFormat": "{{model}}"
         }
       ],
-      "description": "各模型Token消耗速率"
+      "title": "模型调用量速率（model_usage_total 实弹）",
+      "type": "timeseries"
     },
     {
-      "title": "请求量分布",
-      "type": "piechart",
-      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "displayLabels": ["name", "percent"], "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "tooltip": { "mode": "single" } },
       "targets": [
         {
-          "expr": "sum(rate(api_requests_total[1h])) by (backend)",
-          "legendFormat": "{{backend}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(model_usage_total[1h])) by (backend_type)",
+          "legendFormat": "{{backend_type}}"
         }
       ],
-      "description": "各后端请求量占比"
+      "title": "能力用量占比（chat/embed/rerank/asr）",
+      "type": "piechart"
     },
     {
-      "title": "模型延迟对比",
-      "type": "graph",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(llm_response_time_seconds_bucket[5m])) by (le, model))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(backend_latency_seconds_bucket[5m])) by (le, model))",
           "legendFormat": "P95 {{model}}"
         }
       ],
-      "description": "各模型P95延迟对比"
+      "title": "各模型后端延迟 P95（backend_latency 实弹）",
+      "type": "timeseries"
     },
     {
-      "title": "错误率排行",
-      "type": "table",
-      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "topk(10, sum(rate(api_errors_total[1h])) by (backend))",
-          "legendFormat": "{{backend}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_requests_total{status=~\"5..\"}[5m])) by (backend)",
+          "legendFormat": "5xx {{backend}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "topk(8, sum(increase(model_usage_total[24h])) by (model))",
+          "legendFormat": "24h 调用 {{model}}"
         }
       ],
-      "description": "错误率最高的后端"
+      "title": "后端 5xx 速率 + 模型 24h 累计调用",
+      "type": "timeseries"
     }
   ],
-  "tags": ["yyc3", "model", "usage"]
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["yyc3", "model", "usage"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "YYC³ 模型使用统计",
+  "uid": "yyc3-model-stats",
+  "version": 2,
+  "weekStart": ""
 }

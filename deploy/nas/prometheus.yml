@@ -1,0 +1,15 @@
+# file: prometheus.yml
+# description: YYC³ 观测栈抓取配置——NAS 网关 /metrics（compose 网络 service 名直连）
+# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-24
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: yyc3-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gateway:8000"]
+        labels:
+          service: 0379-world-gateway
+          site: nas

@@ -1,0 +1,48 @@
+# file: docker-compose.monitoring.yml
+# description: 观测栈（行动清单 #8 收口）——Prometheus 抓取网关 /metrics + Grafana 面板（NAS :3000 LAN）
+# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-24
+#
+# 用法（NAS 工作树 /Volume2/yyc3-33，.env 需 GRAFANA_ADMIN_PASSWORD）：
+#   $D compose --project-directory . -f deploy/nas/docker-compose.monitoring.yml up -d
+# 面板字段与网关 /metrics 实弹指标对齐（2026-09-24 校准）：
+#   api_requests_total{backend,endpoint,method,status} / api_response_time_seconds_*
+#   backend_latency_seconds_bucket{backend_type,model,le} / model_usage_total{backend_type,model}
+#   cache_misses_total / api_active_requests
+services:
+  prometheus:
+    image: docker.m.daocloud.io/prom/prometheus:v2.53.0
+    container_name: yyc3-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/nas/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-data:/prometheus
+    networks:
+      - yyc3-network
+
+  grafana:
+    image: docker.m.daocloud.io/grafana/grafana:11.1.0
+    container_name: yyc3-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - ./core/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./core/config/grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - yyc3-network
+    depends_on:
+      - prometheus
+
+networks:
+  yyc3-network:
+    external: true

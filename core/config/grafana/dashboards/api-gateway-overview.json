@@ -1,89 +1,146 @@
 {
-  "__inputs": [],
-  "__requires": [],
-  "title": "YYC³ API 网关概览",
-  "uid": "yyc3-api-gateway",
-  "version": 1,
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
   "panels": [
     {
-      "title": "请求速率 (RPS)",
-      "type": "graph",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "sum(rate(api_requests_total[5m])) by (method, endpoint)",
-          "legendFormat": "{{method}} {{endpoint}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_requests_total[5m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}"
         }
       ],
-      "description": "各端点每分钟请求数"
+      "title": "请求速率 QPS（按端点）",
+      "type": "timeseries"
     },
     {
-      "title": "响应延迟 P50/P95/P99",
-      "type": "graph",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(api_response_time_seconds_bucket[5m])) by (le, endpoint))",
-          "legendFormat": "P50 {{endpoint}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_requests_total{status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx 错误"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(api_response_time_seconds_bucket[5m])) by (le, endpoint))",
-          "legendFormat": "P95 {{endpoint}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(api_requests_total{status=~\"4..\"}[5m]))",
+          "legendFormat": "4xx 客户端"
+        }
+      ],
+      "title": "错误速率（5xx / 4xx，status 标签实弹）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(api_response_time_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(api_response_time_seconds_bucket[5m])) by (le, endpoint))",
-          "legendFormat": "P99 {{endpoint}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(api_response_time_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum(rate(api_response_time_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
         }
       ],
-      "description": "API响应延迟分位数"
+      "title": "API 延迟分位 p50/p95/p99",
+      "type": "timeseries"
     },
     {
-      "title": "错误率",
-      "type": "graph",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "sum(rate(api_errors_total[5m])) by (error_type)",
-          "legendFormat": "{{error_type}}"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(backend_latency_seconds_bucket[5m])) by (le, backend_type))",
+          "legendFormat": "{{backend_type}}"
         }
       ],
-      "description": "按错误类型分类的错误率"
+      "title": "后端延迟 p95（按 能力:上游）",
+      "type": "timeseries"
     },
     {
-      "title": "缓存命中率",
-      "type": "stat",
-      "gridPos": {"h": 6, "w": 4, "x": 0, "y": 8},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 8 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "auto", "wideLayout": true },
       "targets": [
         {
-          "expr": "cache_hits_total / (cache_hits_total + cache_misses_total) * 100"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(api_active_requests)",
+          "legendFormat": "活跃"
         }
       ],
-      "description": "缓存命中率百分比"
+      "title": "活跃请求",
+      "type": "stat"
     },
     {
-      "title": "活跃请求数",
-      "type": "stat",
-      "gridPos": {"h": 6, "w": 4, "x": 4, "y": 8},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 8 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "auto", "wideLayout": true },
       "targets": [
         {
-          "expr": "sum(api_requests_total) - sum(api_requests_total offset 5m)"
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(cache_misses_total[5m]))",
+          "legendFormat": "未命中/s"
         }
       ],
-      "description": "当前活跃请求数"
+      "title": "缓存未命中速率",
+      "type": "stat"
     },
     {
-      "title": "模型使用排行",
-      "type": "table",
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 7,
+      "options": { "displayMode": "gradient", "minVizHeight": 10, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true, "sizing": "auto" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "topk(10, sum(rate(api_requests_total[1h])) by (backend))",
-          "format": "table",
-          "instant": true
+          "legendFormat": "{{backend}}"
         }
       ],
-      "description": "最常用的Top 10模型"
+      "title": "后端调用排行 Top10（1h 速率）",
+      "type": "bargauge"
     }
   ],
-  "tags": ["yyc3", "api", "gateway"]
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["yyc3", "api", "gateway"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "YYC³ API 网关总览",
+  "uid": "yyc3-api-gateway",
+  "version": 2,
+  "weekStart": ""
 }
