@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import psutil
-from app.api import chat, documents, knowledge_base, mcp, proxy, rag, websocket
+from app.api import chat, documents, knowledge_base, mcp, proxy, rag, video_tasks, websocket
 from app.config import settings
 from app.db import ModelRegistry, async_session
 
@@ -224,6 +224,7 @@ app.include_router(knowledge_base.router, tags=["📚 知识库管理"])
 app.include_router(documents.router, tags=["📄 文档管理"])
 app.include_router(rag.router, tags=["🔍 RAG检索"])
 app.include_router(proxy.router, tags=["🧩 能力代理(embeddings/rerank/asr/ocr)"])
+app.include_router(video_tasks.router, tags=["🎬 视频任务(MiniMax-H3异步)"])
 
 # vk 管理看板（零依赖单页，受全局 Auth 中间件保护）
 from app.services.admin_ui import router as admin_ui_router  # noqa: E402

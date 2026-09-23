@@ -71,8 +71,12 @@ services:
       - ZHIPU_BASE_URL=${ZHIPU_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      # ── 第五能力视频任务（Phase 2.3）：结果归档目录（NAS 卷直写，runner 免 ssh）──
+      - VIDEO_ARCHIVE_DIR=${VIDEO_ARCHIVE_DIR:-/data/video_archive}
     ports:
       - "8000:8000"
+    volumes:
+      - /Volume1/yyc3_hd/video_tasks:/data/video_archive
     depends_on:
       postgres:
         condition: service_healthy
