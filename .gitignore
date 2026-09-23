@@ -41,6 +41,10 @@ wheels/
 venv/
 ENV/
 env/
+.venv/
+
+# app 包解析用符号链接（本地 IDE 静态分析；Docker/e2e 内另有等价映射机制）
+/app
 
 # Node.js
 node_modules/

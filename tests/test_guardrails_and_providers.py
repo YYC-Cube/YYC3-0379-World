@@ -144,3 +144,30 @@ def test_upstream_provider_field_parsed():
         settings.openai_compatible_upstreams = old
     assert r.upstreams["zgw"].provider == "zhipu"
     assert r.upstreams["plain"].provider == "openai_compat"  # 缺省回退
+
+
+# ── zhipu 空 Key 前置校验（_ensure_key）───────────────────────
+
+
+@pytest.mark.anyio
+async def test_zhipu_empty_key_raises_401(monkeypatch):
+    """ZHIPU_API_KEY 空时双入口抛 401 明确错误（原 'Bearer ' 非法头 → 模糊 502）"""
+    from app.errors.exceptions import APIError
+    from app.services import zhipu
+
+    monkeypatch.delenv("ZHIPU_API_KEY", raising=False)
+    monkeypatch.setattr(zhipu.settings, "zhipu_api_key", "")
+
+    # 同步入口
+    with pytest.raises(APIError) as ei:
+        await zhipu.chat_completion(model="glm-4", messages=[{"role": "user", "content": "hi"}])
+    assert ei.value.status_code == 401
+    assert "ZHIPU_API_KEY" in ei.value.message
+
+    # 流式入口（生成器在首次迭代时校验 Key）
+    with pytest.raises(APIError) as ei2:
+        async for _ in zhipu.chat_completion_stream(
+            model="glm-4", messages=[{"role": "user", "content": "hi"}]
+        ):
+            pass
+    assert ei2.value.status_code == 401

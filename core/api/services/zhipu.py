@@ -65,7 +65,7 @@ async def chat_completion(
     调用智谱 AI API 并返回 OpenAI 兼容的 JSON 格式
     """
     headers = {
-        "Authorization": f"Bearer {_get_zhipu_key()}",
+        "Authorization": f"Bearer {_ensure_key()}",
         "Content-Type": "application/json",
     }
 
