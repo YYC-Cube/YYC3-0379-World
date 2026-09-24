@@ -1,13 +1,14 @@
 # file: docker-compose.monitoring.yml
 # description: 观测栈（行动清单 #8 收口）——Prometheus 抓取网关 /metrics + Grafana 面板（NAS :3000 LAN）
-# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-24
+# author: YanYuCloudCube Team | version: v1.1.0 | created: 2026-09-24
+#
+# ⚠️ TOS 实勘（09-24）：/Volume2 工作树文件被 TOS 自动回写 POSIX ACL，容器内非 root uid
+# 读取 bind mount 一律 Permission Denied（chmod -N 无效）。故全部改 named volume +
+# 部署后 seeding（脚本：deploy/nas/seed-monitoring.sh，容器内 root 复制+chmod）。
 #
 # 用法（NAS 工作树 /Volume2/yyc3-33，.env 需 GRAFANA_ADMIN_PASSWORD）：
 #   $D compose --project-directory . -f deploy/nas/docker-compose.monitoring.yml up -d
-# 面板字段与网关 /metrics 实弹指标对齐（2026-09-24 校准）：
-#   api_requests_total{backend,endpoint,method,status} / api_response_time_seconds_*
-#   backend_latency_seconds_bucket{backend_type,model,le} / model_usage_total{backend_type,model}
-#   cache_misses_total / api_active_requests
+#   bash deploy/nas/seed-monitoring.sh   # 首次部署后执行一次
 services:
   prometheus:
     image: docker.m.daocloud.io/prom/prometheus:v2.53.0
@@ -18,8 +19,8 @@ services:
       - --storage.tsdb.retention.time=15d
       - --web.enable-lifecycle
     volumes:
-      - ./deploy/nas/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus-data:/prometheus
+      - prometheus-conf:/etc/prometheus
+      - prometheus-data:/prometheus
     networks:
       - yyc3-network
 
@@ -33,9 +34,9 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
-      - ./core/config/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./core/config/grafana/dashboards:/etc/grafana/dashboards:ro
-      - ./grafana-data:/var/lib/grafana
+      - grafana-provisioning:/etc/grafana/provisioning
+      - grafana-dashboards:/etc/grafana/dashboards
+      - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"
     networks:
@@ -43,6 +44,14 @@ services:
     depends_on:
       - prometheus
 
+volumes:
+  prometheus-conf:
+  prometheus-data:
+  grafana-provisioning:
+  grafana-dashboards:
+  grafana-data:
+
 networks:
   yyc3-network:
     external: true
+    name: yyc3-33_yyc3-network   # NAS compose 项目前缀实名（docker network ls 实勘）
