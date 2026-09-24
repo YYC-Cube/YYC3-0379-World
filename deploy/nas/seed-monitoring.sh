@@ -20,14 +20,14 @@ $D run --rm --user root \
   -v ${P}_grafana-provisioning:/dst \
   -v ${ROOT}/core/config/grafana:/src:ro \
   --entrypoint sh docker.m.daocloud.io/grafana/grafana:11.1.0 \
-  -c "cp -r /src/provisioning/. /dst/ && chmod -R a+rX /dst"
+  -c "cp -r /src/provisioning/. /dst/ && find /dst -name '._*' -delete && chmod -R a+rX /dst"
 
 echo "[seed] 复制 dashboards → ${P}_grafana-dashboards"
 $D run --rm --user root \
   -v ${P}_grafana-dashboards:/dst \
   -v ${ROOT}/core/config/grafana:/src:ro \
   --entrypoint sh docker.m.daocloud.io/grafana/grafana:11.1.0 \
-  -c "cp -r /src/dashboards/. /dst/ && chmod -R a+rX /dst"
+  -c "cp -r /src/dashboards/. /dst/ && find /dst -name '._*' -delete && chmod -R a+rX /dst"
 
 echo "[seed] grafana-data 属主 472"
 $D run --rm --user root \
