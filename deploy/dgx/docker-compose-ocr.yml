@@ -1,0 +1,32 @@
+# file: docker-compose-ocr.yml
+# description: OCR 第五能力上游——MiniCPM-V-4.6 vLLM 原生 serve（N2 :8005，2026-09-24 W1 窗口上线）
+# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-24
+#
+# 容量配方（W1 实测定案，四次尝试换来的三条款）：
+#   - util 0.10 + max-model-len 8192：0.05/16K 会 "No available memory for cache blocks"
+#     （980p 图像 encoder 剖析峰值远超小预算）
+#   - 权重=手术版：deploy/dgx/fuse_qkv.py 把 hub 分离式 q/k/v 融合为 vLLM 融合式 qkv_proj
+#     （源 N1/.../Qwen3.8 旁；产品位 N2 ~/yyc3-102-projects/models/MiniCPM-V-4.6-vllm）
+#   - ⚠️ 启动顺序铁律（顺序反转配方）：OCR 必须先于 dsv4-worker 驻留——
+#     OCR 后于 worker 起会触发 UMA 剖析期重平衡级联（worker 显存被释放→双崩）。
+#     重启 Runbook：head(N1) → OCR(N2, compose up) → worker(N2)。
+#   - 容量账：worker 0.66 + asr 0.08 + ocr 0.10 + 三份 CUDA ctx ≈ 0.90 实占（实测共存稳）
+# 网关接入：池 {"name":"ocr-n2","base_url":"http://100.76.167.103:8005","models":["minicpm-v-4.6"],"capability":"ocr","priority":1}
+services:
+  ocr:
+    image: docker.m.daocloud.io/yyc3/asr-qwen3:v1
+    container_name: yyc3-ocr
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    gpus: all
+    volumes:
+      - /home/yyc3/yyc3-102-projects/models/MiniCPM-V-4.6-vllm:/model:ro
+    command: >
+      /model
+      --served-model-name minicpm-v-4.6
+      --port 8005
+      --max-model-len 8192
+      --gpu-memory-utilization 0.10
+      --enforce-eager
+      --trust-remote-code
