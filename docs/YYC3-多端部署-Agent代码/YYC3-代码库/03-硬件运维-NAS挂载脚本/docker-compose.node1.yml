@@ -1,0 +1,118 @@
+version: "3.8"
+
+# ==============================================================
+# YYC³ AI FAmily 节点1（推理主节点）docker-compose
+# 承载：DeepSeek V4 Pro TP分片1/2、嵌入、重排、Milvus查询节点、Agent编排引擎
+# 部署：/data/yyc3-agent/ 下执行 docker compose -f docker-compose.node1.yml up -d
+# 启动顺序：先节点2，后节点1
+# ==============================================================
+
+services:
+  # ========== 核心主模型：DeepSeek V4 Pro TP分片1/2 ==========
+  deepseek-v4-pro-node1:
+    image: nvcr.io/nim/deepseek-ai/deepseek-v4-pro:latest
+    container_name: dgx1-deepseek-v4
+    runtime: nvidia
+    shm_size: 32g
+    ports:
+      - "8000:8000"
+    environment:
+      - NIM_MODEL_PRECISION=${MODEL_PRECISION}
+      - NIM_TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE}
+      - VLLM_KV_CACHE_PRECISION=${KV_CACHE_PRECISION}
+      - GPU_MEMORY_UTILIZATION=${GPU_MEM_UTIL}
+      - MAX_MODEL_LEN=131072
+      - NCCL_NET=${NCCL_NET}
+      - NCCL_IB_HCA=${NCCL_IB_HCA}
+      - NCCL_IB_GID_INDEX=${NCCL_IB_GID_INDEX}
+      - NCCL_IB_DISABLE=${NCCL_IB_DISABLE}
+    volumes:
+      # NAS模型缓存只读挂载
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      # 日志写入NAS RAID1双副本
+      - ${NAS_LOGS_RW}/dgx1/deepseek:/opt/nim/logs
+      # 提示词配置只读挂载
+      - ${NAS_CORE_RO}/prompt-templates:/opt/nim/prompts:ro
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== 嵌入模型：nemotron-3-embed-1b ==========
+  nemotron-embed:
+    image: nvcr.io/nim/nvidia/nemotron-3-embed-1b:latest
+    container_name: dgx1-embed
+    runtime: nvidia
+    ports:
+      - "8001:8000"
+    environment:
+      - MAX_BATCH_SIZE=256
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx1/embed:/opt/nim/logs
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== 重排模型：llama-nemotron-rerank-1b-v2 ==========
+  nemotron-rerank:
+    image: nvcr.io/nim/nvidia/llama-nemotron-rerank-1b-v2:latest
+    container_name: dgx1-rerank
+    runtime: nvidia
+    ports:
+      - "8002:8000"
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx1/rerank:/opt/nim/logs
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== Milvus向量库：查询节点 ==========
+  milvus-query:
+    image: milvusdb/milvus:v2.4.5
+    container_name: dgx1-milvus-query
+    command: ["milvus", "run", "query"]
+    runtime: nvidia
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+      - QUERY_NODE_PORT=19530
+    volumes:
+      - /data/milvus-data:/var/lib/milvus
+      - ${NAS_KNOWLEDGE_RO}/vector-backup:/backup:ro
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== Agent编排引擎 ==========
+  agent-orchestrator:
+    image: langchain/langchain:latest
+    container_name: dgx1-agent-engine
+    ports:
+      - "9000:9000"
+    volumes:
+      - ${NAS_CORE_RO}/agent-code:/app/agent-code:ro
+      - ${NAS_LOGS_RW}/dgx1/orchestrator:/app/logs
+    environment:
+      - LLM_BASE_URL=http://deepseek-v4-pro-node1:8000/v1
+      - EMBED_BASE_URL=http://nemotron-embed:8000/v1
+      - RERANK_BASE_URL=http://nemotron-rerank:8000/v1
+      - MILVUS_HOST=milvus-query
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== 公共依赖：etcd ==========
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: dgx1-etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379
+    volumes:
+      - /data/etcd-data:/etcd-data
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+networks:
+  agent-network:
+    driver: bridge

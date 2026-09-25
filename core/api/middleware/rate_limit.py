@@ -29,9 +29,10 @@ import time
 from functools import wraps
 from typing import Callable, Dict, Optional, Tuple
 
-from app.cache import redis_client
 from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.cache import redis_client
 
 logger = logging.getLogger(__name__)
 

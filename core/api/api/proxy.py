@@ -29,12 +29,13 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
-from app.errors.handler import error_handler
-from app.services.upstream_registry import Upstream, registry
-from app.utils import metrics_manager
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from app.errors.handler import error_handler
+from app.services.upstream_registry import Upstream, registry
+from app.utils import metrics_manager
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,11 @@ async def _forward(
             try:
                 async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                     resp = await client.post(
-                        url, json=payload_json, data=payload_data, files=files, headers=headers
+                        url,
+                        json=payload_json,
+                        data=payload_data,
+                        files=files,
+                        headers=headers,
                     )
                 resp.raise_for_status()
                 registry.release(u, (time.time() - started) * 1000, True)
@@ -181,7 +186,12 @@ async def _vk_gate(request, capability: str, model: str) -> Optional[Dict]:
     if not vk_manager.check_model_allowed(vk, model):
         raise HTTPException(
             status_code=403,
-            detail={"error": {"message": f"虚拟密钥无权访问模型 {model}", "type": "model_not_allowed"}},
+            detail={
+                "error": {
+                    "message": f"虚拟密钥无权访问模型 {model}",
+                    "type": "model_not_allowed",
+                }
+            },
         )
     if not vk_manager.check_budget(vk, est_cost=0.0):
         raise HTTPException(
@@ -191,7 +201,12 @@ async def _vk_gate(request, capability: str, model: str) -> Optional[Dict]:
     if not await vk_manager.check_tpm(vk):
         raise HTTPException(
             status_code=429,
-            detail={"error": {"message": "虚拟密钥 TPM 限流触发", "type": "rate_limit_exceeded"}},
+            detail={
+                "error": {
+                    "message": "虚拟密钥 TPM 限流触发",
+                    "type": "rate_limit_exceeded",
+                }
+            },
         )
     return vk
 
@@ -267,7 +282,12 @@ async def embeddings(req: EmbeddingRequest, request: Request):
         return _json_or_502(result, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
-            e, context={"model": req.model, "capability": "embedding", "operation": "proxy"}
+            e,
+            context={
+                "model": req.model,
+                "capability": "embedding",
+                "operation": "proxy",
+            },
         )
         raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
@@ -308,7 +328,8 @@ async def rerank(req: RerankRequest, request: Request):
         return _json_or_502(payload, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
-            e, context={"model": req.model, "capability": "rerank", "operation": "proxy"}
+            e,
+            context={"model": req.model, "capability": "rerank", "operation": "proxy"},
         )
         raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
@@ -317,15 +338,19 @@ async def rerank(req: RerankRequest, request: Request):
 
 
 @router.post("/v1/audio/transcriptions")
-async def transcriptions(
-    request: Request, file: UploadFile = File(...), model: str = Form(...)
-):
+async def transcriptions(request: Request, file: UploadFile = File(...), model: str = Form(...)):
     """语音转写（Whisper 风格 multipart；上游池 capability=asr；vk 白名单+预算+记账）"""
     started = time.time()
     try:
         vk = await _vk_gate(request, "asr", model)
         content = await file.read()
-        files = {"file": (file.filename, content, file.content_type or "application/octet-stream")}
+        files = {
+            "file": (
+                file.filename,
+                content,
+                file.content_type or "application/octet-stream",
+            )
+        }
         data = {"model": model}
         result, u, degraded = await _forward("asr", data=data, files=files)
         metrics_manager.record_model_usage(model, f"asr:{u.name}")
@@ -371,7 +396,10 @@ async def ocr(
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{b64}"},
+                        },
                         {"type": "text", "text": ocr_prompt},
                     ],
                 }
@@ -385,9 +413,7 @@ async def ocr(
             msg = choices[0].get("message") or {}
             content_out = msg.get("content")
             if isinstance(content_out, list):  # 某些 VLM 返回分段 content
-                text = "".join(
-                    p.get("text", "") for p in content_out if isinstance(p, dict)
-                )
+                text = "".join(p.get("text", "") for p in content_out if isinstance(p, dict))
             else:
                 text = content_out or ""
         payload = {"text": text.strip(), "model": u.models[0] if u.models else "ocr"}
@@ -396,6 +422,11 @@ async def ocr(
         return _json_or_502(payload, u, degraded)
     except Exception as e:
         error_response = await error_handler.handle(
-            e, context={"model": model or "ocr", "capability": "ocr", "operation": "proxy"}
+            e,
+            context={
+                "model": model or "ocr",
+                "capability": "ocr",
+                "operation": "proxy",
+            },
         )
         raise HTTPException(status_code=error_response["status_code"], detail=error_response)

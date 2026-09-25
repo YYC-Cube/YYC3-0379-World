@@ -77,7 +77,7 @@ test-integration: ## 集成层（TestClient 全链路，~7-8 分钟；发布前�
 # 代码检查
 lint: ## 代码检查
 	@echo "$(GREEN)运行代码检查...$(RESET)"
-	$(PYTHON) -m flake8 core/ --max-line-length=100 --exclude=__pycache__,migrations
+	$(PYTHON) -m flake8 core/ --max-line-length=100 --exclude=__pycache__,migrations --ignore=E402,W503,E203
 	@echo "$(GREEN)✅ 代码检查完成$(RESET)"
 
 # 架构依赖契约检查（P2-2: importlinter 分层防腐，正式门禁）

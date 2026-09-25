@@ -10,11 +10,12 @@
 import time
 from typing import List, Optional
 
-from app.services.db_access import get_db
-from app.services.rag_service import rag_service
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.db_access import get_db
+from app.services.rag_service import rag_service
 
 router = APIRouter(prefix="/v1/rag")
 
@@ -158,9 +159,10 @@ async def ask_with_context(
 
 请提供准确、详细的回答，并在回答中引用相关的文档来源。"""
 
+    from starlette.requests import Request as StarletteRequest
+
     from app.api.chat import chat_completion
     from app.api.schemas import CompletionRequest, Message
-    from starlette.requests import Request as StarletteRequest
 
     chat_request = CompletionRequest(
         model="glm-4-flash",

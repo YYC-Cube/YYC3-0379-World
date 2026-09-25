@@ -14,8 +14,9 @@
 
 from typing import AsyncGenerator
 
-from app.db import Document, DocumentChunk, KnowledgeBase, async_session
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import Document, DocumentChunk, KnowledgeBase, async_session
 
 __all__ = ["get_db", "AsyncSession", "KnowledgeBase", "Document", "DocumentChunk"]
 

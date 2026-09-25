@@ -47,6 +47,7 @@ async def test_retry_skips_on_yyc3_401():
 @pytest.mark.anyio
 async def test_retry_skips_on_httpx_4xx():
     """httpx.HTTPStatusError(4xx)：上游已判决，不重试"""
+
     def make():
         req = httpx.Request("POST", "https://upstream.test/v1/chat")
         resp = httpx.Response(403, request=req)
@@ -70,9 +71,7 @@ async def test_retry_kept_on_429():
 @pytest.mark.anyio
 async def test_retry_kept_on_5xx():
     """5xx 服务端错误：维持重试语义（原行为）"""
-    func, calls = _counting_failer(
-        2, lambda: APIError(message="上游故障", status_code=502)
-    )
+    func, calls = _counting_failer(2, lambda: APIError(message="上游故障", status_code=502))
     result = await error_handler.retry(func, max_retries=2, delay=0.01)
     assert result == "ok"
     assert calls["n"] == 3
@@ -90,6 +89,7 @@ async def test_retry_kept_on_unknown_exception():
 @pytest.mark.anyio
 async def test_with_retry_decorator_401_no_delay():
     """with_retry 装饰器链路：401 立即抛出，总耗时远小于 2 次重试延迟之和"""
+
     async def failing():
         raise APIError(message="未配置", status_code=401)
 

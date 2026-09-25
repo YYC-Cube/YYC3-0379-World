@@ -25,20 +25,33 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import psutil
-from app.api import chat, documents, knowledge_base, mcp, proxy, rag, video_tasks, websocket
+
+from app.api import (
+    a2a,
+    agent,
+    chat,
+    documents,
+    knowledge_base,
+    mcp,
+    proxy,
+    rag,
+    video_tasks,
+    websocket,
+)
 from app.config import settings
 from app.db import ModelRegistry, async_session
 
 logger = logging.getLogger(__name__)
-from app.middleware import AuthMiddleware, RateLimitMiddleware, VersioningMiddleware
-from app.models import ErrorRecord, ModelConfig, ModelStat, PingResponse, UsageSummary
-from app.errors.handler import error_handler
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 from sqlalchemy import select
+
+from app.errors.handler import error_handler
+from app.middleware import AuthMiddleware, RateLimitMiddleware, VersioningMiddleware
+from app.models import ErrorRecord, ModelConfig, ModelStat, PingResponse, UsageSummary
 
 app = FastAPI(
     title="YYC³ 统一模型网关",
@@ -218,6 +231,8 @@ app.add_middleware(VersioningMiddleware)
 START_TIME = time.time()
 
 app.include_router(chat.router, prefix="/v1", tags=["💬 聊天"])
+app.include_router(agent.router, tags=["🤖 AI Family Agent编排"])
+app.include_router(a2a.router, tags=["🔗 A2A协议"])
 app.include_router(mcp.router, prefix="/v1", tags=["🔧 MCP工具"])
 app.include_router(websocket.router, tags=["🔌 WebSocket"])
 app.include_router(knowledge_base.router, tags=["📚 知识库管理"])
@@ -410,8 +425,9 @@ async def get_model_type(model: str = Query(...)):
     """
     try:
         async with async_session() as session:
-            from app.db import ModelRegistry
             from sqlalchemy import select
+
+            from app.db import ModelRegistry
 
             result = await session.execute(
                 select(ModelRegistry.backend_type, ModelRegistry.backend_name)
@@ -612,8 +628,9 @@ async def get_stats():
     # DB 用量（DB 不可达时仅返回上游数据）
     try:
         async with async_session() as session:
-            from app.db import UsageLog
             from sqlalchemy import func
+
+            from app.db import UsageLog
 
             result = await session.execute(
                 select(
@@ -665,8 +682,9 @@ async def get_errors():
 async def get_summary():
     """获取使用摘要"""
     async with async_session() as session:
-        from app.db import UsageLog
         from sqlalchemy import func
+
+        from app.db import UsageLog
 
         result = await session.execute(
             select(
@@ -782,7 +800,10 @@ async def admin_vk_update(key_id: str, req: VKUpdateRequest):
         and req.rate_limit_tpm is None
         and req.model_whitelist is None
     ):
-        raise HTTPException(status_code=422, detail="至少提供 status / monthly_budget_usd / rate_limit_tpm / model_whitelist 之一")
+        raise HTTPException(
+            status_code=422,
+            detail="至少提供 status / monthly_budget_usd / rate_limit_tpm / model_whitelist 之一",
+        )
 
     try:
         updated = {"status": False, "fields": False}
@@ -860,6 +881,52 @@ async def stop_probe_loop():
     from app.services.virtual_key_manager import vk_manager
 
     await vk_manager.stop_ledger()
+
+
+@app.on_event("startup")
+async def start_agent_worker():
+    """AI Family 内置编排 Worker（AGENT_WORKER_ENABLED=false 或外置 Worker 部署时可关闭）"""
+    from app.api import agent as agent_module
+
+    agent_module.start_worker()
+
+
+@app.on_event("shutdown")
+async def stop_agent_worker():
+    from app.api import agent as agent_module
+
+    await agent_module.stop_worker()
+
+
+@app.on_event("startup")
+async def start_a2a_registry():
+    """A2A 启动：审计 sink 注入智云守护 + 内置编队 Agent Card 注册/心跳（A2A_ENABLED 控制）"""
+    from app.services import a2a_protocol
+
+    a2a_protocol.start_registry()
+
+
+@app.on_event("shutdown")
+async def stop_a2a_registry():
+    from app.services import a2a_protocol
+
+    await a2a_protocol.stop_registry()
+
+
+@app.on_event("startup")
+async def start_a2a_result_consumer():
+    """A2A 结果流消费端：编排器聚合回执 + XAUTOCLAIM 挂起回收
+    （A2A_ENABLED × A2A_RESULT_CONSUMER_ENABLED 双控；独立编排器部署时可在网关侧关闭）"""
+    from app.services import a2a_result
+
+    a2a_result.start_result_consumer()
+
+
+@app.on_event("shutdown")
+async def stop_a2a_result_consumer():
+    from app.services import a2a_result
+
+    await a2a_result.stop_result_consumer()
 
 
 if __name__ == "__main__":

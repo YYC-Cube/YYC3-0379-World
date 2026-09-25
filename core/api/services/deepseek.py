@@ -13,6 +13,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 import httpx
+
 from app.config import settings
 from app.utils.logger import logger
 
@@ -33,7 +34,12 @@ def _ensure_key() -> str:
     """空 Key 前置校验：401 明确报错（OBS-2；原实现 502 + 模块级快照）"""
     from app.errors.key_guard import ensure_api_key
 
-    return ensure_api_key(_get_deepseek_key, provider="DeepSeek", env_name="DEEPSEEK_API_KEY", apply_url="platform.deepseek.com")
+    return ensure_api_key(
+        _get_deepseek_key,
+        provider="DeepSeek",
+        env_name="DEEPSEEK_API_KEY",
+        apply_url="platform.deepseek.com",
+    )
 
 
 async def chat_completion(

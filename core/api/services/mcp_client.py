@@ -311,7 +311,11 @@ class MCPClient:
                 "description": "Brave搜索引擎",
                 "category": "search",
             },
-            "web_search": {"name": "web_search", "description": "网络搜索", "category": "search"},
+            "web_search": {
+                "name": "web_search",
+                "description": "网络搜索",
+                "category": "search",
+            },
             # YYC3中文助手
             "yyc3_cn_translate": {
                 "name": "yyc3_cn_translate",
@@ -363,14 +367,15 @@ class MCPClient:
             try:
                 # 尝试获取第一个工具来测试服务器状态
                 tool_name = next(
-                    (k for k, v in self.tool_to_server.items() if v == server_name), None
+                    (k for k, v in self.tool_to_server.items() if v == server_name),
+                    None,
                 )
                 if tool_name:
                     result = await self.call_tool(tool_name, {"test": True})
                     status[server_name] = {
                         "status": "online" if result.get("success") else "offline",
                         "command": server_config.get("command", ""),
-                        "error": result.get("error") if not result.get("success") else None,
+                        "error": (result.get("error") if not result.get("success") else None),
                     }
                 else:
                     status[server_name] = {

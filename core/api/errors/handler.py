@@ -176,7 +176,13 @@ def handle_errors(context: Optional[Dict[str, Any]] = None):
                 return await func(*args, **kwargs)
             except Exception as e:
                 ctx = context or {}
-                ctx.update({"function": func.__name__, "args": str(args), "kwargs": str(kwargs)})
+                ctx.update(
+                    {
+                        "function": func.__name__,
+                        "args": str(args),
+                        "kwargs": str(kwargs),
+                    }
+                )
                 response = await error_handler.handle(e, ctx)
                 raise HTTPException(status_code=response["status_code"], detail=response)
 

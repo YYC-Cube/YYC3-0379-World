@@ -75,9 +75,10 @@ os.environ.update(
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 import respx  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
 from app.main import app  # noqa: E402
 from app.services.upstream_registry import registry  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
 
 # P1-1 分层：TestClient 全链路 → integration 层（pytest -m integration 运行；默认快速层跳过）
 pytestmark = pytest.mark.integration
@@ -173,8 +174,14 @@ def test_rerank_translation(client):
             json={
                 "object": "text_completion",
                 "choices": [
-                    {"index": 0, "logprobs": {"top_logprobs": [{"no": -2.3, "yes": -0.1}]}},
-                    {"index": 1, "logprobs": {"top_logprobs": [{"yes": -0.05, "no": -3.0}]}},
+                    {
+                        "index": 0,
+                        "logprobs": {"top_logprobs": [{"no": -2.3, "yes": -0.1}]},
+                    },
+                    {
+                        "index": 1,
+                        "logprobs": {"top_logprobs": [{"yes": -0.05, "no": -3.0}]},
+                    },
                     {"index": 2, "logprobs": {"top_logprobs": [{"no": -0.2}]}},
                 ],
                 "usage": {"prompt_tokens": 9, "total_tokens": 9},

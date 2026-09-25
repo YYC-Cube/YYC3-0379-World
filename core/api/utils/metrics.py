@@ -33,15 +33,21 @@ class MetricsManager:
         self.logger = logging.getLogger(__name__)
 
         self.request_counter = Counter(
-            "api_requests_total", "Total API requests", ["method", "endpoint", "status", "backend"]
+            "api_requests_total",
+            "Total API requests",
+            ["method", "endpoint", "status", "backend"],
         )
 
         self.response_time = Histogram(
-            "api_response_time_seconds", "API response time", ["method", "endpoint", "backend"]
+            "api_response_time_seconds",
+            "API response time",
+            ["method", "endpoint", "backend"],
         )
 
         self.error_counter = Counter(
-            "api_errors_total", "Total API errors", ["error_type", "endpoint", "backend"]
+            "api_errors_total",
+            "Total API errors",
+            ["error_type", "endpoint", "backend"],
         )
 
         self.cache_hits = Counter("cache_hits_total", "Total cache hits", ["backend"])
@@ -55,15 +61,21 @@ class MetricsManager:
         )
 
         self.token_usage = Counter(
-            "token_usage_total", "Total token usage", ["model", "backend_type", "token_type"]
+            "token_usage_total",
+            "Total token usage",
+            ["model", "backend_type", "token_type"],
         )
 
         self.backend_latency = Histogram(
-            "backend_latency_seconds", "Backend response time", ["backend_type", "model"]
+            "backend_latency_seconds",
+            "Backend response time",
+            ["backend_type", "model"],
         )
 
         self.rate_limit_rejections = Counter(
-            "rate_limit_rejections_total", "Total rate limit rejections", ["client_type"]
+            "rate_limit_rejections_total",
+            "Total rate limit rejections",
+            ["client_type"],
         )
 
         self.concurrency_limit_rejections = Counter(
@@ -77,7 +89,10 @@ class MetricsManager:
     ):
         """记录请求"""
         self.request_counter.labels(
-            method=method, endpoint=endpoint, status=status, backend=backend or "unknown"
+            method=method,
+            endpoint=endpoint,
+            status=status,
+            backend=backend or "unknown",
         ).inc()
 
     def record_response_time(

@@ -131,7 +131,12 @@ def test_upstream_provider_field_parsed():
 
     raw = json.dumps(
         [
-            {"name": "zgw", "base_url": "http://zgw.test:8000", "models": ["glm-*"], "provider": "zhipu"},
+            {
+                "name": "zgw",
+                "base_url": "http://zgw.test:8000",
+                "models": ["glm-*"],
+                "provider": "zhipu",
+            },
             {"name": "plain", "base_url": "http://plain.test:8000", "models": ["m1"]},
         ]
     )
@@ -152,7 +157,13 @@ from app.errors.exceptions import APIError  # noqa: E402
 
 _CLOUD_ADAPTERS = [
     pytest.param("zhipu", "ZHIPU_API_KEY", "zhipu_api_key", "glm-4", id="zhipu"),
-    pytest.param("deepseek", "DEEPSEEK_API_KEY", "deepseek_api_key", "deepseek-chat", id="deepseek"),
+    pytest.param(
+        "deepseek",
+        "DEEPSEEK_API_KEY",
+        "deepseek_api_key",
+        "deepseek-chat",
+        id="deepseek",
+    ),
     pytest.param("openai", "OPENAI_API_KEY", "openai_api_key", "gpt-4", id="openai"),
 ]
 
@@ -176,7 +187,9 @@ async def test_cloud_adapter_empty_key_raises_401(
     # 同步入口
     with pytest.raises(APIError) as ei:
         await adapter.chat_completion(model=model, messages=[{"role": "user", "content": "hi"}])
-    assert ei.value.status_code == 401, f"{module_name} 同步入口应为 401（原 deepseek 502/openai 无校验）"
+    assert (
+        ei.value.status_code == 401
+    ), f"{module_name} 同步入口应为 401（原 deepseek 502/openai 无校验）"
     assert env_name in ei.value.message, "错误消息须含 env 变量名（可自愈排障契约）"
 
     # 流式入口（async 生成器首次迭代时触发校验）

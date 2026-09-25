@@ -26,9 +26,7 @@ _PROVIDERS: Dict[str, Type[ProviderProtocol]] = {
 def get_provider(name: str = "openai_compat") -> ProviderProtocol:
     """按名取供应商实现；未知名称回退 OpenAI 兼容（绝不抛异常阻断推理）"""
     if name not in _PROVIDERS:
-        logger.warning(
-            f"未知 provider '{name}'，回退 openai_compat。可选值: {sorted(_PROVIDERS)}"
-        )
+        logger.warning(f"未知 provider '{name}'，回退 openai_compat。可选值: {sorted(_PROVIDERS)}")
     cls = _PROVIDERS.get(name, OpenAICompatProvider)
     return cls()
 

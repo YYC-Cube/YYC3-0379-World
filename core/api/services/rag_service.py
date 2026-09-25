@@ -10,11 +10,12 @@
 import uuid
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db import SearchHistory
 from app.services.embedding import embedding_service
 from app.utils.logger import get_logger
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -150,7 +151,11 @@ class RAGService:
             raise ValueError("hybrid_search 需要 db 参数（AsyncSession）")
         keyword_result = await db.execute(
             keyword_sql,
-            {"kb_ids": knowledge_base_ids, "keywords": keyword_patterns, "limit": top_k},
+            {
+                "kb_ids": knowledge_base_ids,
+                "keywords": keyword_patterns,
+                "limit": top_k,
+            },
         )
         keyword_rows = keyword_result.fetchall()
 

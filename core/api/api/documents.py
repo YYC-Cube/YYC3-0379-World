@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import List, Optional
 
 import aiofiles
-from app.services.db_access import Document, DocumentChunk, KnowledgeBase, get_db
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -26,6 +25,8 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.db_access import Document, DocumentChunk, KnowledgeBase, get_db
 
 router = APIRouter(prefix="/v1/documents")
 

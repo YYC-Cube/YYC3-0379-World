@@ -16,7 +16,7 @@
 @author: YanYuCloudCube Team <admin@0379.email>
 """
 
-from typing import Callable, Optional
+from typing import Callable
 
 from .exceptions import APIError
 

@@ -14,12 +14,13 @@
 import logging
 from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
+
 from app.config import settings
 from app.middleware import auth_required
 from app.services.mcp_client import LocalMCPManager
 from app.services.mcp_integration import UnifiedMCPManager
-from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

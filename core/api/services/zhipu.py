@@ -25,6 +25,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 import httpx
+
 from app.config import settings
 from app.utils import http_client
 
@@ -43,7 +44,12 @@ def _ensure_key() -> str:
     """空 Key 前置校验：401 明确报错（OBS-2 起委托公共件 app.errors.ensure_api_key）"""
     from app.errors.key_guard import ensure_api_key
 
-    return ensure_api_key(_get_zhipu_key, provider="智谱 AI", env_name="ZHIPU_API_KEY", apply_url="open.bigmodel.cn")
+    return ensure_api_key(
+        _get_zhipu_key,
+        provider="智谱 AI",
+        env_name="ZHIPU_API_KEY",
+        apply_url="open.bigmodel.cn",
+    )
 
 
 async def chat_completion(

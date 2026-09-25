@@ -72,7 +72,11 @@ _SSE_LINES = [
 
 
 def _sse_stream():
-    return httpx.Response(200, text="\n".join(_SSE_LINES) + "\n", headers={"content-type": "text/event-stream"})
+    return httpx.Response(
+        200,
+        text="\n".join(_SSE_LINES) + "\n",
+        headers={"content-type": "text/event-stream"},
+    )
 
 
 # ── ① 同步入口正常链路 ────────────────────────────────────────
@@ -95,7 +99,9 @@ async def test_sync_ok_and_auth_header(module_name, base_url, model):
     adapter = importlib.import_module(f"app.services.{module_name}")
 
     with respx.mock(base_url=base_url, assert_all_mocked=False) as m:
-        route = m.post(f"{base_url}/chat/completions").mock(return_value=Response(200, json=_ok_body()))
+        route = m.post(f"{base_url}/chat/completions").mock(
+            return_value=Response(200, json=_ok_body())
+        )
         result = await adapter.chat_completion(
             model=model,
             messages=[{"role": "user", "content": "hi"}],
@@ -142,9 +148,7 @@ async def test_stream_parses_sse_stops_at_done(module_name, base_url, model):
                 model=model, messages=[{"role": "user", "content": "hi"}], max_tokens=32
             )
         ]
-    contents = "".join(
-        c["choices"][0]["delta"].get("content", "") for c in chunks
-    )
+    contents = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
     assert contents == "你好", "坏行应跳过、DONE 后不产出"
     assert all(c["object"] == "chat.completion.chunk" for c in chunks)
 
@@ -161,14 +165,18 @@ async def test_zhipu_reasoning_folded_into_content():
         m.post("https://zhipu-mock.test/v4/chat/completions").mock(
             return_value=Response(200, json=_ok_body(content="", reasoning="思考中"))
         )
-        r1 = await zhipu.chat_completion(model="glm-4", messages=[{"role": "user", "content": "hi"}])
+        r1 = await zhipu.chat_completion(
+            model="glm-4", messages=[{"role": "user", "content": "hi"}]
+        )
         assert r1["choices"][0]["message"]["content"] == "思考中"
 
         m2 = m.post("https://zhipu-mock.test/v4/chat/completions").mock(
             return_value=Response(200, json=_ok_body(content="答案", reasoning="推演"))
         )
         # respx 同 path 后注册优先：直接断言第二次
-        r2 = await zhipu.chat_completion(model="glm-4", messages=[{"role": "user", "content": "hi"}])
+        r2 = await zhipu.chat_completion(
+            model="glm-4", messages=[{"role": "user", "content": "hi"}]
+        )
         msg = r2["choices"][0]["message"]["content"]
         assert "推演" in msg and "答案" in msg
     _ = m2
@@ -188,7 +196,9 @@ async def test_deepseek_4xx_raises_apierror_with_status():
             return_value=Response(402, text='{"error":"quota"}')
         )
         with pytest.raises(APIError) as ei:
-            await deepseek.chat_completion(model="deepseek-chat", messages=[{"role": "user", "content": "hi"}])
+            await deepseek.chat_completion(
+                model="deepseek-chat", messages=[{"role": "user", "content": "hi"}]
+            )
     assert "DeepSeek" in ei.value.message
     assert ei.value.details["status_code"] == 402
 
@@ -200,9 +210,13 @@ async def test_deepseek_network_error_raises_apierror():
     from app.services import deepseek
 
     with respx.mock(base_url="https://deepseek-mock.test/v1", assert_all_mocked=False) as m:
-        m.post("https://deepseek-mock.test/v1/chat/completions").mock(side_effect=httpx.ConnectError("boom"))
+        m.post("https://deepseek-mock.test/v1/chat/completions").mock(
+            side_effect=httpx.ConnectError("boom")
+        )
         with pytest.raises(APIError):
-            await deepseek.chat_completion(model="deepseek-chat", messages=[{"role": "user", "content": "hi"}])
+            await deepseek.chat_completion(
+                model="deepseek-chat", messages=[{"role": "user", "content": "hi"}]
+            )
 
 
 @pytest.mark.anyio
@@ -212,7 +226,9 @@ async def test_zhipu_5xx_reraises_httpx_and_unknown_wraps_apierror():
     from app.services import zhipu
 
     with respx.mock(base_url="https://zhipu-mock.test/v4", assert_all_mocked=False) as m:
-        m.post("https://zhipu-mock.test/v4/chat/completions").mock(return_value=Response(503, text="up"))
+        m.post("https://zhipu-mock.test/v4/chat/completions").mock(
+            return_value=Response(503, text="up")
+        )
         with pytest.raises(httpx.HTTPStatusError):
             await zhipu.chat_completion(model="glm-4", messages=[{"role": "user", "content": "hi"}])
 
@@ -227,7 +243,9 @@ async def test_openai_sync_5xx_reraises():
     from app.services import openai as oa
 
     with respx.mock(base_url="https://openai-mock.test/v1", assert_all_mocked=False) as m:
-        m.post("https://openai-mock.test/v1/chat/completions").mock(return_value=Response(500, text="err"))
+        m.post("https://openai-mock.test/v1/chat/completions").mock(
+            return_value=Response(500, text="err")
+        )
         with pytest.raises(httpx.HTTPStatusError):
             await oa.chat_completion(model="gpt-4", messages=[{"role": "user", "content": "hi"}])
 
@@ -258,9 +276,15 @@ async def test_ollama_fallback_to_backup(_ollama_two_hosts):
         "eval_count": 6,
     }
     with respx.mock(assert_all_mocked=False) as m:
-        m.post("http://192.168.9.9:11434/api/chat").mock(side_effect=httpx.ConnectError("primary down"))
-        m.post("http://192.168.9.10:11434/api/chat").mock(return_value=Response(200, json=ollama_raw))
-        r = await ollama.chat_completion(model="qwen3:8b", messages=[{"role": "user", "content": "hi"}])
+        m.post("http://192.168.9.9:11434/api/chat").mock(
+            side_effect=httpx.ConnectError("primary down")
+        )
+        m.post("http://192.168.9.10:11434/api/chat").mock(
+            return_value=Response(200, json=ollama_raw)
+        )
+        r = await ollama.chat_completion(
+            model="qwen3:8b", messages=[{"role": "user", "content": "hi"}]
+        )
     assert r["object"] == "chat.completion"
     assert r["choices"][0]["message"]["content"] == "本地在线"
     assert r["usage"]["total_tokens"] == 11
@@ -275,7 +299,9 @@ async def test_ollama_all_endpoints_failed(_ollama_two_hosts):
         m.post("http://192.168.9.9:11434/api/chat").mock(side_effect=httpx.ConnectError("a"))
         m.post("http://192.168.9.10:11434/api/chat").mock(side_effect=httpx.ConnectError("b"))
         with pytest.raises(RuntimeError, match="All Ollama endpoints failed"):
-            await ollama.chat_completion(model="qwen3:8b", messages=[{"role": "user", "content": "hi"}])
+            await ollama.chat_completion(
+                model="qwen3:8b", messages=[{"role": "user", "content": "hi"}]
+            )
 
 
 @pytest.mark.anyio
@@ -291,9 +317,16 @@ async def test_ollama_stream_chunks(_ollama_two_hosts, monkeypatch):
     )
     with respx.mock(assert_all_mocked=False) as m:
         m.post("http://192.168.9.9:11434/api/chat").mock(
-            return_value=httpx.Response(200, text=ndjson, headers={"content-type": "application/x-ndjson"})
+            return_value=httpx.Response(
+                200, text=ndjson, headers={"content-type": "application/x-ndjson"}
+            )
         )
-        chunks = [c async for c in ollama.chat_completion_stream(model="qwen3:8b", messages=[{"role": "user", "content": "hi"}])]
+        chunks = [
+            c
+            async for c in ollama.chat_completion_stream(
+                model="qwen3:8b", messages=[{"role": "user", "content": "hi"}]
+            )
+        ]
     assert "".join(c["choices"][0]["delta"].get("content", "") for c in chunks) == "你好"
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
 

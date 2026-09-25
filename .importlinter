@@ -34,6 +34,7 @@ ignore_imports =
     app.api.** -> app.services.virtual_key_manager
     app.api.** -> app.services.db_access
     app.api.** -> app.services.rag_service
+    app.api.** -> app.services.agent_retriever
     app.api.** -> app.services.document_processor
 
 [importlinter:contract:services-independent]

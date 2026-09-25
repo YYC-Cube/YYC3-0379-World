@@ -27,6 +27,9 @@ import re
 import time
 from typing import AsyncGenerator
 
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+
 from app.api.schemas import CompletionRequest
 from app.config import settings
 from app.errors.handler import error_handler, with_retry
@@ -42,8 +45,6 @@ from app.utils import (
     content_filter,
     metrics_manager,
 )
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -152,9 +153,7 @@ class _UpstreamBackend:
     ):
         """流式：先取到首个 chunk 证明链路可用，失败则走下一上游/地址"""
         errors = []
-        for u in upstream_registry.fallback_chain(
-            self.primary, sovereign_only=self.sovereign_only
-        ):
+        for u in upstream_registry.fallback_chain(self.primary, sovereign_only=self.sovereign_only):
             if u is not self.primary and not upstream_registry.available(u):
                 continue
             addresses = [u.base_url] + ([u.fallback_url] if u.fallback_url else [])
@@ -211,7 +210,11 @@ def _select_backend(model_name: str, sovereign: bool = False):
         if settings.router_enabled and upstream_registry.upstreams:
             u = upstream_registry.select_sovereign(model_name)
             if u is not None:
-                return _UpstreamBackend(u, sovereign_only=True), model_name, f"upstream:{u.name}"
+                return (
+                    _UpstreamBackend(u, sovereign_only=True),
+                    model_name,
+                    f"upstream:{u.name}",
+                )
         raise SovereignUnavailableError(model_name)
     if model_name.startswith("zhipu:") or model_name in [
         "glm-4-flash",
@@ -283,7 +286,12 @@ async def chat_completion(req: CompletionRequest, request: Request):
             metrics_manager.decrement_active_requests()
             raise HTTPException(
                 status_code=400,
-                detail={"error": {"message": f"输入违反内容安全策略: {violation}", "type": "guardrail_blocked"}},
+                detail={
+                    "error": {
+                        "message": f"输入违反内容安全策略: {violation}",
+                        "type": "guardrail_blocked",
+                    }
+                },
             )
     except HTTPException:
         raise
@@ -291,9 +299,7 @@ async def chat_completion(req: CompletionRequest, request: Request):
         logger.warning(f"guardrail 输入链异常（放行）: {e}")
 
     # ── 主权路由检测（P0-3）：X-YYC3-Sovereign: required → 仅本地推理 ──
-    sovereign = (
-        request.headers.get("X-YYC3-Sovereign", "").strip().lower() == "required"
-    )
+    sovereign = request.headers.get("X-YYC3-Sovereign", "").strip().lower() == "required"
 
     # ── 选择后端 ──────────────────────────────────────────
     try:
@@ -327,19 +333,34 @@ async def chat_completion(req: CompletionRequest, request: Request):
             metrics_manager.decrement_active_requests()
             raise HTTPException(
                 status_code=403,
-                detail={"error": {"message": f"虚拟密钥无权访问模型 {req.model}", "type": "model_not_allowed"}},
+                detail={
+                    "error": {
+                        "message": f"虚拟密钥无权访问模型 {req.model}",
+                        "type": "model_not_allowed",
+                    }
+                },
             )
         if not vk_manager.check_budget(vk, est_cost=0.0):  # 预估 0：仅查已花超限
             metrics_manager.decrement_active_requests()
             raise HTTPException(
                 status_code=402,
-                detail={"error": {"message": "虚拟密钥预算已耗尽", "type": "budget_exceeded"}},
+                detail={
+                    "error": {
+                        "message": "虚拟密钥预算已耗尽",
+                        "type": "budget_exceeded",
+                    }
+                },
             )
         if not await vk_manager.check_tpm(vk):  # TPM 滑窗限流（Redis 分钟窗口）
             metrics_manager.decrement_active_requests()
             raise HTTPException(
                 status_code=429,
-                detail={"error": {"message": "虚拟密钥 TPM 限流触发", "type": "rate_limit_exceeded"}},
+                detail={
+                    "error": {
+                        "message": "虚拟密钥 TPM 限流触发",
+                        "type": "rate_limit_exceeded",
+                    }
+                },
             )
 
     # ── 流式分支 ──────────────────────────────────────────
@@ -361,9 +382,9 @@ def _record_spend(vk, response: dict, model: str, upstream_name: str, latency_ms
         cost = pricing.completion_cost(model, pt, ct)
         if cost == 0.0 and pt == 0 and ct == 0:
             return 0.0
-        from app.services.virtual_key_manager import vk_manager
-
         import asyncio
+
+        from app.services.virtual_key_manager import vk_manager
 
         asyncio.get_running_loop().create_task(
             vk_manager.enqueue_spend(
@@ -526,7 +547,12 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=
                 metrics_manager.decrement_active_requests()
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": {"message": f"输出违反内容安全策略: {out_violation}", "type": "guardrail_blocked"}},
+                    detail={
+                        "error": {
+                            "message": f"输出违反内容安全策略: {out_violation}",
+                            "type": "guardrail_blocked",
+                        }
+                    },
                 )
         except HTTPException:
             raise
@@ -550,12 +576,24 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=
             if backend.sovereign_only:
                 headers["X-YYC3-Sovereign"] = "satisfied"
             upstream_name = backend.served_by.name if backend.served_by else backend.primary.name
-            cost = _record_spend(vk, filtered_response, req.model, upstream_name, (time.time() - start_time) * 1000)
+            cost = _record_spend(
+                vk,
+                filtered_response,
+                req.model,
+                upstream_name,
+                (time.time() - start_time) * 1000,
+            )
             if cost > 0.0 or vk is not None:
                 headers["X-YYC3-Cost"] = f"{cost:.6f}"
             return JSONResponse(content=filtered_response, headers=headers)
         else:
-            _record_spend(vk, filtered_response, req.model, backend_type, (time.time() - start_time) * 1000)
+            _record_spend(
+                vk,
+                filtered_response,
+                req.model,
+                backend_type,
+                (time.time() - start_time) * 1000,
+            )
         return filtered_response
 
 
@@ -582,7 +620,7 @@ def _sanitize_chunk(chunk: dict, carry: dict) -> dict:
         for pattern, _label in _PII_PATTERNS:
             text = re.sub(pattern, "****", text)
         hold = min(len(text), 20)
-        carry["text"] = text[len(text) - hold:] if hold else ""
+        carry["text"] = text[len(text) - hold :] if hold else ""
         # 只下发除 carry 尾部以外的部分（尾部留待下 chunk 拼接，避免重复输出）
         delta["content"] = text[: len(text) - hold]
         return chunk
@@ -736,9 +774,7 @@ async def _handle_stream(req, backend, backend_name, backend_type, start_time, v
                     model=req.model,
                     backend_type=backend_type,
                     prompt_tokens=int(usage_info.get("prompt_tokens") or 0),
-                    completion_tokens=int(
-                        usage_info.get("completion_tokens") or total_tokens
-                    ),
+                    completion_tokens=int(usage_info.get("completion_tokens") or total_tokens),
                     total_tokens=int(
                         usage_info.get("total_tokens")
                         or (usage_info.get("prompt_tokens") or 0) + total_tokens

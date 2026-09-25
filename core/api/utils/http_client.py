@@ -101,5 +101,8 @@ class HttpClient:
 
 
 http_client = HttpClient(
-    timeout=120.0, max_connections=100, max_keepalive_connections=20, keepalive_expiry=30.0
+    timeout=120.0,
+    max_connections=100,
+    max_keepalive_connections=20,
+    keepalive_expiry=30.0,
 )

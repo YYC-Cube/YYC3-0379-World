@@ -41,15 +41,26 @@ language: zh-CN
 - 🆕 API认证使用指南「管理面密钥分离」章节：语义契约 + 生产 runbook + 90 天轮换策略
 - 🆕 ADMIN_API_KEYS 生产验证脚本 `core/scripts/verify_admin_keys.sh`（三连验证一键化：403/200/200 + 精准处置提示）
 - 🆕 生产 .env 写入示例命令固化：API认证使用指南 runbook 升级四步可复制（生成/幂等写入/滚动生效/三连验证）+ 轮换与回滚段
+- 🆕 A2A 通信协议层 `core/api/services/a2a_protocol.py`：Redis Stream 消费者组原语（ensure_group BUSYGROUP 幂等 / poll_messages 非阻塞修正 / send_task/result / nack+DLQ / XAUTOCLAIM claim_stale_messages 兼容 2·3 元响应）
+- 🆕 外置 Agent Worker 装配 `core/api/services/agent_workers.py` + 独立进程入口 `core/scripts/agent_worker.py`（A2A_ENABLED × AGENT_WORKER_ENABLED 双控；3 Agent 单机装配）
+- 🆕 A2A 投递端点 `POST /v1/agent/a2a/tasks` + 同步闭环端点 `POST /v1/agent/a2a/tasks/sync`（注册聚合器 → 投递 → drain 追平 → wait_one 等齐，超时不丢任务）
+- 🆕 ResultHub 结果流消费端 `core/api/services/a2a_result.py`：sender 覆盖式幂等聚合 + asyncio.Event 事件驱动 wait_one/wait_all + XAUTOCLAIM 挂起回收（60s 空闲阈值 / 30s 扫描）+ 孤儿回执审计
+- 🆕 多 Agent 编排端点 `POST /v1/agent/a2a/orchestrate`：capability 在线 Agent 全量扇出 + wait_all 等齐（completed/partial/timeout + 部分 results）
+- 🆕 vk（虚拟密钥）计费门控接入 `/v1/agent/**`：三端点内联门控（白名单 403 / 预算 402 / TPM 429，task_type 作 model 语义）+ 中间件协同事务记账（X-A2A-Cost > X-Total-Cost 双探针 + 兜底 0.001 USD，请求内 await 落队）
+- 🆕 A2A 可观测面 `core/api/services/a2a_metrics.py`：孤儿/回收/死信 Counter + DLQ 深度/结果流堆积/双端 PEL Gauge（XAUTOCLAIM dryrun 只读采集，30s 周期随消费端生命周期）+ Grafana `a2a-observability` 七面板（堆积阈值 500/2000 告警配色）
+- 🆕 A2A 测试体系 `tests/test_a2a_{protocol,worker,result}.py`（68 integration 用例）+ conftest 顶层统一密钥注入（收集顺序加固：测试文件只读不写，合跑 9 failed → 全绿）
 
 ### 变更 (Changed)
 
+- 🔄 AuthMiddleware `_authenticate` api_key 分支提取 `_authenticate_vk_or_static` 类方法（vk 校验链优先、静态/管理键降级语义不变；可测试打桩）
+- 🔄 CI 六 job 补 `timeout-minutes`（lint 10 / test 25 / security 10 / build 30 / deploy 15 / release 10），防 runner 挂死空转
 - 🔄 test_gateway_api / test_admin_rbac / test_proxy_api 三文件标记 `integration`（TestClient 全链路归集成层，语义不变）
 - 🔄 CI test job 分层：`pull_request` 且非目标 main 时跑快速层；push/PR→main 跑全量
 - 🔄 CI 触发器补 `tags: ["v*.*.*"]`
 
 ### 修复 (Fixed)
 
+- 🔧 `redis.exceptions.ResponseError` 改 `from redis.exceptions import ResponseError` 直接导入（test_a2a_worker / test_a2a_result 两处；消除 IDE 类型桩「exceptions 不是 redis 已知属性」误报）
 - 🔧 覆盖率缺口补齐：deepseek 24→87% / openai 27→83% / ollama 53→84% / zhipu 13→86% / key_guard 30→100%
 - 🔧 README 版本徽章漂移修复（v9 提交意外回退 v2.2.0 → 恢复 v2.3.0，由 release 门禁逻辑在验证时发现）
 - 🔧 存量死链修复 32 处：core/README 幽灵架构文档链重指 SSOT 真身；操作指南三文件"相关文档"段四机时代旧链重写；验收系统两文档旧目录名修正；MCP README 四处 BigModel 死链降级；.env.0379-world 两文档根级幽灵链重写

@@ -25,8 +25,9 @@ import logging
 import time
 from typing import Any, Dict, List
 
-from app.config import settings
 from redis.asyncio import Redis
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

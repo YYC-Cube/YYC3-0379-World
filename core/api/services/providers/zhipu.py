@@ -14,11 +14,7 @@ GLM 系列 R 类模型返回 reasoning_content 与 content 两个字段；
 
 from typing import Any, Dict, List, Optional
 
-from .base import (
-    _default_endpoint,
-    _default_headers,
-    _default_transform_request,
-)
+from .base import _default_endpoint, _default_headers, _default_transform_request
 
 
 class ZhipuProvider:

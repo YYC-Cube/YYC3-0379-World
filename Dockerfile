@@ -55,6 +55,8 @@ ENV PATH=/root/.local/bin:$PATH
 
 # 复制应用代码（core/api 映射为 app 包，与生产运行布局一致）
 COPY core/api/ /app/app/
+# AI Family Agent 独立包（PYTHONPATH=/app 使 core.agents 可导入；Phase 1 适配点 A1/A2）
+COPY core/agents/ /app/core/agents/
 
 # 创建非 root 用户
 RUN useradd -m -u 1000 appuser && \
@@ -93,6 +95,7 @@ RUN pip install \
 
 # 复制应用代码（core/api 映射为 app 包，与生产布局一致）
 COPY core/api/ /app/app/
+COPY core/agents/ /app/core/agents/
 
 # 暴露端口
 EXPOSE 8000

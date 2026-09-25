@@ -24,9 +24,7 @@ import pytest
 # conftest.py 在收集阶段已注册 app 包（settings 定格前环境须就位）；
 # 基础密闭环境用 os.environ（conftest import app 前生效——收集阶段早于测试模块 import），
 # RBAC 专用 Key 用 module fixture 直接改 settings（避免与其他测试文件的环境块竞争）
-os.environ.setdefault(
-    "JWT_SECRET_KEY", "pytest-only-secret"
-)
+os.environ.setdefault("JWT_SECRET_KEY", "pytest-only-secret")
 os.environ.setdefault("POSTGRES_PASSWORD", "pytest-only-pg")
 os.environ.setdefault("REDIS_PASSWORD", "pytest-only-redis")
 os.environ.setdefault("AUTH_ENABLED", "true")
@@ -56,9 +54,10 @@ _POOL = json.dumps(
 
 import httpx  # noqa: E402
 import respx  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
 from app.config import settings as _settings  # noqa: E402
 from app.main import app  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
 
 # P1-1 分层：TestClient 全链路 → integration 层（pytest -m integration 运行；默认快速层跳过）
 pytestmark = pytest.mark.integration
@@ -96,7 +95,13 @@ def _upstream_ok():
         "object": "chat.completion",
         "created": 1700000000,
         "model": "deepseek-v4-flash",
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": "你好"}, "finish_reason": "stop"}],
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "你好"},
+                "finish_reason": "stop",
+            }
+        ],
         "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
     }
 
@@ -190,7 +195,11 @@ def test_output_pii_blocked(client, _mock_upstream):
 
 def test_output_clean_passes(client):
     """上游返回正常内容 → 放行"""
-    r = client.post("/v1/chat/completions", json=_chat_body("普通回复"), headers={"X-API-Key": _BIZ_KEY})
+    r = client.post(
+        "/v1/chat/completions",
+        json=_chat_body("普通回复"),
+        headers={"X-API-Key": _BIZ_KEY},
+    )
     assert r.status_code == 200, r.text
 
 
@@ -264,15 +273,15 @@ def test_stream_pii_masked_across_chunks(client, _mock_upstream):
 def test_stream_clean_content_intact(client, _mock_upstream):
     """无 PII 流式内容完整透传（含 flush 滞留缓冲不丢字）"""
     sse_body = (
-        _sse_chunk("今天天气不错")
-        + _sse_chunk("", finish="stop")
-        + "data: [DONE]\n\n"
+        _sse_chunk("今天天气不错") + _sse_chunk("", finish="stop") + "data: [DONE]\n\n"
     ).encode("utf-8")
     _mock_upstream.post("http://flagship.test:8001/v1/chat/completions").mock(
         return_value=httpx.Response(200, content=sse_body)
     )
     r = client.post(
-        "/v1/chat/completions", json=_stream_body("随意"), headers={"X-API-Key": _BIZ_KEY}
+        "/v1/chat/completions",
+        json=_stream_body("随意"),
+        headers={"X-API-Key": _BIZ_KEY},
     )
     assert r.status_code == 200, r.text
     assembled = _parse_sse_contents(r.text)

@@ -175,12 +175,8 @@ def on_test_stop(environment, **kwargs):
         logging.info(f"  失败请求: {stats.total.num_failures}")
         logging.info(f"  错误率: {stats.total.fail_ratio * 100:.2f}%")
         logging.info(f"  平均响应时间: {stats.total.avg_response_time:.2f}ms")
-        logging.info(
-            f"  P95 响应时间: {stats.total.get_response_time_percentile(0.95):.2f}ms"
-        )
-        logging.info(
-            f"  P99 响应时间: {stats.total.get_response_time_percentile(0.99):.2f}ms"
-        )
+        logging.info(f"  P95 响应时间: {stats.total.get_response_time_percentile(0.95):.2f}ms")
+        logging.info(f"  P99 响应时间: {stats.total.get_response_time_percentile(0.99):.2f}ms")
         logging.info(f"  吞吐量: {stats.total.total_rps:.2f} req/s")
 
 

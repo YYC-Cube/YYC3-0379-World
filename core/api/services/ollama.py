@@ -25,6 +25,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
+
 from app.config import settings
 
 
@@ -34,7 +35,7 @@ def _normalize_host(host: str) -> str:
     h = host.strip()
     for p in ("http://", "https://"):
         if h.startswith(p):
-            h = h[len(p):]
+            h = h[len(p) :]
     if ":" in h:
         h = h.split(":", 1)[0]
     return h

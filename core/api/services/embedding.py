@@ -11,6 +11,7 @@ from typing import List
 
 import httpx
 import numpy as np
+
 from app.config import settings
 from app.utils.logger import get_logger
 

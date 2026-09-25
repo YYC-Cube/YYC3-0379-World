@@ -4,6 +4,7 @@
 # created: 2026-09-20
 # status: active
 # tags: [dashboard],[virtual-keys],[visualization]
+# flake8: noqa: E501（内嵌 HTML/CSS 为 minified 风格单行，折行破坏模板可维护性）
 
 """虚拟密钥管理看板（五化-可视化）：
 零前端工程依赖——FastAPI 直接返回单页 HTML+fetch，调既有 /v1/admin/virtual-keys* API。

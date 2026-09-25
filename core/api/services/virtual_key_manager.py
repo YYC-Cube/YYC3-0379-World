@@ -26,7 +26,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 from app.cache import redis_client
-from app.services.pricing import pricing
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +78,9 @@ class VirtualKeyManager:
             self._mem_fill(key_hash, record)
             try:
                 await redis_client.set(
-                    VK_KEY_PREFIX + key_hash, json.dumps(record, default=str), ex=VK_CACHE_TTL
+                    VK_KEY_PREFIX + key_hash,
+                    json.dumps(record, default=str),
+                    ex=VK_CACHE_TTL,
                 )
             except Exception:
                 pass
@@ -161,10 +162,7 @@ class VirtualKeyManager:
         limit = int(record.get("rate_limit_tpm") or 0)
         if limit <= 0:
             return True
-        key = (
-            f"{VirtualKeyManager.TPM_PREFIX}"
-            f"{record.get('id')}:{time.strftime('%Y%m%d%H%M')}"
-        )
+        key = f"{VirtualKeyManager.TPM_PREFIX}" f"{record.get('id')}:{time.strftime('%Y%m%d%H%M')}"
         try:
             count = await redis_client.incr(key)
             if count == 1:
@@ -369,7 +367,9 @@ async def vk_create(
     vk_manager._mem_fill(rec["key_hash"], dict(rec))
     try:
         await redis_client.set(
-            VK_KEY_PREFIX + rec["key_hash"], json.dumps(rec, default=str), ex=VK_CACHE_TTL
+            VK_KEY_PREFIX + rec["key_hash"],
+            json.dumps(rec, default=str),
+            ex=VK_CACHE_TTL,
         )
     except Exception:
         pass
@@ -425,7 +425,8 @@ async def vk_update_status(key_id: str, status: str) -> bool:
         async with async_session() as session:
             row = (
                 await session.execute(
-                    text("SELECT key_hash FROM virtual_keys WHERE id = :id"), {"id": key_id}
+                    text("SELECT key_hash FROM virtual_keys WHERE id = :id"),
+                    {"id": key_id},
                 )
             ).scalar()
         if row:
@@ -471,7 +472,8 @@ async def vk_update_fields(
         async with async_session() as session:
             row = (
                 await session.execute(
-                    text("SELECT key_hash FROM virtual_keys WHERE id = :id"), {"id": key_id}
+                    text("SELECT key_hash FROM virtual_keys WHERE id = :id"),
+                    {"id": key_id},
                 )
             ).scalar()
         if row:
@@ -530,7 +532,12 @@ async def vk_usage(key_id: str, days: int = 30) -> Dict[str, Any]:
         for r in by_model:
             r["cost_usd"] = float(r.get("cost_usd") or 0)
     total = sum(r["cost_usd"] for r in by_model)
-    return {"key_id": key_id, "days": days, "total_cost_usd": round(total, 6), "by_model": by_model}
+    return {
+        "key_id": key_id,
+        "days": days,
+        "total_cost_usd": round(total, 6),
+        "by_model": by_model,
+    }
 
 
 # 模块级单例

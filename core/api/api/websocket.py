@@ -130,7 +130,11 @@ async def websocket_chat(websocket: WebSocket, token: Optional[str] = Query(None
                 await manager.send_message({"event": "start", "data": {"model": model}}, websocket)
 
                 # 判断Provider类型
-                if model.startswith("zhipu:") or model in ["glm-4-flash", "glm-4-plus", "glm-4"]:
+                if model.startswith("zhipu:") or model in [
+                    "glm-4-flash",
+                    "glm-4-plus",
+                    "glm-4",
+                ]:
                     backend = zhipu
                     model_name = model.split(":", 1)[1] if ":" in model else model
                 else:
@@ -163,7 +167,8 @@ async def websocket_chat(websocket: WebSocket, token: Optional[str] = Query(None
 
             except json.JSONDecodeError:
                 await manager.send_message(
-                    {"event": "error", "data": {"error": "Invalid JSON format"}}, websocket
+                    {"event": "error", "data": {"error": "Invalid JSON format"}},
+                    websocket,
                 )
             except Exception as e:
                 logger.error(f"处理WebSocket消息失败: {e}")

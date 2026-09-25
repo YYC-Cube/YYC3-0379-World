@@ -1,0 +1,145 @@
+version: "3.8"
+
+# ==============================================================
+# YYC³ AI FAmily 节点2（能力支撑节点）docker-compose
+# 承载：DeepSeek V4 Pro TP分片2/2、OCR、安全三件套、轻量LLM、MinIO数据节点
+# 部署：/data/yyc3-agent/ 下执行 docker compose -f docker-compose.node2.yml up -d
+# 启动顺序：先节点2，后节点1
+# ==============================================================
+
+services:
+  # ========== 核心主模型：DeepSeek V4 Pro TP分片2/2 ==========
+  deepseek-v4-pro-node2:
+    image: nvcr.io/nim/deepseek-ai/deepseek-v4-pro:latest
+    container_name: dgx2-deepseek-v4
+    runtime: nvidia
+    shm_size: 32g
+    ports:
+      - "8000:8000"
+    environment:
+      - NIM_MODEL_PRECISION=${MODEL_PRECISION}
+      - NIM_TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE}
+      - VLLM_KV_CACHE_PRECISION=${KV_CACHE_PRECISION}
+      - GPU_MEMORY_UTILIZATION=${GPU_MEM_UTIL}
+      - MAX_MODEL_LEN=131072
+      - NCCL_NET=${NCCL_NET}
+      - NCCL_IB_HCA=${NCCL_IB_HCA}
+      - NCCL_IB_GID_INDEX=${NCCL_IB_GID_INDEX}
+      - NCCL_IB_DISABLE=${NCCL_IB_DISABLE}
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx2/deepseek:/opt/nim/logs
+      - ${NAS_CORE_RO}/prompt-templates:/opt/nim/prompts:ro
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== OCR模型：nemotron-ocr-v2 ==========
+  nemotron-ocr:
+    image: nvcr.io/nim/nvidia/nemotron-ocr-v2:latest
+    container_name: dgx2-ocr
+    runtime: nvidia
+    ports:
+      - "8003:8000"
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx2/ocr:/opt/nim/logs
+      - ${NAS_KNOWLEDGE_RO}:/data/knowledge-raw:ro
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== 安全三件套 ==========
+  # 越狱检测
+  jailbreak-detect:
+    image: nvcr.io/nim/nvidia/nemoguard-jailbreak-detect:latest
+    container_name: dgx2-jailbreak
+    runtime: nvidia
+    ports:
+      - "8004:8000"
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx2/safety:/opt/nim/logs
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # 内容安全
+  content-safety:
+    image: nvcr.io/nim/nvidia/nemotron-3.5-content-safety:latest
+    container_name: dgx2-content-safety
+    runtime: nvidia
+    ports:
+      - "8005:8000"
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx2/safety:/opt/nim/logs
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # PII信息脱敏
+  pii-detect:
+    image: nvcr.io/nim/nvidia/gliner-pii:latest
+    container_name: dgx2-pii
+    runtime: nvidia
+    ports:
+      - "8006:8000"
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx2/safety:/opt/nim/logs
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== 轻量LLM：言启千行/知遇伯乐基座 ==========
+  nemotron-mini:
+    image: nvcr.io/nim/nvidia/nemotron-mini-4b-instruct:latest
+    container_name: dgx2-mini-llm
+    runtime: nvidia
+    ports:
+      - "8007:8000"
+    environment:
+      - MAX_BATCH_SIZE=128
+    volumes:
+      - ${NAS_MODELS_RO}:/opt/nim/.cache:ro
+      - ${NAS_LOGS_RW}/dgx2/mini-llm:/opt/nim/logs
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== Redis 消息队列+缓存中心 ==========
+  redis:
+    image: redis:7.2-alpine
+    container_name: dgx2-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      # 数据持久化到NAS RAID1，保证消息不丢失
+      - /mnt/nas/raid1-core/redis-data:/data
+      - ./redis.conf:/etc/redis/redis.conf:ro
+    command: redis-server /etc/redis/redis.conf
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # ========== Milvus数据节点存储：MinIO ==========
+  minio:
+    image: minio/minio:latest
+    container_name: dgx2-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - /data/milvus-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+networks:
+  agent-network:
+    driver: bridge

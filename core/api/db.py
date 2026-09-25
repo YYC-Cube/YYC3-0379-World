@@ -24,7 +24,6 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from app.config import settings
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
@@ -39,6 +38,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column, relationship
+
+from app.config import settings
 
 Base = declarative_base()
 

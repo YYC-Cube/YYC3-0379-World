@@ -12,11 +12,12 @@ import uuid
 from typing import List, Tuple
 
 import tiktoken
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db import Document, DocumentChunk, KnowledgeBase
 from app.services.embedding import embedding_service
 from app.utils.logger import get_logger
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 

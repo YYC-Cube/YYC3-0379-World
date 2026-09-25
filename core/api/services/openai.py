@@ -24,6 +24,7 @@ import json
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
+
 from app.config import settings
 from app.utils import http_client
 
@@ -44,7 +45,12 @@ def _ensure_key() -> str:
     """空 Key 前置校验：401 明确报错（OBS-2；原实现无任何校验，空 Key 直接拼非法头）"""
     from app.errors.key_guard import ensure_api_key
 
-    return ensure_api_key(_get_openai_key, provider="OpenAI", env_name="OPENAI_API_KEY", apply_url="platform.openai.com")
+    return ensure_api_key(
+        _get_openai_key,
+        provider="OpenAI",
+        env_name="OPENAI_API_KEY",
+        apply_url="platform.openai.com",
+    )
 
 
 async def chat_completion(

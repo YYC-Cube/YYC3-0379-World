@@ -15,7 +15,6 @@ import json
 import os
 import sys
 import time
-import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core", "api"))
 
@@ -29,22 +28,20 @@ _POOL = json.dumps(
         }
     ]
 )
-# 测试专用 API Key（随机生成，非真实凭据）
-_TEST_API_KEY = "pytest-" + uuid.uuid4().hex[:16]
-_TEST_RUNNER_KEY = "runner-" + uuid.uuid4().hex[:16]
+# 密钥读 conftest 统一注入值（收集顺序加固：测试文件只读不写，详见 tests/conftest.py）；
+# UPSTREAMS 池为本文件专属场景，仍就地注入
+_TEST_API_KEY = os.environ["API_KEYS"]
+_TEST_RUNNER_KEY = os.environ["ADMIN_API_KEYS"]
 os.environ.update(
     {
-        "API_KEYS": _TEST_API_KEY,
-        "JWT_SECRET_KEY": "jwt-" + uuid.uuid4().hex,
-        "POSTGRES_PASSWORD": "pg-" + uuid.uuid4().hex,
-        "REDIS_PASSWORD": "redis-" + uuid.uuid4().hex,
         "OPENAI_COMPATIBLE_UPSTREAMS": _POOL,
     }
 )
 
 import pytest  # noqa: E402
-from app.main import app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import app  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -118,7 +115,9 @@ def _runner_admin_key(monkeypatch):
 
         if hasattr(auth_config, "ADMIN_API_KEYS"):
             monkeypatch.setattr(
-                type(auth_config), "ADMIN_API_KEYS", property(lambda self: {_TEST_RUNNER_KEY})
+                type(auth_config),
+                "ADMIN_API_KEYS",
+                property(lambda self: {_TEST_RUNNER_KEY}),
             )
     except Exception:
         pass
@@ -170,7 +169,10 @@ def test_task_full_lifecycle(client):
         f"/v1/admin/video/tasks/{task_id}/result",
         headers=_runner_auth(),
         files={"file": ("v.mp4", b"\x00\x00fake-mp4", "video/mp4")},
-        data={"archive_path": "/Volume1/yyc3_hd/video_tasks/x.mp4", "duration_seconds": "123.4"},
+        data={
+            "archive_path": "/Volume1/yyc3_hd/video_tasks/x.mp4",
+            "duration_seconds": "123.4",
+        },
     )
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "succeeded"
@@ -274,9 +276,7 @@ def test_validation_errors(client):
     r = client.post("/v1/video/tasks", headers=_auth(), json={"quality": "4k"})
     assert r.status_code == 422
     # 非法 base64
-    r = client.post(
-        "/v1/video/tasks", headers=_auth(), json={"ref_image_b64": "!!!not-base64!!!"}
-    )
+    r = client.post("/v1/video/tasks", headers=_auth(), json={"ref_image_b64": "!!!not-base64!!!"})
     assert r.status_code == 422
     # 不存在的任务
     r = client.get("/v1/video/tasks/nonexistent00", headers=_auth())

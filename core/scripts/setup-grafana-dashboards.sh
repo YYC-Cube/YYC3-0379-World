@@ -303,6 +303,136 @@ curl -s -X POST "$GRAFANA_URL/api/dashboards/db" \
 
 echo "✓ 告警仪表盘创建完成"
 
+# 创建 A2A 可观测仪表盘（TOP3：DLQ 深度 / 结果流堆积 / 挂起回收量）
+echo "创建 A2A 可观测仪表盘..."
+A2A_DASHBOARD=$(cat <<'EOF'
+{
+  "dashboard": {
+    "title": "A2A 可观测",
+    "uid": "a2a-observability",
+    "tags": ["yyc3", "a2a", "observability"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "DLQ 死信深度（按 Agent）",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "a2a_dlq_depth{agent_id=~\".+\"}",
+            "legendFormat": "{{agent_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 1}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "结果流堆积长度",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "a2a_result_stream_len",
+            "legendFormat": "结果流长度"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "orange", "value": 500},
+                {"color": "red", "value": 2000}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "各 Agent 任务流 PEL 挂起",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "a2a_task_stream_pending{agent_id=~\".+\"}",
+            "legendFormat": "{{agent_id}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "结果流 PEL 挂起",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "a2a_result_stream_pending",
+            "legendFormat": "结果流 PEL"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "死信入队速率",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(a2a_dlq_enqueued_total[5m])",
+            "legendFormat": "DLQ 入队 /s"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "挂起回收速率",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(a2a_result_reclaimed_total[5m])",
+            "legendFormat": "回收 /s"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "孤儿回执速率",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(a2a_result_orphan_total[5m])",
+            "legendFormat": "孤儿 /s"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}
+EOF
+)
+
+curl -s -X POST "$GRAFANA_URL/api/dashboards/db" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$A2A_DASHBOARD" > /dev/null
+
+echo "✓ A2A 可观测仪表盘创建完成"
+
 echo ""
 echo "Grafana 仪表盘配置完成！"
 echo "访问地址: $GRAFANA_URL"
@@ -313,3 +443,4 @@ echo "已创建的仪表盘："
 echo "1. 服务概览 (uid: service-overview)"
 echo "2. 数据库监控 (uid: database-monitoring)"
 echo "3. 告警监控 (uid: alert-monitoring)"
+echo "4. A2A 可观测 (uid: a2a-observability)"

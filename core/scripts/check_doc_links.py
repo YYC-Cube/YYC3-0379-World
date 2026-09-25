@@ -17,8 +17,13 @@ from pathlib import Path
 _LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 _MD_FILE_RE = re.compile(r"\.md($|#)", re.IGNORECASE)
 
-# 豁免区（按路径前缀）：历史归档不改写；第三方目录不检查
-EXCLUDE_PREFIXES = ("docs/archive/", "docs/templates/")
+# 豁免区（按路径前缀）：历史归档不改写；第三方目录不检查；
+# 外部输入资料（原型参考库）自带残缺内链，完整性不由本工程门禁负责
+EXCLUDE_PREFIXES = (
+    "docs/archive/",
+    "docs/templates/",
+    "docs/YYC3-多端部署-Agent代码/",
+)
 EXCLUDE_PARTS = {"node_modules", ".venv", "htmlcov", "test-results", ".git"}
 
 

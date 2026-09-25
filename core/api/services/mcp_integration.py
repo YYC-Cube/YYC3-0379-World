@@ -25,6 +25,7 @@ YYC3 统一模型网关 - MCP工具集成实现
 from typing import Any, Dict
 
 import httpx
+
 from app.config import settings
 
 # ==============================
@@ -41,7 +42,10 @@ class ZhipuWebReaderService:
 
     async def read_webpage(self, url: str) -> Dict[str, Any]:
         """读取网页内容"""
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
         payload = {"url": url, "tool": "webReader"}
 
@@ -63,7 +67,10 @@ class ZhipuWebSearchService:
 
     async def search_web(self, query: str, num_results: int = 5) -> Dict[str, Any]:
         """网络搜索"""
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
         payload = {"query": query, "numResults": num_results, "tool": "webSearchPrime"}
 
@@ -85,7 +92,10 @@ class ZhipuGitHubReaderService:
 
     async def search_repo_docs(self, repo: str, query: str) -> Dict[str, Any]:
         """搜索GitHub仓库文档"""
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
         payload = {"repo": repo, "query": query, "tool": "search_doc"}
 
@@ -99,7 +109,10 @@ class ZhipuGitHubReaderService:
 
     async def get_repo_structure(self, repo: str) -> Dict[str, Any]:
         """获取GitHub仓库结构"""
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
         payload = {"repo": repo, "tool": "get_repo_structure"}
 
@@ -164,7 +177,11 @@ class UnifiedMCPManager:
                 "category": "zhipu",
                 "parameters": {
                     "query": {"type": "string", "description": "搜索查询"},
-                    "numResults": {"type": "integer", "description": "返回结果数量", "default": 5},
+                    "numResults": {
+                        "type": "integer",
+                        "description": "返回结果数量",
+                        "default": 5,
+                    },
                 },
             },
             {

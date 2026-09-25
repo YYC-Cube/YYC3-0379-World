@@ -29,7 +29,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -41,14 +41,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_TASK_TTL = 7 * 86400          # 任务记录 7 天
-_RESULT_TTL = 7 * 86400        # 结果视频 7 天（NAS 归档为持久层）
-_MAX_REF_IMAGE_B = 8 * 1024 * 1024   # 参考图 ≤8MB
-_MAX_RESULT_B = 16 * 1024 * 1024     # 回传视频 ≤16MB
-_MAX_ATTEMPTS = 2              # 租约过期重试上限
+_TASK_TTL = 7 * 86400  # 任务记录 7 天
+_RESULT_TTL = 7 * 86400  # 结果视频 7 天（NAS 归档为持久层）
+_MAX_REF_IMAGE_B = 8 * 1024 * 1024  # 参考图 ≤8MB
+_MAX_RESULT_B = 16 * 1024 * 1024  # 回传视频 ≤16MB
+_MAX_ATTEMPTS = 2  # 租约过期重试上限
 
-_KEY_QUEUE = "video:queue"           # FIFO：RPUSH 入队 / LPOP 领取
-_KEY_INDEX = "video:tasks:ids"       # 全量 id 索引（SET）
+_KEY_QUEUE = "video:queue"  # FIFO：RPUSH 入队 / LPOP 领取
+_KEY_INDEX = "video:tasks:ids"  # 全量 id 索引（SET）
 _KEY_TASK = "video:task:{id}"
 _KEY_RESULT = "video:result:{id}"
 
@@ -90,7 +90,9 @@ async def _index_all() -> List[str]:
 
 async def _store_result(task_id: str, data: bytes, ttl: int = _RESULT_TTL) -> None:
     """结果视频以 base64 存储（redis_client decode_responses=True，二进制直存 GET 会解码崩溃）"""
-    await redis_client.set(_KEY_RESULT.format(id=task_id), base64.b64encode(data).decode("ascii"), ex=ttl)
+    await redis_client.set(
+        _KEY_RESULT.format(id=task_id), base64.b64encode(data).decode("ascii"), ex=ttl
+    )
 
 
 async def _load_result(task_id: str) -> Optional[bytes]:
@@ -109,11 +111,17 @@ async def _load_result(task_id: str) -> Optional[bytes]:
 class VideoTaskCreate(BaseModel):
     """创建视频任务请求"""
 
-    prompt: Optional[str] = Field(None, max_length=4000, description="生成提示词（空=runner 默认数字人模板）")
+    prompt: Optional[str] = Field(
+        None, max_length=4000, description="生成提示词（空=runner 默认数字人模板）"
+    )
     quality: str = Field("preview", description="preview=快预览档 / full=全质量档")
     seed: Optional[int] = Field(None, ge=0, le=2**31 - 1)
-    ref_image_b64: Optional[str] = Field(None, description="参考图 base64（≤8MB，空=runner 端默认人物）")
-    ref_image_name: Optional[str] = Field(None, max_length=64, description="参考图文件名（如 person_a.png）")
+    ref_image_b64: Optional[str] = Field(
+        None, description="参考图 base64（≤8MB，空=runner 端默认人物）"
+    )
+    ref_image_name: Optional[str] = Field(
+        None, max_length=64, description="参考图文件名（如 person_a.png）"
+    )
 
 
 class ClaimRequest(BaseModel):
@@ -213,8 +221,15 @@ async def create_video_task(req: VideoTaskCreate, request: Request):
     await _queue_push(task_id)
     await _index_add(task_id)
     position = max(await _queue_len() - 1, 0)
-    logger.info(f"[video] 任务创建 {task_id} quality={req.quality} ref={ref_bytes_len}B queue_pos={position}")
-    return {"id": task_id, "status": "queued", "queue_position": position, "created_at": now}
+    logger.info(
+        f"[video] 任务创建 {task_id} quality={req.quality} ref={ref_bytes_len}B queue_pos={position}"
+    )
+    return {
+        "id": task_id,
+        "status": "queued",
+        "queue_position": position,
+        "created_at": now,
+    }
 
 
 @router.get("/v1/video/tasks")
@@ -313,7 +328,10 @@ async def report_video_result(
     if file is not None:
         data = await file.read()
         if len(data) > _MAX_RESULT_B:
-            raise HTTPException(status_code=413, detail=f"结果视频过大（{len(data)}B > 16MB，仅归档路径交付）")
+            raise HTTPException(
+                status_code=413,
+                detail=f"结果视频过大（{len(data)}B > 16MB，仅归档路径交付）",
+            )
         await _store_result(task_id, data)
         stored = True
         # NAS 持久归档（compose 卷挂载 VIDEO_ARCHIVE_DIR → /Volume1/yyc3_hd/video_tasks）
@@ -331,7 +349,12 @@ async def report_video_result(
     t["updated_at"] = time.time()
     await _store_task(t)
     logger.info(f"[video] 任务 {task_id} 成功（result_stored={stored} archive={archive_path}）")
-    return {"id": task_id, "status": "succeeded", "result_stored": stored, "archive_path": archive_path}
+    return {
+        "id": task_id,
+        "status": "succeeded",
+        "result_stored": stored,
+        "archive_path": archive_path,
+    }
 
 
 @router.post("/v1/admin/video/tasks/{task_id}/failure")

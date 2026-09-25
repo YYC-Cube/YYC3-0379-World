@@ -13,15 +13,17 @@
 
 import hashlib
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Set
 
 import jwt
-from app.config import settings
 from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +222,56 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
+        # ── TOP1 A2A 计费门控：协同事务请求经 vk 记账（chat 范式见 api/chat.py）──
+        await self._maybe_record_a2a_spend(request, response, auth_result)
+
         return response
+
+    # ── A2A 协同事务记账（v2：解耦端点响应形态，双探针 + 兜底常量）──────────
+
+    _AGENT_A2A_PREFIX = "/v1/agent/a2a/"
+    _A2A_ORCHESTRATION_FALLBACK_COST = 0.001  # 双探针均缺失时的兜底成本（防长期 0 计量）
+
+    async def _maybe_record_a2a_spend(self, request: Request, response, auth_result) -> None:
+        """仅对虚拟密钥身份的 A2A 编排/任务端点计协同事务成本（静态/管理键不计费）。
+
+        成本双探针：X-A2A-Cost 响应头 > X-Total-Cost；均无 → 兜底常量（协同事务
+        token usage 未知，避免长期 0 计量掩盖 vk 用量）；chat 既有链路不受影响。
+        入队为微秒级 LPUSH，请求内直 await（不经后台任务，保证落队列后再响应）。
+        """
+        if not request.url.path.startswith(self._AGENT_A2A_PREFIX):
+            return
+        vk = auth_result.get("vk") if isinstance(auth_result, dict) else None
+        if vk is None:
+            return
+        # 优先 X-A2A-Cost（单 Agent/编排端点直发）；缺省 X-Total-Cost；均无 → 兜底常量
+        raw_cost = response.headers.get("X-A2A-Cost") or response.headers.get("X-Total-Cost")
+        try:
+            cost = float(raw_cost or 0)
+        except (TypeError, ValueError):
+            cost = 0.0
+        if cost <= 0:
+            cost = self._A2A_ORCHESTRATION_FALLBACK_COST
+        latency_ms = int(
+            (time.time() - getattr(request.state, "_a2a_start_ts", time.time())) * 1000
+        )
+        try:
+            from app.services.virtual_key_manager import vk_manager
+
+            await vk_manager.enqueue_spend(
+                {
+                    "key_id": vk.get("id"),
+                    "model": request.url.path.rstrip("/").split("/")[-1] or "a2a",
+                    "upstream": "a2a-orchestration",
+                    "capability": "agent",
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "cost_usd": cost,
+                    "latency_ms": latency_ms,
+                }
+            )
+        except Exception:
+            logger.debug("A2A 记账失败（不影响响应）")
 
     def _should_skip_auth(self, path: str) -> bool:
         """
@@ -279,32 +330,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         api_key = self._extract_api_key(request)
         if api_key:
-            # ── P0-1 双层缓存校验链：虚拟密钥（内存→Redis→PG）优先 ──
-            try:
-                from app.services.virtual_key_manager import vk_manager
-
-                vk = await vk_manager.authenticate(api_key)
-                if vk is not None:
-                    # 虚拟密钥非管理身份：管理面直接 403（rbac：vk 只能调推理面）
-                    if self._is_admin_request(request.url.path):
-                        return (True, {"type": "virtual_key", "vk": vk, "admin": False})
-                    return (True, {"type": "virtual_key", "vk": vk})
-            except Exception as e:
-                logger.debug(f"虚拟密钥校验链异常（降级静态 Key）: {e}")
-
-            if verify_api_key(api_key) or api_key in auth_config.ADMIN_API_KEYS:
-                return (
-                    True,
-                    {
-                        "type": "api_key",
-                        "key_hash": hash_api_key(api_key),
-                        "admin": api_key in auth_config.ADMIN_API_KEYS,
-                    },
-                )
-            else:
-                return (True, None)
+            return await self._authenticate_vk_or_static(request, api_key)
 
         return (False, None)
+
+    async def _authenticate_vk_or_static(
+        self, request: Request, api_key: str
+    ) -> tuple[bool, Optional[dict]]:
+        """API Key 校验：虚拟密钥双层缓存校验链优先，未命中降级静态/管理 Key。
+
+        提取为独立方法以便测试打桩（强制 vk 分支、禁用静态键降级误判）。
+        """
+        # ── P0-1 双层缓存校验链：虚拟密钥（内存→Redis→PG）优先 ──
+        try:
+            from app.services.virtual_key_manager import vk_manager
+
+            vk = await vk_manager.authenticate(api_key)
+            if vk is not None:
+                # 虚拟密钥非管理身份：管理面直接 403（rbac：vk 只能调推理面）
+                if self._is_admin_request(request.url.path):
+                    return (True, {"type": "virtual_key", "vk": vk, "admin": False})
+                return (True, {"type": "virtual_key", "vk": vk})
+        except Exception as e:
+            logger.debug(f"虚拟密钥校验链异常（降级静态 Key）: {e}")
+
+        if verify_api_key(api_key) or api_key in auth_config.ADMIN_API_KEYS:
+            return (
+                True,
+                {
+                    "type": "api_key",
+                    "key_hash": hash_api_key(api_key),
+                    "admin": api_key in auth_config.ADMIN_API_KEYS,
+                },
+            )
+        return (True, None)
 
     def _extract_jwt_token(self, request: Request) -> Optional[str]:
         """

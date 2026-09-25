@@ -76,9 +76,7 @@ class PricingCalculator:
             logger.info(f"模型 {model} 无登记单价（按 0 计，用量仍会记录）")
         return price
 
-    def completion_cost(
-        self, model: str, prompt_tokens: int, completion_tokens: int
-    ) -> float:
+    def completion_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
         """核心纯函数：tokens × price → USD。任何异常按 0 计，绝不抛出。"""
         try:
             price = self._prices.get(model)

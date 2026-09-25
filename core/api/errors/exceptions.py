@@ -52,10 +52,15 @@ class NetworkError(YYC3Error):
     """网络错误"""
 
     def __init__(
-        self, message: str = "Network error occurred", details: Optional[Dict[str, Any]] = None
+        self,
+        message: str = "Network error occurred",
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
-            message=message, error_code="NETWORK_ERROR", status_code=502, details=details
+            message=message,
+            error_code="NETWORK_ERROR",
+            status_code=502,
+            details=details,
         )
 
 
@@ -69,7 +74,10 @@ class APIError(YYC3Error):
         details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
-            message=message, error_code="API_ERROR", status_code=status_code, details=details
+            message=message,
+            error_code="API_ERROR",
+            status_code=status_code,
+            details=details,
         )
 
 
@@ -78,16 +86,26 @@ class TimeoutError(YYC3Error):
 
     def __init__(self, message: str = "Request timeout", details: Optional[Dict[str, Any]] = None):
         super().__init__(
-            message=message, error_code="TIMEOUT_ERROR", status_code=504, details=details
+            message=message,
+            error_code="TIMEOUT_ERROR",
+            status_code=504,
+            details=details,
         )
 
 
 class ValidationError(YYC3Error):
     """验证错误"""
 
-    def __init__(self, message: str = "Validation error", details: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        message: str = "Validation error",
+        details: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(
-            message=message, error_code="VALIDATION_ERROR", status_code=400, details=details
+            message=message,
+            error_code="VALIDATION_ERROR",
+            status_code=400,
+            details=details,
         )
 
 

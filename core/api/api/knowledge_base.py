@@ -11,11 +11,12 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from app.services.db_access import Document, DocumentChunk, KnowledgeBase, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.db_access import Document, DocumentChunk, KnowledgeBase, get_db
 
 router = APIRouter(prefix="/v1/knowledge-bases")
 
@@ -58,9 +59,7 @@ class KnowledgeBaseResponse(BaseModel):
 
 
 @router.post("", response_model=KnowledgeBaseResponse, summary="创建知识库")
-async def create_knowledge_base(
-    kb_data: KnowledgeBaseCreate, db: AsyncSession = Depends(get_db)
-):
+async def create_knowledge_base(kb_data: KnowledgeBaseCreate, db: AsyncSession = Depends(get_db)):
     """
     创建新的知识库
 

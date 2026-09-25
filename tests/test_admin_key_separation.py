@@ -45,7 +45,9 @@ def test_admin_keys_separated_when_set(monkeypatch):
     monkeypatch.setattr(settings, "admin_api_keys", _ADMIN_KEYS)
     cfg = AuthConfig()
     assert cfg.ADMIN_API_KEYS == {"sk-admin-001"}
-    assert cfg.ADMIN_API_KEYS.isdisjoint(cfg.VALID_API_KEYS), "管理面与推理面密钥必须互斥（最小权限）"
+    assert cfg.ADMIN_API_KEYS.isdisjoint(
+        cfg.VALID_API_KEYS
+    ), "管理面与推理面密钥必须互斥（最小权限）"
 
 
 def test_admin_keys_parse_tolerates_whitespace(monkeypatch):

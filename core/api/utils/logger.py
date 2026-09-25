@@ -51,7 +51,8 @@ class StructuredLogger:
         """设置日志处理器"""
 
         formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
         file_handler = RotatingFileHandler(
