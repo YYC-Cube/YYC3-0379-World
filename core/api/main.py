@@ -929,6 +929,22 @@ async def stop_a2a_result_consumer():
     await a2a_result.stop_result_consumer()
 
 
+@app.on_event("startup")
+async def start_a2a_audit_shipper():
+    """A2A 审计流 Loki 消费端：孤儿/死信审计可检索可告警
+    （A2A_ENABLED × A2A_AUDIT_LOKI_ENABLED 双控，缺省关闭）"""
+    from app.services import a2a_audit
+
+    a2a_audit.start_audit_shipper()
+
+
+@app.on_event("shutdown")
+async def stop_a2a_audit_shipper():
+    from app.services import a2a_audit
+
+    await a2a_audit.stop_audit_shipper()
+
+
 if __name__ == "__main__":
     import uvicorn
 

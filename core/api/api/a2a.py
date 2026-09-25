@@ -24,10 +24,10 @@ import logging
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.services import a2a_protocol, a2a_result
+from app.services import a2a_protocol, a2a_result, pricing
 
 logger = logging.getLogger(__name__)
 
@@ -172,11 +172,12 @@ async def agent_heartbeat(agent_id: str):
 
 
 @router.post("/v1/agent/a2a/tasks", status_code=202)
-async def submit_a2a_task(req: A2ATaskRequest, request: Request):
+async def submit_a2a_task(req: A2ATaskRequest, request: Request, response: Response):
     """提交单 Agent A2A 任务：信封投递至目标任务流（202 即返，消费者组异步认领）。
 
     路由：receiver_agent_id 直投优先；否则按 capability 在在线 Agent 中发现（取首个）。
     vk 计费门控：模型白名单（403）/ 预算（402）/ TPM 限流（429）——静态/管理键不计费。
+    成本直报：X-A2A-Cost 响应头按任务类型固定定价（pricing.task_cost），中间件记账优先取本头。
     """
     vk = _resolve_vk(request)
     await _enforce_agent_vk_gates(
@@ -194,6 +195,7 @@ async def submit_a2a_task(req: A2ATaskRequest, request: Request):
         priority=req.priority,
     )
     await _submit(receiver, message)
+    response.headers["X-A2A-Cost"] = f"{pricing.task_cost(req.task_type):.6f}"
     logger.info("[a2a] 任务 %s 已投递 %s（task_type=%s）", trace_id, receiver, req.task_type)
     return {
         "msg_id": message["msg_id"],
@@ -214,11 +216,12 @@ class A2ASyncTaskRequest(A2ATaskRequest):
 
 
 @router.post("/v1/agent/a2a/tasks/sync")
-async def submit_a2a_task_sync(req: A2ASyncTaskRequest, request: Request):
+async def submit_a2a_task_sync(req: A2ASyncTaskRequest, request: Request, response: Response):
     """提交单 Agent 任务并同步等待结果回执（编排器聚合 stream:agent:result:callback）。
 
     时序：vk 门控 → 注册聚合器 → 投递任务流 → 追平在途回执 → 事件驱动等待。
     超时返回 status=timeout（任务仍留在任务流由 Worker 正常消费，结果不丢）。
+    成本直报：X-A2A-Cost 按任务类型固定定价（成功/超时下均回填，超时成本照计——任务已入队）。
     """
     vk = _resolve_vk(request)
     await _enforce_agent_vk_gates(vk, req.task_type)
@@ -237,6 +240,7 @@ async def submit_a2a_task_sync(req: A2ASyncTaskRequest, request: Request):
             priority=req.priority,
         )
         await _submit(receiver, message)
+        response.headers["X-A2A-Cost"] = f"{pricing.task_cost(req.task_type):.6f}"
         await hub.run_once()  # 追平「注册前已写入结果流」的在途回执（防漏 + 降首响应延迟）
         try:
             result = await hub.wait_one(trace_id, timeout=req.timeout_seconds)
@@ -275,12 +279,13 @@ class A2AOrchestrationRequest(BaseModel):
 
 
 @router.post("/v1/agent/a2a/orchestrate")
-async def orchestrate_a2a_tasks(req: A2AOrchestrationRequest, request: Request):
+async def orchestrate_a2a_tasks(req: A2AOrchestrationRequest, request: Request, response: Response):
     """多 Agent 扇出编排：按 capability 发现在线 Agent 全量投递，wait_all 等齐回执。
 
     vk 计费门控按 model（缺省回退 task_type）；扇出注册聚合器 → 逐 Agent 投递 →
     wait_all 等齐（部分回执先达不提前返回，total=Agent 数）。超时可由响应
     `results` 观察部分聚合进度（Status: timeout 但 results 含已完成部分）。
+    成本直报：X-A2A-Cost = 任务类型单价 × 扇出数（N Agent 各执行一次）。
     """
     vk = _resolve_vk(request)
     await _enforce_agent_vk_gates(vk, req.model or req.task_type)
@@ -308,6 +313,7 @@ async def orchestrate_a2a_tasks(req: A2AOrchestrationRequest, request: Request):
             logger.info(
                 "[a2a] 编排任务 %s 扇出 %s（capability=%s）", trace_id, receiver, req.capability
             )
+        response.headers["X-A2A-Cost"] = f"{pricing.task_cost(req.task_type) * len(receivers):.6f}"
         try:
             snapshot = await hub.wait_all(
                 trace_id, total=len(receivers), timeout=req.timeout_seconds

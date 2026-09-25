@@ -28,17 +28,21 @@ from typing import Any, Callable, Dict, List, Optional
 from app.services import a2a_protocol as proto
 from core.agents import (
     ChuangXiangLingYunAgent,
+    GeWuZongShiAgent,
+    YanQiQianHangAgent,
     YuJianXianZhiAgent,
     YuShuWanWuAgent,
 )
 
 logger = logging.getLogger(__name__)
 
-# 外置 Worker 化首批 3 Agent（可行性报告 Phase 2 指定：语枢/预见/创想）
+# 外置 Worker 化 Agent 编队（可行性报告 Phase 2 首批 3 + 扩面 2：格物·宗师 / 演启·乾行）
 WORKER_AGENT_IDS = [
     "yushu-wanwu-001",
     "yujian-xianzhi-001",
     "chuangxiang-lingyun-001",
+    "gewu-zongshi-001",
+    "yanqi-qianhang-001",
 ]
 
 # agent_id → 业务 Agent 实例工厂（懒实例化，本进程内复用）
@@ -46,6 +50,8 @@ AGENT_FACTORIES: Dict[str, Callable[[], object]] = {
     "yushu-wanwu-001": YuShuWanWuAgent,
     "yujian-xianzhi-001": YuJianXianZhiAgent,
     "chuangxiang-lingyun-001": ChuangXiangLingYunAgent,
+    "gewu-zongshi-001": GeWuZongShiAgent,
+    "yanqi-qianhang-001": YanQiQianHangAgent,
 }
 
 _instances: Dict[str, object] = {}
@@ -112,6 +118,26 @@ def handle_task(task_type: str, payload: dict) -> dict:
                 direction_count=int(payload.get("direction_count") or 3),
                 industry=str(payload.get("industry") or "科技行业"),
                 knowledge_context=_context(payload),
+            )
+        }
+    if task_type == "content_validation":  # 格物·宗师：内容校验（事实/合规/风格三维）
+        return {
+            "output": _get_agent("gewu-zongshi-001").validate(
+                payload["input"], knowledge_context=_context(payload)
+            )
+        }
+    if task_type == "code_review":  # 格物·宗师：代码评审
+        return {
+            "output": _get_agent("gewu-zongshi-001").review_code(
+                payload["input"], language=str(payload.get("language") or "python")
+            )
+        }
+    if task_type == "content_formatting":  # 演启·乾行：结构化输出格式化（置信度+风险提示）
+        return {
+            "output": _get_agent("yanqi-qianhang-001").format_output(
+                payload["input"],
+                confidence=float(payload.get("confidence") or 0.0),
+                risk_notes=str(payload.get("risk_notes") or ""),
             )
         }
     raise ValueError(f"未知 task_type：{task_type}")

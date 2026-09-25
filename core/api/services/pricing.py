@@ -96,4 +96,26 @@ class PricingCalculator:
         self._prices[model] = ModelPrice(input_per_m, output_per_m)
 
 
+# ── 协同事务按任务类型固定定价（A2A 成本直报：端点回填 X-A2A-Cost 供中间件记账）──
+# 定价语义：每任务 USD 固定成本（无 token usage 可估）；未知类型 0.0 → 中间件兜底常量接管
+TASK_TYPE_PRICES = {
+    "data_analysis": 0.002,
+    "trend_forecast": 0.003,
+    "qualitative_analysis": 0.002,
+    "report_polish": 0.001,
+    "creative_brainstorm": 0.001,
+    "content_validation": 0.001,
+    "code_review": 0.002,
+    "content_formatting": 0.0005,
+}
+
+
+def task_cost(task_type: str) -> float:
+    """协同事务固定成本（USD/任务）；未知/空类型 0.0（调用方走兜底常量）。"""
+    try:
+        return float(TASK_TYPE_PRICES.get((task_type or "").strip(), 0.0))
+    except Exception:
+        return 0.0
+
+
 pricing = PricingCalculator()

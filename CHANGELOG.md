@@ -48,6 +48,9 @@ language: zh-CN
 - 🆕 多 Agent 编排端点 `POST /v1/agent/a2a/orchestrate`：capability 在线 Agent 全量扇出 + wait_all 等齐（completed/partial/timeout + 部分 results）
 - 🆕 vk（虚拟密钥）计费门控接入 `/v1/agent/**`：三端点内联门控（白名单 403 / 预算 402 / TPM 429，task_type 作 model 语义）+ 中间件协同事务记账（X-A2A-Cost > X-Total-Cost 双探针 + 兜底 0.001 USD，请求内 await 落队）
 - 🆕 A2A 可观测面 `core/api/services/a2a_metrics.py`：孤儿/回收/死信 Counter + DLQ 深度/结果流堆积/双端 PEL Gauge（XAUTOCLAIM dryrun 只读采集，30s 周期随消费端生命周期）+ Grafana `a2a-observability` 七面板（堆积阈值 500/2000 告警配色）
+- 🆕 A2A 审计流 Loki 消费端 `core/api/services/a2a_audit.py`：stream:audit:log → Loki 批量推送（labels job=a2a-audit/event/agent，推送成功才 XACK，抖动退避）；A2A_ENABLED × A2A_AUDIT_LOKI_ENABLED 双控；Grafana Loki 数据源 provisioning 补齐 + 告警规则三条（死信/孤儿/回收停滞）
+- 🆕 A2A 成本直报：pricing.py 任务类型固定定价表 TASK_TYPE_PRICES + task_cost()；三端点回填 X-A2A-Cost 响应头（编排=单价×扇出数），中间件记账双探针优先取直报值
+- 🆕 A2A Worker 扩面：格物·宗师（content_validation/code_review）+ 演启·乾行（content_formatting）入编，编队 3→5；A2A_WORKER_AGENTS 配置化部署
 - 🆕 A2A 测试体系 `tests/test_a2a_{protocol,worker,result}.py`（68 integration 用例）+ conftest 顶层统一密钥注入（收集顺序加固：测试文件只读不写，合跑 9 failed → 全绿）
 
 ### 变更 (Changed)

@@ -41,10 +41,7 @@ services:
       retries: 5
 
   gateway:
-    # target 锁定 production：dev-deps 仅存在于 development 目标（09-24 OOM 立项整改）
-    build:
-      context: .
-      target: production
+    build: .
     container_name: 0379-world-gateway-1
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

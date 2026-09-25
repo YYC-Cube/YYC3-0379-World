@@ -612,6 +612,7 @@ def _register_card(fake, agent_id):
         "layer": "business",
         "status": "online",
         "heartbeat": int(_time.time()),
+        "last_heartbeat": int(_time.time()),
     }
     fake.hash[agent_id] = __import__("json").dumps(card, ensure_ascii=False, default=str)
 
@@ -665,6 +666,56 @@ class TestOrchestration:
         assert snapshot["status"] == "completed"
         assert snapshot["progress"] == "2/2"
         assert set(snapshot["results"]) == {"yushu-wanwu-001", "yujian-xianzhi-001"}
+
+
+# ════════════════════ 成本直报（TOP2：X-A2A-Cost 按任务类型定价回填） ════════════════════
+
+
+class TestCostHeader:
+    def test_tasks_async_reports_cost_header(self, fake_redis, hub_clean, client):
+        """异步投递：X-A2A-Cost = task_cost(data_analysis) = 0.002000（pricing 任务类型定价）。"""
+        resp = client.post(
+            "/v1/agent/a2a/tasks",
+            json={
+                "receiver_agent_id": "yushu-wanwu-001",
+                "task_type": "data_analysis",
+                "payload": {"input": "x"},
+            },
+            headers=_auth(),
+        )
+        assert resp.status_code == 202
+        assert resp.headers["X-A2A-Cost"] == "0.002000"
+
+    def test_tasks_async_unknown_type_zero_cost(self, fake_redis, hub_clean, client):
+        """未知 task_type：X-A2A-Cost = 0.000000（中间件兜底常量接管记账）。"""
+        resp = client.post(
+            "/v1/agent/a2a/tasks",
+            json={
+                "receiver_agent_id": "yushu-wanwu-001",
+                "task_type": "never_heard_of",
+                "payload": {"input": "x"},
+            },
+            headers=_auth(),
+        )
+        assert resp.status_code == 202
+        assert resp.headers["X-A2A-Cost"] == "0.000000"
+
+    def test_orchestrate_reports_aggregated_cost(self, fake_redis, hub_clean, client):
+        """编排扇出：X-A2A-Cost = 单价 × 扇出数（2 Agent × 0.002 = 0.004000）。"""
+        _register_card(fake_redis, "yushu-wanwu-001")
+        _register_card(fake_redis, "yujian-xianzhi-001")
+        resp = client.post(
+            "/v1/agent/a2a/orchestrate",
+            json={
+                "capability": "data_analysis",
+                "task_type": "data_analysis",
+                "payload": {"input": "编排"},
+                "timeout_seconds": 1,
+            },
+            headers=_auth(),
+        )
+        assert resp.status_code == 200
+        assert resp.headers["X-A2A-Cost"] == "0.004000"
 
 
 # ════════════════════ 可观测埋点（TOP3：DLQ/孤儿/回收 Counter + 快照 Gauge） ════════════════════

@@ -383,3 +383,42 @@ class TestA2ATaskEndpoint:
         envelope = proto.parse_message(dict(results[0][1]))
         assert envelope["trace_id"] == r.json()["trace_id"]
         assert envelope["payload"]["success"] is True
+
+
+# ════════════════════ Worker 扩面（TOP3：格物·宗师 / 演启·乾行入编） ════════════════════
+
+
+class TestWorkerExpansion:
+    def test_registry_contains_expanded_fleet(self):
+        """编队注册表：5 Agent 全量（首批 3 + 扩面格物/演启），工厂可实例化。"""
+        from core.agents import GeWuZongShiAgent, YanQiQianHangAgent
+
+        assert "gewu-zongshi-001" in workers_mod.WORKER_AGENT_IDS
+        assert "yanqi-qianhang-001" in workers_mod.WORKER_AGENT_IDS
+        assert len(workers_mod.WORKER_AGENT_IDS) == 5
+        assert workers_mod.AGENT_FACTORIES["gewu-zongshi-001"] is GeWuZongShiAgent
+        assert workers_mod.AGENT_FACTORIES["yanqi-qianhang-001"] is YanQiQianHangAgent
+
+    def test_content_validation_route(self, clean_instances):
+        """task_type=content_validation → 格物·宗师 validate（三维校验）。"""
+        result = workers_mod.handle_task("content_validation", {"input": "待校验内容"})
+        assert "output" in result
+
+    def test_code_review_route(self, clean_instances):
+        """task_type=code_review → 格物·宗师 review_code（语言透传，缺省 python）。"""
+        result = workers_mod.handle_task("code_review", {"input": "print(1)"})
+        assert "output" in result
+
+    def test_content_formatting_route(self, clean_instances):
+        """task_type=content_formatting → 演启·乾行 format_output（置信度+风险提示头尾包裹）。"""
+        result = workers_mod.handle_task(
+            "content_formatting",
+            {"input": "核心结论", "confidence": 0.8, "risk_notes": "数据样本小"},
+        )
+        assert "置信度" in result["output"]
+        assert "数据样本小" in result["output"]
+
+    def test_worker_agent_ids_env_override(self, monkeypatch):
+        """A2A_WORKER_AGENTS 配置化：env 覆盖编队清单（扩面部署只改配置）。"""
+        monkeypatch.setenv("A2A_WORKER_AGENTS", "gewu-zongshi-001,yanqi-qianhang-001")
+        assert workers_mod.worker_agent_ids() == ["gewu-zongshi-001", "yanqi-qianhang-001"]
