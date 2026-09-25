@@ -51,6 +51,9 @@ language: zh-CN
 - 🆕 A2A 审计流 Loki 消费端 `core/api/services/a2a_audit.py`：stream:audit:log → Loki 批量推送（labels job=a2a-audit/event/agent，推送成功才 XACK，抖动退避）；A2A_ENABLED × A2A_AUDIT_LOKI_ENABLED 双控；Grafana Loki 数据源 provisioning 补齐 + 告警规则三条（死信/孤儿/回收停滞）
 - 🆕 A2A 成本直报：pricing.py 任务类型固定定价表 TASK_TYPE_PRICES + task_cost()；三端点回填 X-A2A-Cost 响应头（编排=单价×扇出数），中间件记账双探针优先取直报值
 - 🆕 A2A Worker 扩面：格物·宗师（content_validation/code_review）+ 演启·乾行（content_formatting）入编，编队 3→5；A2A_WORKER_AGENTS 配置化部署
+- 🆕 协同事务价格表管理端点：GET/PUT `/v1/admin/pricing/task-types`（TASK_TYPE_PRICES 运行时覆盖，负价 422 / 未知类型预置 / RBAC）
+- 🆕 编排器独立部署面：`core/scripts/orchestrator.py`（--consumer/--no-metrics/--with-audit）+ compose `orchestrator` profile；内嵌/独立/混合三形态
+- 🆕 生产灰度修复：compose grafana 挂载 provisioning（数据源/告警/仪表盘随启动加载）+ Loki local-config 补建（原挂载目标缺失）+ 灰度验证脚本（Redis→shipper→Loki 端到端 + Grafana 告警联系人路由绑定，实环境三连全通）
 - 🆕 A2A 测试体系 `tests/test_a2a_{protocol,worker,result}.py`（68 integration 用例）+ conftest 顶层统一密钥注入（收集顺序加固：测试文件只读不写，合跑 9 failed → 全绿）
 
 ### 变更 (Changed)

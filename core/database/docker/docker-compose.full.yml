@@ -79,9 +79,9 @@ services:
     platform: linux/arm64/v8
     restart: always
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -147,6 +147,29 @@ services:
     networks:
       - backend
 
+  # ---------- 4️⃣b A2A 编排器（独立部署面；profiles 隔离，默认不起） ----------
+  # 启用：docker compose -f docker-compose.full.yml --profile orchestrator up -d orchestrator
+  # 独立形态时网关侧置 A2A_RESULT_CONSUMER_ENABLED=false（混合形态可双开，消费者组分摊）
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    platform: linux/arm64/v8
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      # 编排器职责态：指标采集 + 审计 shipper 随编排进程（网关侧可关）
+      A2A_RESULT_CONSUMER_ENABLED: "true"
+    command: ["python", "core/scripts/orchestrator.py", "--with-audit"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    profiles:
+      - orchestrator
+
   # ---------- 5️⃣ Traefik 入口 ----------
   traefik:
     image: traefik:v3.0
@@ -189,6 +212,9 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      # provisioning（数据源/仪表盘/告警规则随容器启动自动加载；A2A 可观测依赖）
+      - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/dashboards:/etc/grafana/dashboards:ro
     networks:
       - backend
 

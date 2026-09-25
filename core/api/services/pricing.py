@@ -118,4 +118,18 @@ def task_cost(task_type: str) -> float:
         return 0.0
 
 
+def upsert_task_price(task_type: str, price_usd: float) -> None:
+    """运行时登记/更新任务类型单价（/v1/admin/pricing/task-types 端点用）。
+
+    注意：本表为进程内存态（对齐 MODEL_PRICES_JSON 一次性加载语义）；
+    多网关实例部署时各进程需分别设置，或经 TASK_PRICES_JSON 启动统一注入。
+    """
+    key = (task_type or "").strip()
+    if not key:
+        raise ValueError("task_type 不能为空")
+    if price_usd < 0:
+        raise ValueError("price_usd 不能为负")
+    TASK_TYPE_PRICES[key] = float(price_usd)
+
+
 pricing = PricingCalculator()

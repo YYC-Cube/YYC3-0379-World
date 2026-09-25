@@ -46,7 +46,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.errors.handler import error_handler
@@ -855,6 +855,33 @@ async def admin_vk_usage(key_id: str, days: int = 30):
     except Exception as e:
         error_response = await error_handler.handle(e, context={"operation": "vk_usage"})
         raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+
+# ── 协同事务价格表管理（A2A 成本直报运行时覆盖；内存态，对齐 MODEL_PRICES_JSON 语义）──
+
+
+class TaskPriceRequest(BaseModel):
+    price_usd: float = Field(..., ge=0, description="每任务固定成本（USD）")
+
+
+@app.get("/v1/admin/pricing/task-types")
+async def admin_pricing_task_types():
+    """列协同事务任务类型价格表（TASK_TYPE_PRICES 运行时态，X-A2A-Cost 取值源）"""
+    from app.services.pricing import TASK_TYPE_PRICES
+
+    return {"task_types": dict(TASK_TYPE_PRICES)}
+
+
+@app.put("/v1/admin/pricing/task-types/{task_type}")
+async def admin_pricing_task_type_upsert(task_type: str, req: TaskPriceRequest):
+    """登记/更新任务类型单价（运行时即时生效；未知类型也可预置——新 task_type 上线即计价）"""
+    from app.services import pricing as pricing_svc
+
+    try:
+        pricing_svc.upsert_task_price(task_type, req.price_usd)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"updated": True, "task_type": task_type, "price_usd": req.price_usd}
 
 
 @app.on_event("startup")
