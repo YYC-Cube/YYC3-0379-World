@@ -44,12 +44,25 @@ services:
     depends_on:
       - prometheus
 
+  # A2A 审计流 Loki（Phase 5 灰度）：镜像内置默认单机配置，named volume 持久
+  # 网关 A2A_AUDIT_LOKI_ENABLED=true → LOKI_URL=http://yyc3-loki:3100 推送
+  loki:
+    image: docker.m.daocloud.io/grafana/loki:2.9.2
+    container_name: yyc3-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/tmp/loki
+    networks:
+      - yyc3-network
+
 volumes:
   prometheus-conf:
   prometheus-data:
   grafana-provisioning:
   grafana-dashboards:
   grafana-data:
+  loki-data:
 
 networks:
   yyc3-network:

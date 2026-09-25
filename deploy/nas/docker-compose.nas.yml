@@ -73,6 +73,11 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       # ── 第五能力视频任务（Phase 2.3）：结果归档目录（NAS 卷直写，runner 免 ssh）──
       - VIDEO_ARCHIVE_DIR=${VIDEO_ARCHIVE_DIR:-/data/video_archive}
+      # ── A2A 协同事务全套（Phase 5 灰度开闸）：协议/结果流消费端/审计 Loki shipper ──
+      - A2A_ENABLED=${A2A_ENABLED:-true}
+      - A2A_RESULT_CONSUMER_ENABLED=${A2A_RESULT_CONSUMER_ENABLED:-true}
+      - A2A_AUDIT_LOKI_ENABLED=${A2A_AUDIT_LOKI_ENABLED:-true}
+      - LOKI_URL=${LOKI_URL:-http://yyc3-loki:3100}
     ports:
       - "8000:8000"
     volumes:
@@ -96,6 +101,59 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # ── A2A 业务 Agent Worker（5 编队独立进程；与网关同镜像不同入口）──
+  # 容器语义：SIGTERM 即退，在途消息留 PEL 由 XAUTOCLAIM 回收（无丢失）
+  agent-worker:
+    build: .
+    container_name: 0379-world-worker-1
+    command: ["python", "-m", "app.worker_entry"]
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-yyc3_gpt}
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_DB=${REDIS_DB:-0}
+      # 5 Agent 编队（缺省全量：语枢/预见/创想/格物/演启）；缩编改 A2A_WORKER_AGENTS
+      - A2A_WORKER_AGENTS=${A2A_WORKER_AGENTS:-yushu-wanwu-001,yujian-xianzhi-001,chuangxiang-lingyun-001,gewu-zongshi-001,yanqi-qianhang-001}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - yyc3-network
+
+  # ── A2A 编排器独立位（可选；profiles 隔离默认不起）──
+  # 启用：docker compose --profile orchestrator up -d orchestrator
+  # 独立形态：网关侧 A2A_RESULT_CONSUMER_ENABLED=false；混合形态双开安全（组分摊）
+  orchestrator:
+    build: .
+    container_name: 0379-world-orchestrator-1
+    command: ["python", "-m", "app.orchestrator_entry"]
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-yyc3_gpt}
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_DB=${REDIS_DB:-0}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - yyc3-network
+    profiles:
+      - orchestrator
 
 networks:
   yyc3-network:

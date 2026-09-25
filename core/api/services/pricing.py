@@ -119,7 +119,7 @@ def task_cost(task_type: str) -> float:
 
 
 def upsert_task_price(task_type: str, price_usd: float) -> None:
-    """运行时登记/更新任务类型单价（/v1/admin/pricing/task-types 端点用）。
+    """运行时登记/更新任务类型单价（内存态；/v1/admin/pricing/task-types 端点用）。
 
     注意：本表为进程内存态（对齐 MODEL_PRICES_JSON 一次性加载语义）；
     多网关实例部署时各进程需分别设置，或经 TASK_PRICES_JSON 启动统一注入。
@@ -130,6 +130,56 @@ def upsert_task_price(task_type: str, price_usd: float) -> None:
     if price_usd < 0:
         raise ValueError("price_usd 不能为负")
     TASK_TYPE_PRICES[key] = float(price_usd)
+
+
+async def load_task_prices_from_db() -> int:
+    """启动加载：PG task_prices 表覆盖内存默认（best-effort，DB 不可达用内置表）。
+
+    返回加载数（0 = 无表/无行/DB 不可达，均不阻断启动）。
+    """
+    try:
+        from sqlalchemy import text
+
+        from app.db import engine
+
+        async with engine.begin() as conn:
+            result = await conn.execute(text("SELECT task_type, price_usd FROM task_prices"))
+            rows = result.fetchall()
+        for task_type, price_usd in rows:
+            TASK_TYPE_PRICES[task_type] = float(price_usd)
+        if rows:
+            logger.info(f"task_prices 表加载 {len(rows)} 条任务单价（覆盖内存默认）")
+        return len(rows)
+    except Exception as e:
+        logger.warning(f"task_prices 表加载失败（用内存默认表）: {e}")
+        return 0
+
+
+async def upsert_task_price_persisted(task_type: str, price_usd: float) -> bool:
+    """管理端点写路径：内存 + PG 双写（ON CONFLICT upsert）。
+
+    返回 PG 落库是否成功；表未迁移/DB 不可达时仅内存生效（不阻断端点，
+    响应带 persisted=false 提示运维补迁移）。
+    """
+    upsert_task_price(task_type, price_usd)  # 校验 + 内存即时生效
+    try:
+        from sqlalchemy import text
+
+        from app.db import engine
+
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO task_prices (task_type, price_usd) VALUES (:t, :p) "
+                    "ON CONFLICT (task_type) DO UPDATE SET "
+                    "price_usd = EXCLUDED.price_usd, updated_at = CURRENT_TIMESTAMP"
+                ),
+                {"t": (task_type or "").strip(), "p": float(price_usd)},
+            )
+        return True
+    except Exception as e:
+        logger.warning(f"task_prices PG 落库失败（仅内存生效，请执行 004 迁移）: {e}")
+        return False
 
 
 pricing = PricingCalculator()

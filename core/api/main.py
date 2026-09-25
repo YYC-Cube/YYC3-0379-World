@@ -874,14 +874,31 @@ async def admin_pricing_task_types():
 
 @app.put("/v1/admin/pricing/task-types/{task_type}")
 async def admin_pricing_task_type_upsert(task_type: str, req: TaskPriceRequest):
-    """登记/更新任务类型单价（运行时即时生效；未知类型也可预置——新 task_type 上线即计价）"""
+    """登记/更新任务类型单价（内存即时生效 + PG task_prices 持久；未知类型也可预置）
+
+    persisted=false 表示 PG 未落库（表未迁移/DB 不可达）——内存价已生效但重启丢失，
+    提示运维执行 004_task_prices.sql 迁移。
+    """
     from app.services import pricing as pricing_svc
 
     try:
-        pricing_svc.upsert_task_price(task_type, req.price_usd)
+        persisted = await pricing_svc.upsert_task_price_persisted(task_type, req.price_usd)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return {"updated": True, "task_type": task_type, "price_usd": req.price_usd}
+    return {
+        "updated": True,
+        "task_type": task_type,
+        "price_usd": req.price_usd,
+        "persisted": persisted,
+    }
+
+
+@app.on_event("startup")
+async def load_task_prices_from_db():
+    """协同事务价格表启动加载：PG task_prices 覆盖内存默认（best-effort 不阻断）"""
+    from app.services import pricing as pricing_svc
+
+    await pricing_svc.load_task_prices_from_db()
 
 
 @app.on_event("startup")

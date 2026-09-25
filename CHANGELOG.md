@@ -54,6 +54,9 @@ language: zh-CN
 - 🆕 协同事务价格表管理端点：GET/PUT `/v1/admin/pricing/task-types`（TASK_TYPE_PRICES 运行时覆盖，负价 422 / 未知类型预置 / RBAC）
 - 🆕 编排器独立部署面：`core/scripts/orchestrator.py`（--consumer/--no-metrics/--with-audit）+ compose `orchestrator` profile；内嵌/独立/混合三形态
 - 🆕 生产灰度修复：compose grafana 挂载 provisioning（数据源/告警/仪表盘随启动加载）+ Loki local-config 补建（原挂载目标缺失）+ 灰度验证脚本（Redis→shipper→Loki 端到端 + Grafana 告警联系人路由绑定，实环境三连全通）
+- 🆕 NAS 生产栈全套灰度：nas compose 补 agent-worker（5 编队）+ orchestrator profile + 网关 A2A 全 env（A2A_AUDIT_LOKI_ENABLED 缺省开闸）；监控 compose 补 Loki（named volume）；容器入口 app.worker_entry / app.orchestrator_entry；deploy 脚本补 core/agents 同步 + NAS 布局 Dockerfile（修复部署链断点：Worker 依赖原先不在部署目录）
+- 🆕 协同事务价格表 PG 持久化：004_task_prices.sql 迁移 + load_task_prices_from_db 启动加载（表覆盖内存）+ upsert_task_price_persisted 双写（DB 不可达降级仅内存，响应 persisted 标志）
+- 🆕 A2A 开放 API 契约：docs/架构与部署/A2A开放API契约.md（端点/认证/计费/错误码/可靠性语义）+ 三端点 OpenAPI tags/summary/description
 - 🆕 A2A 测试体系 `tests/test_a2a_{protocol,worker,result}.py`（68 integration 用例）+ conftest 顶层统一密钥注入（收集顺序加固：测试文件只读不写，合跑 9 failed → 全绿）
 
 ### 变更 (Changed)

@@ -46,8 +46,12 @@ echo ""
 # ---------- 步骤 1: 同步最新代码 ----------
 log "步骤 1/5: 同步最新网关代码"
 rsync -a --delete "$APP_SRC/" "$NAS_DEPLOY_DIR/app/"
+# A2A Worker/编排器依赖：AI Family Agent 独立包（镜像内 core.agents 可导入）
+rsync -a --delete "$NAS_CODE_DIR/core/agents/" "$NAS_DEPLOY_DIR/core/agents/"
 cp "$REQ_SRC" "$NAS_DEPLOY_DIR/requirements.txt"
-ok "代码已同步: $NAS_DEPLOY_DIR/app/"
+# NAS 布局专用 Dockerfile（COPY app/ 而非 core/api/）；deploy/nas 改动随发版生效
+cp "$NAS_CODE_DIR/deploy/nas/Dockerfile" "$NAS_DEPLOY_DIR/Dockerfile"
+ok "代码已同步: $NAS_DEPLOY_DIR/app/ + core/agents/ + Dockerfile"
 
 # ---------- 步骤 2: 确保 .env 就绪 ----------
 log "步骤 2/5: 检查环境变量文件"

@@ -171,7 +171,13 @@ async def agent_heartbeat(agent_id: str):
     return {"agent_id": agent_id, "status": "online"}
 
 
-@router.post("/v1/agent/a2a/tasks", status_code=202)
+@router.post(
+    "/v1/agent/a2a/tasks",
+    status_code=202,
+    tags=["A2A 协同事务"],
+    summary="异步任务投递（202 即返）",
+    description="外部契约见《docs/架构与部署/A2A开放API契约.md》；X-A2A-Cost 响应头为计费成本。",
+)
 async def submit_a2a_task(req: A2ATaskRequest, request: Request, response: Response):
     """提交单 Agent A2A 任务：信封投递至目标任务流（202 即返，消费者组异步认领）。
 
@@ -215,7 +221,12 @@ class A2ASyncTaskRequest(A2ATaskRequest):
     timeout_seconds: int = Field(30, ge=1, le=120, description="结果等待超时（秒）")
 
 
-@router.post("/v1/agent/a2a/tasks/sync")
+@router.post(
+    "/v1/agent/a2a/tasks/sync",
+    tags=["A2A 协同事务"],
+    summary="同步闭环（投递 + 等待回执）",
+    description="超时返回 status=timeout（任务不撤回照常消费）；超时也计费（任务已入队）。",
+)
 async def submit_a2a_task_sync(req: A2ASyncTaskRequest, request: Request, response: Response):
     """提交单 Agent 任务并同步等待结果回执（编排器聚合 stream:agent:result:callback）。
 
@@ -278,7 +289,12 @@ class A2AOrchestrationRequest(BaseModel):
     )
 
 
-@router.post("/v1/agent/a2a/orchestrate")
+@router.post(
+    "/v1/agent/a2a/orchestrate",
+    tags=["A2A 协同事务"],
+    summary="多 Agent 扇出编排（capability 全量 + wait_all 等齐）",
+    description="X-A2A-Cost = 任务单价 × 扇出数；timeout 响应含已完成部分 results。",
+)
 async def orchestrate_a2a_tasks(req: A2AOrchestrationRequest, request: Request, response: Response):
     """多 Agent 扇出编排：按 capability 发现在线 Agent 全量投递，wait_all 等齐回执。
 
