@@ -1,0 +1,40 @@
+# NAS 栈运维与灾后恢复手册（OPS-RECOVERY）
+
+> 2026-09-27 建档。依据：09-26/27 TOS 批量整理 + NAS 整机重启事故复盘（《YYC3-数据库统一架构-2026-09》17 号）。
+
+## 三条平台铁律（TOS NAS）
+
+1. **TOS 容器清理跟随 compose labels**——TOS 侧应用管理操作可能连带删除同项目容器与 compose 文件。独立服务（非 0379 栈）用 `docker run` 直建（如 gitbucket），不给 TOS 关联句柄。
+2. **手工 compose 必带 `--project-directory`**——漏掉则 `.env` 不加载，`REDIS_PASSWORD` 等展开为空导致 redis/postgres 启动 FATAL。
+3. **开机自启只有两条路**：`/usr/local/etc/rc.d/*.sh`（当前 S99postgres.sh 覆盖 PG14+PG15×2+Redis8）与 TOS 注册应用（/etc/init.d）。自建 init.d 目录无效。
+
+## 标准命令
+
+```bash
+# docker 入口（宿主 docker CLI 无权限时）
+D=/Volume3/@apps/DockerEngine/dockerd/bin/docker
+
+# 核心栈（重建/升级）
+cd /Volume2/yyc3-33
+$D compose -p yyc3-33 --project-directory /Volume2/yyc3-33 -f deploy/nas/docker-compose.nas.yml up -d
+$D compose -p yyc3-33 --project-directory /Volume2/yyc3-33 -f deploy/nas/docker-compose.monitoring.yml up -d
+
+# 冒烟
+curl -s http://192.168.3.45:8000/healthz     # {"status":"alive"...}
+bash deploy/nas/smoke-test.sh                # 全量冒烟
+```
+
+## 灾后恢复序列（容器全失场景）
+
+数据均在宿主 bind 卷，零丢失前提：
+
+1. `cd /Volume2/yyc3-33 && git status`（工作树应为 clean 或仅 auto-deploy 运行痕迹）
+2. 缺镜像先补：`$D pull docker.m.daocloud.io/library/<img> && $D tag ... <img>`（DockerHub 直拉超时）
+3. 按"标准命令"重建核心栈 + 监控栈
+4. 数据库层：`bash /usr/local/etc/rc.d/S99postgres.sh`（幂等）
+5. 验证：`/healthz` 200 + `pg_stat_activity` + compose ps 全 healthy
+6. 全家巡检：`bash /Volume2/@apps/yyc3_pg.sh status-all`（三实例+Redis）
+
+## 端口契约（勿回退到 0.0.0.0）
+
+gateway 8000 / grafana 3000 / gitbucket 8080·29418 —— 均绑 `192.168.3.45` + `100.65.172.88`（LAN+Tailscale）。
