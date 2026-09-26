@@ -15,7 +15,7 @@ REMOTE=$(git rev-parse origin/main 2>/dev/null)
 # ── 路径过滤（2026-09-26）：纯文档/CI 变更不触发重建 ──
 # 命中规则的文件全部出现在本次 diff 中时，仅快进 HEAD 并记录 SKIP。
 # 依据：09-24 COMPOSE_FAIL 复盘——docs 提交触发无谓 --build，徒增 NAS OOM 风险。
-CHANGED=$(git diff --name-only "$LOCAL" "$REMOTE" 2>/dev/null)
+CHANGED=$(git -c core.quotePath=false diff --name-only "$LOCAL" "$REMOTE" 2>/dev/null)
 DEPLOY_NEEDED=0
 if [ -n "$CHANGED" ]; then
   while IFS= read -r f; do
