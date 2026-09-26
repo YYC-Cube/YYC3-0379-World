@@ -58,6 +58,8 @@ language: zh-CN
 - 🆕 协同事务价格表 PG 持久化：004_task_prices.sql 迁移 + load_task_prices_from_db 启动加载（表覆盖内存）+ upsert_task_price_persisted 双写（DB 不可达降级仅内存，响应 persisted 标志）
 - 🆕 A2A 开放 API 契约：docs/架构与部署/A2A开放API契约.md（端点/认证/计费/错误码/可靠性语义）+ 三端点 OpenAPI tags/summary/description
 - 🆕 A2A 测试体系 `tests/test_a2a_{protocol,worker,result}.py`（68 integration 用例）+ conftest 顶层统一密钥注入（收集顺序加固：测试文件只读不写，合跑 9 failed → 全绿）
+- 🆕 Bearer OpenAI 生态兼容：`Authorization: Bearer <sk-*/vk-*>` 按 API Key 链认证（JWT 三段式无前缀零冲突），解锁 OpenAI SDK 标准 Bearer 姿势接入 vk 计费链；`tests/test_auth_bearer_compat.py` 5 用例
+- 🆕 NAS 数据库拓扑对齐（2026-09-27）：OPS-RECOVERY 新增数据库拓扑节（kb 主库 :5434 / 家族备库 :5433 只读 / PG14 退役 / 系统 PG13 勿连红线）+ 系统上下文/变量清单/设备全量信息三文档同步
 
 ### 变更 (Changed)
 
@@ -69,6 +71,9 @@ language: zh-CN
 
 ### 修复 (Fixed)
 
+- 🔧 生产 403 遗留定案（下轮 TOP1）：根因 = API Key 走 `Authorization: Bearer` 头被按 JWT 解析必然失败（键值无误、中间件静态链完好，X-API-Key 实测 200）+ `virtual_keys` 表 0 行（vk 链无键可命中）；由 Bearer 兼容增强修复
+- 🔧 `yyc3_db_backup.sh` PG14 备份链路拆除（原 127.0.0.1:5432 现为系统 PG13，勿动勿连红线——防误连）
+- 🔧 `setup-macmax-replica.sh` 退役标注（源端 NAS Docker PG :54320 已随 PG14 下线，现行家族备库 NAS:5433 就位）
 - 🔧 `redis.exceptions.ResponseError` 改 `from redis.exceptions import ResponseError` 直接导入（test_a2a_worker / test_a2a_result 两处；消除 IDE 类型桩「exceptions 不是 redis 已知属性」误报）
 - 🔧 覆盖率缺口补齐：deepseek 24→87% / openai 27→83% / ollama 53→84% / zhipu 13→86% / key_guard 30→100%
 - 🔧 README 版本徽章漂移修复（v9 提交意外回退 v2.2.0 → 恢复 v2.3.0，由 release 门禁逻辑在验证时发现）

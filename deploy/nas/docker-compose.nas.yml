@@ -14,7 +14,9 @@ services:
       POSTGRES_DB: ${DB_NAME:-yyc3_gpt}
     volumes:
       - ./postgres/pgdata:/var/lib/postgresql/data
-    # 宿主 5432 被 PG13(媒体)/PG14 占用，PG15 走容器网络内 5432（Gateway 服务名直连）
+    # 宿主 5432 仅系统 PG13(127.0.0.1，勿动勿连)；PG14 已退役 2026-09-27。
+    # 宿主可用库：kb 主库 :5434(yyc3_kb 可写) / 家族备库 :5433(只读镜像)。
+    # 本栈 PG15 走容器网络内 5432（Gateway 服务名直连，不经宿主端口）
     restart: unless-stopped
     networks:
       - yyc3-network

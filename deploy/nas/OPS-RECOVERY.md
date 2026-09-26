@@ -6,7 +6,7 @@
 
 1. **TOS 容器清理跟随 compose labels**——TOS 侧应用管理操作可能连带删除同项目容器与 compose 文件。独立服务（非 0379 栈）用 `docker run` 直建（如 gitbucket），不给 TOS 关联句柄。
 2. **手工 compose 必带 `--project-directory`**——漏掉则 `.env` 不加载，`REDIS_PASSWORD` 等展开为空导致 redis/postgres 启动 FATAL。
-3. **开机自启只有两条路**：`/usr/local/etc/rc.d/*.sh`（当前 S99postgres.sh 覆盖 PG14+PG15×2+Redis8）与 TOS 注册应用（/etc/init.d）。自建 init.d 目录无效。
+3. **开机自启只有两条路**：`/usr/local/etc/rc.d/*.sh`（当前 S99postgres.sh 覆盖 PG15 双实例 5433/5434 + Redis8 :6399 + frpc 隧道；PG14 okm 已于 2026-09-27 退役，勿加回）与 TOS 注册应用（/etc/init.d）。自建 init.d 目录无效。
 
 ## 标准命令
 
@@ -38,3 +38,15 @@ bash deploy/nas/smoke-test.sh                # 全量冒烟
 ## 端口契约（勿回退到 0.0.0.0）
 
 gateway 8000 / grafana 3000 / gitbucket 8080·29418 —— 均绑 `192.168.3.45` + `100.65.172.88`（LAN+Tailscale）。
+
+## 数据库拓扑（2026-09-27 更新）
+
+| 实例 | 端口 | 用户 | 可用库 | 连接串（本机/家族设备） | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| kb 主库（生产） | 5434 | postgres | yyc3_kb | `postgresql://postgres@192.168.3.45:5434/yyc3_kb` | ✅ 实测可写（197,558 行） |
+| 家族备库（只读） | 5433 | yanyu | Mac 全部 13 业务库镜像 | `postgresql://yanyu@192.168.3.45:5433/<库名>` | ✅ 只读，复制 lag=0 |
+| PG14 | 5432 | — | — | 已退役（连接必失败） | ⚰️ 09-27 退役（终末备份 `/Volume1/retired-pg14-20260927.tar.gz`） |
+| 系统 PG13 | 5432 | — | — | 仅 NAS 本机 127.0.0.1 | 🚨 **勿动勿连**（红线） |
+
+> ⚠️ 网关栈数据库 = compose 容器内 PG15（服务名 `postgres` 直连），与宿主上表实例互不相干；
+> `.env` 的 `DB_HOST=127.0.0.1`/`DB_PORT=5432` 为历史残留（compose 字面量覆盖，不生效），勿据此连宿主库。

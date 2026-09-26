@@ -18,35 +18,9 @@ cleanup_old_backups() {
 }
 
 backup_nas_pg14_docker() {
-    local DBS=("yyc3_mcp" "yyc3_core" "yyc3_gpt" "yyc3_ai" "yyc3_audit")
-    
-    for DB_NAME in "${DBS[@]}"; do
-        local FILE="${BACKUP_DIR}/nas_pg14_${DB_NAME}_${TIMESTAMP}.sql.gz"
-        
-        log "📦 备份 NAS PG14: ${DB_NAME}"
-        
-        local TABLE_CHECK=$(${DOCKER} run --rm --network host postgres:14-alpine \
-            psql -h 127.0.0.1 -p 5432 -U postgres -d "${DB_NAME}" -tAc \
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d '[:space:]')
-        
-        if [ "${TABLE_CHECK}" = "0" ] || [ -z "${TABLE_CHECK}" ]; then
-            log "⏭️ 跳过空库: ${DB_NAME}"
-            continue
-        fi
-        
-        if ${DOCKER} run --rm --network host -v "${BACKUP_DIR}:/backup" \
-            postgres:14-alpine pg_dump \
-            -h 127.0.0.1 -p 5432 -U postgres \
-            -d "${DB_NAME}" --no-owner --no-privileges \
-            2>/dev/null | gzip > "${FILE}"; then
-            
-            local SIZE=$(du -h "${FILE}" | cut -f1)
-            log "✅ 备份成功: ${DB_NAME} (${SIZE})"
-        else
-            log "⚠️ 备份跳过: ${DB_NAME}"
-            rm -f "${FILE}"
-        fi
-    done
+    # ⚰️ PG14 okm 已退役（2026-09-27，终末备份 /Volume1/retired-pg14-20260927.tar.gz）
+    # 现网宿主 127.0.0.1:5432 为系统 PG13（勿动勿连红线）——原 pg_dump 链路拆除，仅留空转防误连
+    log "⏭️ 跳过 NAS PG14（已退役 2026-09-27；宿主 5432 为系统 PG13 勿连）"
 }
 
 backup_ecs_pg() {

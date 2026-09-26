@@ -170,6 +170,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     认证方式：
     1. JWT Token: Authorization: Bearer <token>
     2. API Key: X-API-Key: <api_key>
+    3. OpenAI 生态兼容: Authorization: Bearer <sk-*/vk-*> → 按 API Key 链认证
 
     优先级：JWT > API Key
     """
@@ -313,6 +314,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             (是否有认证信息, 认证结果)
         """
         jwt_token = self._extract_jwt_token(request)
+        # OpenAI 生态兼容：Bearer 携带 sk-/vk- 前缀密钥按 API Key 认证
+        # （JWT 为三段式 base64 且无业务前缀，零冲突；源自生产 403 复盘 2026-09-27）
+        if jwt_token and jwt_token.startswith(("sk-", "vk-")):
+            return await self._authenticate_vk_or_static(request, jwt_token)
         if jwt_token:
             payload = verify_jwt_token(jwt_token)
             if payload:

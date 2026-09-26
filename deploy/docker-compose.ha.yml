@@ -48,7 +48,8 @@ services:
       - NODE_ID=yyc3-45
       - NODE_ROLE=backup
       - REDIS_URL=redis://yyc3-45:6399
-      - DATABASE_URL=postgresql://yyc3:yyc3_password@yyc3-45:5432/yyc3_db
+      # 2026-09-27 对齐：NAS 宿主库 kb 主库 :5434(yyc3_kb 可写)；PG14 :5432 已退役；5433 仅只读镜像
+      - DATABASE_URL=postgresql://postgres@yyc3-45:5434/yyc3_kb
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - API_KEYS=${API_KEYS}
     volumes:
