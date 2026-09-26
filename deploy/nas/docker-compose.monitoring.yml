@@ -38,7 +38,9 @@ services:
       - grafana-dashboards:/etc/grafana/dashboards
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      # 2026-09-26 安全收紧：仅绑 LAN + Tailscale IP，公网不可直连
+      - "192.168.3.45:3000:3000"
+      - "100.65.172.88:3000:3000"
     networks:
       - yyc3-network
     depends_on:
