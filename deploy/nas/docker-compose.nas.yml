@@ -79,7 +79,9 @@ services:
       - A2A_AUDIT_LOKI_ENABLED=${A2A_AUDIT_LOKI_ENABLED:-true}
       - LOKI_URL=${LOKI_URL:-http://yyc3-loki:3100}
     ports:
-      - "8000:8000"
+      # 2026-09-26 安全收紧：仅绑 LAN + Tailscale IP（ECS 反代可达），公网不可直连
+      - "192.168.3.45:8000:8000"
+      - "100.65.172.88:8000:8000"
     volumes:
       - /Volume1/yyc3_hd/video_tasks:/data/video_archive
     depends_on:
