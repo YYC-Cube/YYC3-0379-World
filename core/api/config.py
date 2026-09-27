@@ -53,6 +53,10 @@ class Settings(BaseSettings):
 
     prometheus_multiproc_dir: str = "/tmp/prometheus_multiproc"
 
+    # ── 运维知识检索（/v1/rag/ops：chroma 四库 + BM25+RRF）──
+    # 端点见 services/ops_rag.py 字面量注册表；此处仅配置索引落盘路径
+    ops_rag_bm25_index_path: str = "data/ops_bm25_index.json"
+
     # 旧拓扑遗留字段（历史默认 10.200.0.2 已废弃，保留字段兼容 env）
     host_ip: str = ""
     host_ip_suffix: str = "2"

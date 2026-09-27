@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.db_access import get_db
 from app.services.rag_service import rag_service
+from app.services.ops_rag import ops_rag_service
 
 router = APIRouter(prefix="/v1/rag")
 
@@ -210,3 +211,55 @@ async def ask_with_context(
         ],
         "response_time_ms": response_time_ms,
     }
+
+
+# ════════════════════════════════════════════════════════════
+# /v1/rag/ops —— 运维知识库检索（chroma 四库 + BM25+RRF 混合）
+# 立项：2026-09-27 Expert 会话批准；提案与评测基线见
+#   YYC3-DGX-Spark/YYC3-RAG-端点提案-issue-2026-09-26.md
+# 评测（golden set v2 · 40 题 Top3）：online 31% / premium 45% / main 55%
+# ════════════════════════════════════════════════════════════
+
+
+class OpsSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="查询文本")
+    top_k: int = Field(default=5, ge=1, le=20, description="返回结果数量")
+    library: str = Field(default="main", description="库：main(默认)|premium|prompts|online")
+    hybrid: bool = Field(default=False, description="BM25+RRF 混合检索（仅 main 库）")
+
+
+class OpsSearchResponse(BaseModel):
+    query: str
+    library: str
+    embedded_by: str
+    hybrid: bool
+    notes: List[str]
+    results: List[dict]
+
+
+@router.post("/ops", response_model=OpsSearchResponse, summary="运维知识库检索（四库+可选混合）")
+async def ops_search(request: OpsSearchRequest):
+    """
+    运维知识检索：chroma 向量（main 430 块主库为默认）+ 可选 BM25 词面（RRF 融合）。
+
+    - 降级链：8B 嵌入离线 → 自动降级 online(0.6b)，notes 留痕；
+    - hybrid=true 且库为 main 时启用混合检索（BM25 补事实型/关键词型问题）；
+    - 索引重建走 POST /v1/rag/ops/reindex（管理动作）。
+    """
+    import time as _t
+
+    t0 = _t.perf_counter()
+    result = await ops_rag_service.search(
+        query=request.query,
+        top_k=request.top_k,
+        library=request.library,
+        hybrid=request.hybrid,
+    )
+    result["elapsed_ms"] = int((_t.perf_counter() - t0) * 1000)
+    return result
+
+
+@router.post("/ops/reindex", summary="重建 BM25 索引（管理动作）")
+async def ops_reindex():
+    """从 chroma 主库全量拉取重建 BM25 索引（主库更新后调用）"""
+    return await ops_rag_service.reindex_bm25()
