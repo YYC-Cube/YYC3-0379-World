@@ -28,6 +28,7 @@ import psutil
 
 from app.api import (
     a2a,
+    admin_upstreams,
     agent,
     chat,
     documents,
@@ -245,6 +246,7 @@ app.include_router(video_tasks.router, tags=["🎬 视频任务(MiniMax-H3异步
 from app.services.admin_ui import router as admin_ui_router  # noqa: E402
 
 app.include_router(admin_ui_router, tags=["📊 管理看板"])
+app.include_router(admin_upstreams.router, prefix="/v1/admin", tags=["🛠 上游池管理"])
 
 
 @app.get("/health")

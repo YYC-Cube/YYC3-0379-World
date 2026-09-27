@@ -88,6 +88,8 @@ services:
       - "100.65.172.88:8000:8000"
     volumes:
       - /Volume1/yyc3_hd/video_tasks:/data/video_archive
+      # 上游池写通道（2026-09-27 第 3 步）：CRUD 双写宿主 .env（真源），registry 热重载零重启
+      - /Volume2/yyc3-33/.env:/run/secrets/gateway.env
     depends_on:
       postgres:
         condition: service_healthy
