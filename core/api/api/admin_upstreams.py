@@ -75,7 +75,7 @@ def _reload_registry():
     get_registry().load_from_env()
 
 
-@router.get("/v1/admin/upstreams")
+@router.get("/upstreams")
 async def upstreams_list():
     try:
         _reload_registry()
@@ -85,7 +85,7 @@ async def upstreams_list():
     return {"upstreams": get_registry().snapshot(), "count": len(_read_pool())}
 
 
-@router.post("/v1/admin/upstreams")
+@router.post("/upstreams")
 async def upstreams_create(u: UpstreamIn):
     pool = _read_pool()
     if any(x.get("name") == u.name for x in pool):
@@ -97,7 +97,7 @@ async def upstreams_create(u: UpstreamIn):
     return {"created": u.name, "count": len(pool)}
 
 
-@router.put("/v1/admin/upstreams/{name}")
+@router.put("/upstreams/{name}")
 async def upstreams_update(name: str, u: UpstreamIn):
     pool = _read_pool()
     for i, x in enumerate(pool):
@@ -110,7 +110,7 @@ async def upstreams_update(name: str, u: UpstreamIn):
     raise HTTPException(404, f"上游不存在: {name}")
 
 
-@router.delete("/v1/admin/upstreams/{name}")
+@router.delete("/upstreams/{name}")
 async def upstreams_delete(name: str):
     pool = _read_pool()
     remaining = [x for x in pool if x.get("name") != name]
