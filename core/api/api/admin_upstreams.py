@@ -71,8 +71,8 @@ class UpstreamIn(BaseModel):
 
 
 def _reload_registry():
-    from app.services.upstream_registry import get_registry
-    get_registry().load_from_env()
+    from app.services.upstream_registry import registry
+    registry.load_from_env()
 
 
 @router.get("/upstreams")
@@ -81,8 +81,8 @@ async def upstreams_list():
         _reload_registry()
     except Exception as e:
         logger.warning(f"热重载失败（返回 env 版本）: {e}")
-    from app.services.upstream_registry import get_registry
-    return {"upstreams": get_registry().snapshot(), "count": len(_read_pool())}
+    from app.services.upstream_registry import registry
+    return {"upstreams": registry.snapshot(), "count": len(_read_pool())}
 
 
 @router.post("/upstreams")
