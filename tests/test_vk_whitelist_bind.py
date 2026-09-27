@@ -107,3 +107,26 @@ def test_vk_create_binds_json_str_on_sqlite(monkeypatch):
     asyncio.run(vkm.vk_create(name="t", model_whitelist=["m1"]))
     assert _captured and isinstance(_captured[0], str)
     assert json.loads(_captured[0]) == ["m1"]
+
+
+def test_flush_batch_updates_vk_spent_usd(monkeypatch):
+    """③ 记账落库必须增量 UPDATE virtual_keys.spent_usd（否则重启后预算闸门从 PG 读旧值）"""
+    from app import db as app_db
+
+    stmts: list = []
+
+    class _CapSession(_Session):
+        async def execute(self, stmt, params=None):
+            stmts.append((str(stmt), params))
+            return _Result()
+
+    monkeypatch.setattr(app_db, "async_session", lambda: _CapSession())
+    asyncio.run(
+        vkm.vk_manager._flush_batch(
+            [{"key_id": "kid-1", "cost_usd": 0.002, "model": "a2a", "capability": "agent"}]
+        )
+    )
+    updates = [s for s, _ in stmts if "UPDATE virtual_keys" in s and "spent_usd" in s]
+    assert updates, "flush 必须含 spent_usd 增量 UPDATE"
+    upd_params = next(p for s, p in stmts if "UPDATE virtual_keys" in s)
+    assert upd_params == {"cost": 0.002, "kid": "kid-1"}

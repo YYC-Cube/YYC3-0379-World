@@ -292,6 +292,20 @@ class VirtualKeyManager:
                                 rec["spent_usd"] = float(rec.get("spent_usd") or 0) + float(
                                     b.get("cost_usd") or 0
                                 )
+                # DB 态预算增量同步（对齐 docstring 语义；否则重启后预算闸门从 PG 读旧值失守）
+                for b in batch:
+                    key_id = b.get("key_id")
+                    if key_id:
+                        await session.execute(
+                            text(
+                                "UPDATE virtual_keys SET spent_usd = spent_usd + :cost "
+                                "WHERE id = :kid"
+                            ),
+                            {
+                                "cost": float(b.get("cost_usd") or 0),
+                                "kid": key_id,
+                            },
+                        )
                 await session.commit()
         except Exception as e:
             logger.warning(f"spend 批量落库失败（回灌队首重试）: {e}")

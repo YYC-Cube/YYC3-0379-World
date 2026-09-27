@@ -72,6 +72,7 @@ language: zh-CN
 ### 修复 (Fixed)
 
 - 🔧 生产 403 遗留定案（下轮 TOP1）：根因 = API Key 走 `Authorization: Bearer` 头被按 JWT 解析必然失败（键值无误、中间件静态链完好，X-API-Key 实测 200）+ `virtual_keys` 表 0 行（vk 链无键可命中）；由 Bearer 兼容增强修复
+- 🔧 vk 创建/更新 PG 全阻修复：`model_whitelist` JSON 串误绑 `TEXT[]` 列（asyncpg DataError）→ PG 方言直绑 list、sqlite 兜底保持 JSON 串；`tests/test_vk_whitelist_bind.py` 3 用例回归锚
 - 🔧 `yyc3_db_backup.sh` PG14 备份链路拆除（原 127.0.0.1:5432 现为系统 PG13，勿动勿连红线——防误连）
 - 🔧 `setup-macmax-replica.sh` 退役标注（源端 NAS Docker PG :54320 已随 PG14 下线，现行家族备库 NAS:5433 就位）
 - 🔧 `redis.exceptions.ResponseError` 改 `from redis.exceptions import ResponseError` 直接导入（test_a2a_worker / test_a2a_result 两处；消除 IDE 类型桩「exceptions 不是 redis 已知属性」误报）
