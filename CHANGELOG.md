@@ -60,6 +60,7 @@ language: zh-CN
 - 🆕 A2A 测试体系 `tests/test_a2a_{protocol,worker,result}.py`（68 integration 用例）+ conftest 顶层统一密钥注入（收集顺序加固：测试文件只读不写，合跑 9 failed → 全绿）
 - 🆕 Bearer OpenAI 生态兼容：`Authorization: Bearer <sk-*/vk-*>` 按 API Key 链认证（JWT 三段式无前缀零冲突），解锁 OpenAI SDK 标准 Bearer 姿势接入 vk 计费链；`tests/test_auth_bearer_compat.py` 5 用例
 - 🆕 NAS 数据库拓扑对齐（2026-09-27）：OPS-RECOVERY 新增数据库拓扑节（kb 主库 :5434 / 家族备库 :5433 只读 / PG14 退役 / 系统 PG13 勿连红线）+ 系统上下文/变量清单/设备全量信息三文档同步
+- 🆕 模型接入规范文档体系整合：原两份平行规范（模型接入 v2.3.0 / Agent 注册 MRS-2026，重复 40% 且细节冲突）拆分为 `docs/模型接入与注册/` 六文档——现状基线（01）/Registry 目标架构（02）/热切换版本管理（03）/Agent 注册（04，A2A 生产契约消除双轨）/监控 Runbook（05）+ README 索引（实现状态总览表）；四处幽灵脚本显式标注规划、统一设备命名/心跳 TTL/元数据载体口径；原文档归档 `docs/archive/`
 
 ### 变更 (Changed)
 
