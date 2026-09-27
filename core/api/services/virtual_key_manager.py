@@ -341,8 +341,14 @@ async def vk_create(
 
     from app.db import async_session
 
-    # 跨方言（PG/sqlite 本地 e2e）：白名单 list 由 JSON 编码器序列化为字符串绑定
+    # 跨方言（PG/sqlite 本地 e2e）：PG TEXT[] 直绑 list（asyncpg 原生映射，JSON 串会 DataError）；
+    # sqlite 兜底表 model_whitelist 为 TEXT，存 JSON 串（读取侧 json.loads 兼容两种形态）
     async with async_session() as session:
+        wl_bind = (
+            json.dumps(model_whitelist or [])
+            if session.bind.dialect.name == "sqlite"
+            else list(model_whitelist or [])
+        )
         await session.execute(
             text(
                 "INSERT INTO virtual_keys (id, key_hash, name, owner, model_whitelist, "
@@ -355,7 +361,7 @@ async def vk_create(
                 "h": rec["key_hash"],
                 "name": name,
                 "owner": owner,
-                "wl": json.dumps(model_whitelist or []),
+                "wl": wl_bind,
                 "budget": rec["monthly_budget_usd"],
                 "tpm": rec["rate_limit_tpm"],
                 "expires_at": expires_at,
@@ -455,7 +461,8 @@ async def vk_update_fields(
         params["tpm"] = int(rate_limit_tpm)
     if model_whitelist is not None:
         sets.append("model_whitelist = :wl")
-        params["wl"] = json.dumps(model_whitelist)
+        # PG TEXT[] 直绑 list；sqlite 兜底在 session 内改绑 JSON 串（对齐 vk_create 口径）
+        params["wl"] = list(model_whitelist)
     if not sets:
         return False
     from sqlalchemy import text
@@ -463,6 +470,8 @@ async def vk_update_fields(
     from app.db import async_session
 
     async with async_session() as session:
+        if model_whitelist is not None and session.bind.dialect.name == "sqlite":
+            params["wl"] = json.dumps(model_whitelist)
         result = await session.execute(
             text(f"UPDATE virtual_keys SET {', '.join(sets)} WHERE id = :id"), params
         )
