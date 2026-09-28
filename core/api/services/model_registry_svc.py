@@ -319,7 +319,7 @@ async def register_model(payload: dict, actor: str = "registry-api") -> dict:
         "display_name": display_name,
         "backend_type": str(backend_type),
         "backend_name": str(backend_name),
-        "enabled": 1 if payload.get("enabled", True) else 0,
+        "enabled": bool(payload.get("enabled", True)),  # PG boolean 列须绑 bool（整数会炸）
         "version": str(version),
     }
     for key in _WRITABLE - set(fields):
@@ -407,7 +407,10 @@ async def list_models(enabled_only: bool = False, model_type: Optional[str] = No
     sql = f"SELECT {_COLS} FROM model_registry"
     conds, params = [], {}
     if enabled_only:
-        conds.append("enabled = 1")
+        # PG boolean 列不接受整数比较（sqlite 习惯的 enabled=1 会 UndefinedFunctionError）
+        # 参数化 bool 绑定两端通吃：asyncpg→boolean / aiosqlite→integer(0/1)
+        conds.append("enabled = :en")
+        params["en"] = True
     if model_type:
         conds.append("model_type = :mt")
         params["mt"] = model_type
