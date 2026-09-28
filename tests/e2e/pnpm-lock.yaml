@@ -26,7 +26,7 @@ importers:
         specifier: ^1.63.0
         version: 1.63.0
       '@types/node':
-        specifier: ^26.4.0
+        specifier: ^26.6.2
         version: 26.6.4
       cypress:
         specifier: ^15.21.1
