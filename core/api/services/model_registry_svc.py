@@ -568,6 +568,8 @@ async def list_versions(model_id: str) -> List[dict]:
 async def heartbeat(model_id: str, status: str = "healthy", **runtime: Any) -> bool:
     """心跳上报：upsert 心跳表 + 主表 last_heartbeat_at/health_status 刷新。
 
+    自愈回升（2026-09-28 pkill 竞态事故复盘）：心跳到达 = 服务在线承接 →
+    state=offline 自动回升 ready（draining 排空态除外——排空是运维意图，不被心跳覆盖）。
     runtime 附带运行时指标（gpu_utilization/active_requests 等）存心跳表 metadata。
     """
     from sqlalchemy import text
@@ -577,6 +579,7 @@ async def heartbeat(model_id: str, status: str = "healthy", **runtime: Any) -> b
     existing = await get_model(model_id)
     if existing is None:
         return False
+    was_offline = existing.get("state") == "offline"
     now_expr = "CURRENT_TIMESTAMP"
     async with async_session() as session:
         await session.execute(
@@ -591,11 +594,21 @@ async def heartbeat(model_id: str, status: str = "healthy", **runtime: Any) -> b
         await session.execute(
             text(
                 "UPDATE model_registry SET last_heartbeat_at = CURRENT_TIMESTAMP, "
-                "health_status = :hs WHERE id = :id"
+                "health_status = :hs, "
+                "state = CASE WHEN state = 'offline' THEN 'ready' ELSE state END "
+                "WHERE id = :id"
             ),
             {"hs": "degraded" if status == "degraded" else "healthy", "id": model_id},
         )
         await session.commit()
+    if was_offline:
+        # 回升事件 → Phase B 重合并入池（否则池需等下一事件/重启，自愈闭环断点）
+        await _emit_event(
+            "updated",
+            model_id,
+            existing.get("version"),
+            {"self_healed": "offline→ready by heartbeat"},
+        )
     return True
 
 

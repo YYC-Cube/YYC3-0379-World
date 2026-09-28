@@ -123,6 +123,34 @@ class TestHeartbeatAndTtl:
         assert health["runtime"]["gpu_utilization"] == 0.7
         assert health["heartbeat_age_seconds"] < 5
 
+    def test_heartbeat_self_heals_offline_to_ready(self, sqlite_db):
+        """自愈回升（09-28 pkill 竞态事故复盘）：offline + 心跳到达 → ready + 事件。"""
+        _register()
+        asyncio.run(svc.update_model("qwen3.8-27b", {"state": "offline"}))
+        events_before = len(asyncio.run(svc.recent_events()))
+        assert asyncio.run(svc.heartbeat("qwen3.8-27b")) is True
+        model = asyncio.run(svc.get_model("qwen3.8-27b"))
+        assert model["state"] == "ready"  # 自动回升
+        assert model["last_heartbeat_at"] is not None
+        events = asyncio.run(svc.recent_events())
+        assert len(events) == events_before + 1
+        assert events[-1]["payload"].get("self_healed") == "offline→ready by heartbeat"
+
+    def test_heartbeat_keeps_draining_state(self, sqlite_db):
+        """draining（排空运维意图）不被心跳回升。"""
+        _register()
+        asyncio.run(svc.update_model("qwen3.8-27b", {"state": "draining"}))
+        asyncio.run(svc.heartbeat("qwen3.8-27b"))
+        assert asyncio.run(svc.get_model("qwen3.8-27b"))["state"] == "draining"
+
+    def test_heartbeat_no_event_when_already_ready(self, sqlite_db):
+        """steady 态心跳不发事件（防每 30s 刷屏）。"""
+        _register()
+        asyncio.run(svc.update_model("qwen3.8-27b", {"state": "ready"}))
+        before = len(asyncio.run(svc.recent_events()))
+        asyncio.run(svc.heartbeat("qwen3.8-27b"))
+        assert len(asyncio.run(svc.recent_events())) == before
+
     def test_heartbeat_unknown_model(self, sqlite_db):
         assert asyncio.run(svc.heartbeat("nope")) is False
 
