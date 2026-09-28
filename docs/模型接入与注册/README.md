@@ -40,6 +40,7 @@ category: spec
 | Registry 五表 Schema（005 迁移：主表增量列+版本/心跳/事件/审计四新表） | ✅ 已落地（09-28） | `core/database/init/005_model_registry.sql` |
 | Registry 端点（`/registry/v1/*` 12 端点 + SSE 事件流） | ✅ 已落地（09-28，REGISTRY_ENABLED 灰度开关） | `core/api/api/model_registry.py` + `services/model_registry_svc.py` |
 | Registry 双通道合并（Pull `merge_registry_upstreams` + Push SSE 订阅源） | ✅ 已落地（09-28） | `upstream_registry.py`（`merge_registry_upstreams`） |
+| **Phase B 增量合并**（`yyc3:registry:events` 事件驱动运行时入池/摘除，免重启） | ✅ 已落地（09-28，含全量对账：状态迁移/TTL 摘除同步清池） | `model_registry_svc.py`（`_handle_registry_event`/`start_merge_consumer`） |
 | 心跳 TTL（30s 上报 / 90s degraded / 180s unreachable / 300s 摘除） | ✅ 已落地（09-28） | `model_registry_svc.py`（`heartbeat`/`_parse_row`） |
 | Agent 管理演进层（GET 列表含离线 / PATCH 扩展元数据 / DELETE + 审计） | ✅ 已落地（09-28） | `core/api/api/a2a.py` 演进层区 |
 | MCP 工具声明（tools 字段随 Agent Card PATCH 维护） | ✅ 已落地（09-28，白名单字段） | `a2a_protocol.py`（`_registry_update_card`） |
@@ -50,7 +51,7 @@ category: spec
 | A2A vk 计费门控（白名单/预算/TPM + X-A2A-Cost） | ✅ 生产（2026-09-27 生产首验通过） | `core/api/api/a2a.py`（`_enforce_agent_vk_gates`） |
 | 模型资产完整性校验脚本 `model_asset_verify.py` | ✅ 已落地（09-28，21 用例中 12 覆盖） | `core/scripts/model_asset_verify.py` |
 | NAS → 节点增量同步脚本 `model_sync_to_node.py` | ✅ 已落地（09-28，plan/dry-run/续传检测） | `core/scripts/model_sync_to_node.py` |
-| 注册 Agent `model_register_agent.py`（模型服务侧自动注册+心跳） | 📋 规划待实现 | [01](01-接入现状规范-v2.3.md) 附录 A |
+| 注册 Agent `model_register_agent.py`（模型服务侧自动注册+心跳） | ✅ 已落地（09-28 TOP2，stdlib 零依赖：就绪探测/注册/ready/30s 心跳/优雅 offline） | `core/scripts/model_register_agent.py` |
 | 模型上线冒烟脚本 `model_smoke_test.py` | 📋 规划待实现 | 同上 |
 
 ## 整合时统一的关键决策

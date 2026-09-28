@@ -375,13 +375,19 @@ async def merge_registry_upstreams() -> int:
     """拉取模型注册中心上游并入池（REGISTRY_ENABLED=true 时调用；env 通道保留兜底）。
 
     语义：Registry 条目以 `registry-{model_id}` 命名与 env 上游隔离；重复合并幂等
-    （同名覆盖运行时实例，熔断/EWMA 状态随实例保留）。DB 不可达时 0 合并并告警，
-    绝不影响 env 通道现行为（高可用语义）。
+    （同名覆盖运行时实例，熔断/EWMA 状态随实例保留）。**全量对账**：本次产出集之外
+    的 registry-* 陈旧条目（state→offline / 心跳 TTL 摘除 / enabled=false）一并移除，
+    env 条目永不动。DB 不可达时 0 合并并告警，绝不影响 env 通道现行为（高可用语义）。
     :return: 本次合并的注册中心上游数
     """
     from app.services import model_registry_svc as mrs
 
     entries = await mrs.registry_upstreams()
+    produced = {str(item.get("name")) for item in entries}
+    # 对账摘除：池内 registry-* 但本次未产出（幂等；env 条目零触碰）
+    for stale in [n for n in registry.upstreams if n.startswith("registry-") and n not in produced]:
+        registry.upstreams.pop(stale, None)
+        logger.info(f"Registry 对账摘除陈旧上游 {stale}（状态迁移/TTL，无需重启）")
     if not entries:
         return 0
     for item in entries:

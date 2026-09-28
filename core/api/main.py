@@ -921,7 +921,7 @@ async def start_probe_loop():
     await vk_manager.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 003 SQL 迁移管）
     await vk_manager.start_ledger()
 
-    # ── 模型注册中心（Phase A 双通道）：sqlite 自建五表 + Registry Pull 合并 ──
+    # ── 模型注册中心（Phase A 双通道 + Phase B 增量合并）：sqlite 自建五表 ──
     from app.services import model_registry_svc as mrs
 
     await mrs.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 005 SQL 迁移管）
@@ -930,6 +930,7 @@ async def start_probe_loop():
 
         merged = await upstream_registry.merge_registry_upstreams()
         logger.info("Registry 双通道已启用：合并 %d 个注册中心上游（env 通道保留兜底）", merged)
+        await mrs.start_merge_consumer()  # Phase B：事件驱动增量合并（免重启入池）
 
 
 @app.on_event("shutdown")
@@ -941,6 +942,11 @@ async def stop_probe_loop():
     from app.services.virtual_key_manager import vk_manager
 
     await vk_manager.stop_ledger()
+
+    # ── Registry Phase B 增量合并消费者 ──
+    from app.services import model_registry_svc as mrs
+
+    await mrs.stop_merge_consumer()
 
 
 @app.on_event("startup")

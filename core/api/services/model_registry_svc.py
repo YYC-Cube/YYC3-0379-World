@@ -30,6 +30,7 @@
 @copyright Copyright (c) 2026 YanYuCloudCube Team
 """
 
+import asyncio
 import calendar
 import hashlib
 import json
@@ -722,3 +723,77 @@ async def registry_upstreams() -> List[dict]:
             entry["capacity"] = int(m["max_concurrency"])
         upstreams.append(entry)
     return upstreams
+
+
+# ── Phase B 增量合并（事件驱动，消除重启依赖） ────────────────────
+
+_merge_task: Optional[asyncio.Task] = None
+
+
+async def _handle_registry_event(event: dict) -> None:
+    """单事件处理：registered/updated → 全量重合并（幂等）；deregistered → 定点摘除。
+
+    全量重合并而非单条增量：merge 幂等且 DB 列表查询毫秒级——一致性优先于
+    微优化（避免事件 payload 与 DB 态的窗口分歧）。
+    """
+    from app.services import upstream_registry
+
+    event_type = str(event.get("event_type") or "")
+    model_id = str(event.get("model_id") or "")
+    if event_type == "deregistered" and model_id:
+        removed = upstream_registry.registry.upstreams.pop(f"registry-{model_id}", None)
+        if removed:
+            logger.info("[registry] Phase B 事件摘除上游 registry-%s（无需重启）", model_id)
+    elif event_type in ("registered", "updated"):
+        merged = await upstream_registry.merge_registry_upstreams()
+        logger.info("[registry] Phase B 事件重合并（%s → %s）：%d 上游入池",
+                    event_type, model_id, merged)
+
+
+async def _merge_consumer_loop() -> None:
+    """pub/sub 订阅循环：yyc3:registry:events → _handle_registry_event。"""
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(REGISTRY_EVENTS_CHANNEL)
+    logger.info("[registry] Phase B 增量合并消费者已启动（频道 %s）", REGISTRY_EVENTS_CHANNEL)
+    try:
+        while True:
+            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+            if not msg or msg.get("type") != "message":
+                continue
+            data = msg.get("data")
+            if isinstance(data, bytes):
+                data = data.decode("utf-8", "replace")
+            if not isinstance(data, str):
+                continue
+            try:
+                await _handle_registry_event(json.loads(data))
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("[registry] 事件解析失败（跳过）: %s", str(data)[:120])
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # Redis 抖动：告警退避（Pull 兜底仍在）
+        logger.warning("[registry] Phase B 消费者异常退出（下次重启自愈）: %s", exc)
+    finally:
+        try:
+            await pubsub.unsubscribe(REGISTRY_EVENTS_CHANNEL)
+            await pubsub.close()
+        except Exception:
+            pass
+
+
+async def start_merge_consumer() -> None:
+    """startup 挂载（REGISTRY_ENABLED=true 时；幂等）。"""
+    global _merge_task
+    if _merge_task is None or _merge_task.done():
+        _merge_task = asyncio.create_task(_merge_consumer_loop())
+
+
+async def stop_merge_consumer() -> None:
+    global _merge_task
+    if _merge_task is not None:
+        _merge_task.cancel()
+        try:
+            await _merge_task
+        except asyncio.CancelledError:
+            pass
+        _merge_task = None
