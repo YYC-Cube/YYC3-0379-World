@@ -1,0 +1,24 @@
+# file: yyc3-registry-agent.logrotate.user
+# description: 注册 Agent 日志轮转配置（user 版：~/yyc3-registry-agent/logs/*.log，免 sudo）
+# author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
+# created: 2026-09-28
+# status: active
+# tags: [logrotate],[registry-agent],[nodes],[user]
+#
+# 安装（无 sudo 节点，如 yyc3-102；用户级 crontab 定时执行）：
+#   cp yyc3-registry-agent.logrotate.user ~/yyc3-registry-agent/agent.logrotate
+#   (crontab -l 2>/dev/null; echo "17 * * * * /usr/sbin/logrotate -s ~/yyc3-registry-agent/.logrotate.state ~/yyc3-registry-agent/agent.logrotate") | crontab -
+# 验证：/usr/sbin/logrotate -d -s ~/yyc3-registry-agent/.logrotate.state ~/yyc3-registry-agent/agent.logrotate
+
+# logrotate 需绝对路径（%h 不展开）：安装时此文件在节点家目录，路径固定 ~/yyc3-registry-agent/logs/
+/home/*/yyc3-registry-agent/logs/*.log {
+    daily
+    rotate 7
+    maxsize 20M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

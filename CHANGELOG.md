@@ -70,6 +70,7 @@ language: zh-CN
 - 🆕 注册 Agent + Phase B 事件驱动增量合并（2026-09-28 TOP2/TOP3，cffd3cd）：`model_register_agent.py`（stdlib 零依赖：就绪探测/注册/ready/30s 心跳/优雅 offline，TTL 300s 兜底）；svc pub/sub 消费者（`yyc3:registry:events` 驱动运行时入池/定点摘除，**生产免重启四态闭环实证**）；修 merge 全量对账缺口（registry-* 陈旧条目随重合并清池）；变量清单新增「网关应用变量」节；N1:8001 502 定论（dsv4-head 僵尸容器，Ray 宿主 OOM 杀 TP worker 09-26 23:54，建议 restart + OOM 缓解）
 - 🆕 下轮 TOP3 全闭环（2026-09-28，513aab7/4c1e649）：dsv4-head 重启恢复（:8001 200，网关旗舰 502→200；OOM 实勘 mem_limit=0 + recreate 建议）；`model_smoke_test.py` 九用例冒烟（生产首验旗舰 8/8 + embedding 9/9，能力面感知修复）——**规范附录 A 规划项全部落地清零**；五服务注册 Agent 实拉起（101×3+102×2 常驻，心跳 2.7~4.0s，TTL 自愈语义激活，dsv4 agent 自动跟随引擎恢复零人工）
 - 🆕 稳态期 TOP3 + 自愈固化（2026-09-28，7946f76/5d412fd）：systemd 双模板常驻（root/user 版入库，101 enabled×3 + 102 user×2）；dsv4-head OOM recreate（RAY_memory_usage_threshold=0.95 + mem_reservation 100g，原 mem_limit=0）；canary 实勘定论 alpine 空壳退役；心跳观测（Gauge×2 入 Prometheus 20 series + 断流翻转 warning 入 Loki）；🚨 pkill 竞态事故复盘 → `heartbeat()` 自愈回升 offline→ready（draining 除外）+ 事件驱动 Phase B 重合并——生产全链自动复原实证（回升→3→4→5 入池→chat 200）
+- 🆕 稳态收尾：观测告警 + 运维资产（2026-09-28）：Prometheus 三告警规则（HeartbeatStale 120s/ReadyLost/MetricsGap）部署 NAS volume + 热重载加载实证 + 入库 deploy/nas/prometheus-rules/；canary 终局（dsv4-head-canary + canary-plain 双 rm，canary-gpu 保留有据）；日志轮转双模板（101 logrotate.d / 102 crontab+state）入库 deploy/nodes/；102 linger 无远程提权路径待用户一条命令（sudo loginctl enable-linger）
 
 ### 变更 (Changed)
 

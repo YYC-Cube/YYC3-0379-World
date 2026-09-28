@@ -1,0 +1,22 @@
+# file: yyc3-registry-agent.logrotate
+# description: 注册 Agent 日志轮转配置（root 版：/var/log/yyc3-registry-agent/*.log）
+# author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
+# created: 2026-09-28
+# status: active
+# tags: [logrotate],[registry-agent],[nodes]
+#
+# 安装（root/sudo 节点，如 yyc3-101）：
+#   cp yyc3-registry-agent.logrotate /etc/logrotate.d/yyc3-registry-agent
+# 验证：logrotate -d /etc/logrotate.d/yyc3-registry-agent（dry-run）
+
+/var/log/yyc3-registry-agent/*.log {
+    daily
+    rotate 7
+    maxsize 20M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

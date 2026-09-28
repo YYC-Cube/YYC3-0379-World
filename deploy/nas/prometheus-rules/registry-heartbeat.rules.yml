@@ -1,0 +1,46 @@
+# file: registry-heartbeat.rules.yml
+# description: Prometheus 心跳断流告警规则 - Registry 模型 hb_age/ready 指标（TOP3b 收尾）
+# author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
+# created: 2026-09-28
+# status: active
+# tags: [prometheus],[alerting],[registry],[heartbeat]
+# spec: docs/模型接入与注册/05-监控告警与Runbook.md §2.2/§9 / docs/模型接入与注册/02-Registry目标架构.md §4.4
+
+groups:
+  - name: yyc3.registry.heartbeat
+    interval: 30s
+    rules:
+      # ── 断流告警（核心）：心跳年龄 > 120s（4 周期；TTL 300s 摘除前预警）──
+      # 排除 -1（手动模式注册，未启用心跳的存量模型）
+      - alert: RegistryModelHeartbeatStale
+        expr: yyc3_registry_model_heartbeat_age_seconds > 120 and yyc3_registry_model_heartbeat_age_seconds >= 0
+        for: 1m
+        labels:
+          severity: warning
+          service: model-registry
+        annotations:
+          summary: "心跳断流: {{ $labels.model_id }}@{{ $labels.node_id }}"
+          description: "心跳年龄 {{ $value }}s（阈值 120s；TTL 300s 后自动摘除出池——Phase B 对账）"
+
+      # ── 就绪流失：ready 模型掉线（state 已非 ready 但仍 enabled）──
+      - alert: RegistryModelReadyLost
+        expr: yyc3_registry_model_ready == 0 and on(model_id) yyc3_registry_model_heartbeat_age_seconds >= 0
+        for: 3m
+        labels:
+          severity: info
+          service: model-registry
+        annotations:
+          summary: "ready 流失: {{ $labels.model_id }}（state 非 ready 超 3min，心跳仍在）"
+          description: "疑似排空/手动下线未收尾；确认意图后 PATCH state 或注销"
+
+      # ── 池外 ready（一致性）：ready 且心跳新鲜但指标缺失 = 观测面覆盖缺口 ──
+      - alert: RegistryMetricsGap
+        expr: absent(yyc3_registry_model_heartbeat_age_seconds)
+        for: 5m
+        labels:
+          severity: warning
+          service: model-registry
+        annotations:
+          summary: "Registry 心跳指标整体缺失"
+          description: "网关观测循环未运行或 /metrics 抓取失败（REGISTRY_ENABLED/重启检查）"
