@@ -1,0 +1,39 @@
+# file: yyc3-registry-agent@.service.user
+# description: 模型注册 Agent systemd 用户级模板（免 sudo 节点用；linger 保开机自启）
+# author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
+# created: 2026-09-28
+# status: active
+# tags: [systemd],[registry-agent],[nodes],[user-unit]
+# spec: 同 yyc3-registry-agent@.service（root 版）；本变体用于无免密 sudo 的算力节点
+
+# 安装（普通用户 + linger，无需 root）：
+#   mkdir -p ~/.config/systemd/user ~/yyc3-registry-agent/logs
+#   cp yyc3-registry-agent@.service.user ~/.config/systemd/user/yyc3-registry-agent@.service
+#   # 文件本体已在 ~/yyc3-registry-agent/（agent/meta/.env.agent）
+#   sudo 登录一次执行: loginctl enable-linger $USER   # 开机自启（仅此一步需管理员）
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now yyc3-registry-agent@<model>
+
+[Unit]
+Description=YYC3 Registry Agent (%i, user unit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/yyc3-registry-agent
+EnvironmentFile=%h/yyc3-registry-agent/.env.agent
+ExecStart=/usr/bin/python3 %h/yyc3-registry-agent/model_register_agent.py \
+    --gateway http://100.65.172.88:8000 \
+    --meta %h/yyc3-registry-agent/meta-%i.json \
+    --interval 30
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=45
+StandardOutput=append:%h/yyc3-registry-agent/logs/%i.log
+StandardError=append:%h/yyc3-registry-agent/logs/%i.log
+
+[Install]
+WantedBy=default.target

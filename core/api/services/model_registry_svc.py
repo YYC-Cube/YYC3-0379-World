@@ -746,8 +746,9 @@ async def _handle_registry_event(event: dict) -> None:
             logger.info("[registry] Phase B 事件摘除上游 registry-%s（无需重启）", model_id)
     elif event_type in ("registered", "updated"):
         merged = await upstream_registry.merge_registry_upstreams()
-        logger.info("[registry] Phase B 事件重合并（%s → %s）：%d 上游入池",
-                    event_type, model_id, merged)
+        logger.info(
+            "[registry] Phase B 事件重合并（%s → %s）：%d 上游入池", event_type, model_id, merged
+        )
 
 
 async def _merge_consumer_loop() -> None:
@@ -797,3 +798,95 @@ async def stop_merge_consumer() -> None:
         except asyncio.CancelledError:
             pass
         _merge_task = None
+
+
+# ── 心跳断流观测（TOP3b）：Prometheus 指标 + 状态翻转告警日志 ──────
+
+_watch_task: Optional[asyncio.Task] = None
+_STALE_THRESHOLD = 120  # 断流阈值（秒）：4 个心跳周期，早于 TTL 300s 摘除
+_stale_state: Dict[str, bool] = {}  # model_id → 是否已断流（翻转去抖）
+
+
+def _gauges():
+    """懒初始化 Prometheus Gauges（注册默认 registry → instrumentator /metrics 自动暴露；
+    prometheus_client 不可用时返回 None 降级纯日志模式）。"""
+    try:
+        from prometheus_client import Gauge
+
+        global _g_hb_age, _g_ready
+        if "_g_hb_age" not in globals():
+            _g_hb_age = Gauge(
+                "yyc3_registry_model_heartbeat_age_seconds",
+                "Registry 模型心跳年龄（无心跳注册为 -1；断流阈值 120s / TTL 摘除 300s）",
+                ["model_id", "node_id"],
+            )
+            _g_ready = Gauge(
+                "yyc3_registry_model_ready",
+                "Registry 模型 state==ready（1/0）",
+                ["model_id", "node_id"],
+            )
+        return _g_hb_age, _g_ready
+    except Exception:
+        return None
+
+
+async def _watch_once(models: Optional[List[dict]] = None) -> None:
+    """单轮观测（可测单元）：刷新 Gauges + 断流翻转告警。models 可注入（缺省查库）。"""
+    models = models if models is not None else await list_models()
+    gauges = _gauges()
+    for m in models:
+        mid, node = str(m.get("id")), str(m.get("node_id") or "")
+        last_beat = m.get("last_heartbeat_at")
+        age = time.time() - _to_epoch(last_beat) if last_beat is not None else -1.0
+        # -1 = 手动模式（未启用心跳），不参与断流判定
+        stale = age >= _STALE_THRESHOLD
+        prev = _stale_state.get(mid)
+        if stale and prev is False:
+            logger.warning(
+                "[registry] ⚠️ 心跳断流告警: %s age=%.0fs（阈值 %ds；TTL %ds 后摘除）",
+                mid,
+                age,
+                _STALE_THRESHOLD,
+                TTL_REMOVED,
+            )
+        elif not stale and prev is True:
+            logger.info("[registry] ✅ 心跳恢复: %s age=%.0fs", mid, age)
+        _stale_state[mid] = stale
+        if gauges:
+            gauges[0].labels(model_id=mid, node_id=node).set(age)
+            gauges[1].labels(model_id=mid, node_id=node).set(1 if m.get("state") == "ready" else 0)
+
+
+async def _watch_loop() -> None:
+    """周期刷新心跳指标 + 断流翻转告警（REGISTRY_ENABLED 时随 merge consumer 同生命周期）。
+
+    告警链：状态翻转（healthy↔stale）时 logger.warning/info → 结构化日志入 Loki
+    （既有 shipper 链）→ Grafana 可查/可接既有告警通道；Prometheus 抓取 15s 自动采集
+    Gauge（NAS prometheus.yml job=yyc3-gateway 已覆盖 /metrics）。
+    """
+    logger.info("[registry] 心跳观测循环已启动（周期 30s，断流阈值 %ds）", _STALE_THRESHOLD)
+    while True:
+        try:
+            await _watch_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("[registry] 心跳观测轮次异常（继续）: %s", exc)
+        await asyncio.sleep(30)
+
+
+async def start_heartbeat_watch() -> None:
+    global _watch_task
+    if _watch_task is None or _watch_task.done():
+        _watch_task = asyncio.create_task(_watch_loop())
+
+
+async def stop_heartbeat_watch() -> None:
+    global _watch_task
+    if _watch_task is not None:
+        _watch_task.cancel()
+        try:
+            await _watch_task
+        except asyncio.CancelledError:
+            pass
+        _watch_task = None

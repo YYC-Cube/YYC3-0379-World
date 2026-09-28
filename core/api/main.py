@@ -931,6 +931,7 @@ async def start_probe_loop():
         merged = await upstream_registry.merge_registry_upstreams()
         logger.info("Registry 双通道已启用：合并 %d 个注册中心上游（env 通道保留兜底）", merged)
         await mrs.start_merge_consumer()  # Phase B：事件驱动增量合并（免重启入池）
+        await mrs.start_heartbeat_watch()  # TOP3b：心跳指标导出 + 断流翻转告警
 
 
 @app.on_event("shutdown")
@@ -943,10 +944,11 @@ async def stop_probe_loop():
 
     await vk_manager.stop_ledger()
 
-    # ── Registry Phase B 增量合并消费者 ──
+    # ── Registry Phase B 增量合并消费者 + 心跳观测 ──
     from app.services import model_registry_svc as mrs
 
     await mrs.stop_merge_consumer()
+    await mrs.stop_heartbeat_watch()
 
 
 @app.on_event("startup")

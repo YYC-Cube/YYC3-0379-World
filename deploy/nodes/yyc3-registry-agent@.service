@@ -1,0 +1,42 @@
+# file: yyc3-registry-agent@.service
+# description: 模型注册 Agent systemd 模板 - 实例名即模型 ID（yyc3-registry-agent@deepseek-v4-flash）
+# author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
+# created: 2026-09-28
+# status: active
+# tags: [systemd],[registry-agent],[nodes]
+# spec: docs/模型接入与注册/02-Registry目标架构.md §5.3 / docs/0379-world-yyc3-expert-20260925/08-*.md §六.1
+
+# 安装（算力节点侧，root 或 sudo）：
+#   cp yyc3-registry-agent@.service /etc/systemd/system/
+#   cp model_register_agent.py meta-<model>.json /opt/yyc3-registry-agent/   # 逐模型 meta
+#   cp .env.agent /opt/yyc3-registry-agent/                                  # 600，ADMIN_API_KEYS
+#   systemctl daemon-reload
+#   systemctl enable --now yyc3-registry-agent@deepseek-v4-flash
+# 依赖：agent 退出码 2/3 时自动重启（键缺失/注册失败等环境问题指数退避）；
+#       停止时 agent 收 SIGTERM 优雅下线（PATCH state=offline）。
+
+[Unit]
+Description=YYC3 Registry Agent (%i)
+Documentation=file:///opt/yyc3-registry-agent/model_register_agent.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/yyc3-registry-agent
+EnvironmentFile=/opt/yyc3-registry-agent/.env.agent
+ExecStart=/usr/bin/python3 /opt/yyc3-registry-agent/model_register_agent.py \
+    --gateway http://100.65.172.88:8000 \
+    --meta /opt/yyc3-registry-agent/meta-%i.json \
+    --interval 30
+Restart=always
+RestartSec=10
+# 停止给优雅 offline 留时间（默认 90s SIGKILL 会跳过下线，由 TTL 300s 兜底）
+KillSignal=SIGTERM
+TimeoutStopSec=45
+StandardOutput=append:/var/log/yyc3-registry-agent/%i.log
+StandardError=append:/var/log/yyc3-registry-agent/%i.log
+
+[Install]
+WantedBy=multi-user.target

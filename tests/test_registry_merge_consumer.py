@@ -136,3 +136,48 @@ class TestConsumerLifecycle:
             assert svc._merge_task is None
 
         asyncio.run(_scenario())
+
+
+class TestHeartbeatWatch:
+    """TOP3b：断流翻转告警语义（stale↔healthy 各告警一次，不重复刷屏）。"""
+
+    @staticmethod
+    def _model(mid, age_seconds):
+        import datetime
+
+        return {
+            "id": mid,
+            "node_id": "yyc3-101",
+            "state": "ready",
+            "last_heartbeat_at": (
+                datetime.datetime.utcnow() - datetime.timedelta(seconds=age_seconds)
+                if age_seconds is not None
+                else None
+            ),
+        }
+
+    def test_stale_flip_warns_once_and_recovers(self, caplog):
+        import logging
+
+        svc._stale_state.clear()
+        with caplog.at_level(logging.INFO, logger="app.services.model_registry_svc"):
+            asyncio.run(svc._watch_once([self._model("m1", 10)]))  # healthy 初判（无告警）
+            asyncio.run(svc._watch_once([self._model("m1", 10)]))  # 持续 healthy（无告警）
+            asyncio.run(svc._watch_once([self._model("m1", 200)]))  # → stale：warning ×1
+            asyncio.run(svc._watch_once([self._model("m1", 300)]))  # 持续 stale（不重复）
+            asyncio.run(svc._watch_once([self._model("m1", 10)]))  # → 恢复：info ×1
+        warns = [r for r in caplog.records if "心跳断流告警" in r.message]
+        recovers = [r for r in caplog.records if "心跳恢复" in r.message]
+        assert len(warns) == 1 and "m1" in warns[0].message
+        assert len(recovers) == 1
+
+    def test_manual_mode_no_stale(self, caplog):
+        """无心跳（手动模式）age=-1：不参与断流判定。"""
+        import logging
+
+        svc._stale_state.clear()
+        with caplog.at_level(logging.INFO, logger="app.services.model_registry_svc"):
+            asyncio.run(svc._watch_once([self._model("m2", None)]))
+            asyncio.run(svc._watch_once([self._model("m2", None)]))
+        assert not [r for r in caplog.records if "断流" in r.message]
+        assert svc._stale_state["m2"] is False
