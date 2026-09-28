@@ -117,98 +117,119 @@ def run_smoke(args) -> int:
     except Exception as exc:
         report.record("service_health", False, str(exc)[:120])
 
-    # ── 3 网关可见 ──
-    try:
-        status, body = _http_json("GET", f"{base}/v1/models", api_key)
-        ids = [m.get("id") for m in (body.get("data") if isinstance(body, dict) else body) or []]
-        report.record("gateway_listed", args.model in ids, f"/v1/models 含 {args.model}")
-    except Exception as exc:
-        report.record("gateway_listed", False, str(exc)[:120])
-
-    # ── 4 chat 同步 + 6 上游头（同请求捕获） ──
-    chat_ok = False
-    try:
-        resp = _http_raw(
-            "POST",
-            f"{base}/v1/chat/completions",
-            api_key,
-            timeout=90,
-            body={
-                "model": args.model,
-                "max_tokens": args.max_tokens,
-                "messages": [{"role": "user", "content": args.prompt}],
-            },
-        )
-        raw = resp.read().decode("utf-8", "replace")
-        headers_fixed["upstream"] = resp.headers.get("X-YYC3-Upstream", "")
-        body = json.loads(raw)
-        chat_ok = bool(body.get("choices"))
+    # ── 3 网关可见（/v1/models 为 chat 列表面；非 chat 能力模型经能力端点验证） ──
+    non_chat = bool(args.capability and args.capability != "chat")
+    if non_chat:
         report.record(
-            "chat_completion", chat_ok, f"content={body['choices'][0]['message']['content'][:30]!r}"
+            "gateway_listed",
+            True,
+            "非 chat 能力模型（能力端点验证，见 capability 用例）",
+            skipped=True,
         )
-    except urllib.error.HTTPError as exc:
-        report.record("chat_completion", False, f"HTTP {exc.code}: {exc.read()[:120]!r}")
-    except Exception as exc:
-        report.record("chat_completion", False, str(exc)[:120])
-    report.record(
-        "upstream_header",
-        bool(headers_fixed.get("upstream")),
-        (
-            f"X-YYC3-Upstream: {headers_fixed.get('upstream') or '缺失'}"
-            if chat_ok
-            else "chat 失败连带跳过"
-        ),
-        skipped=not chat_ok,
-    )
+    else:
+        try:
+            status, body = _http_json("GET", f"{base}/v1/models", api_key)
+            ids = [
+                m.get("id") for m in (body.get("data") if isinstance(body, dict) else body) or []
+            ]
+            report.record("gateway_listed", args.model in ids, f"/v1/models 含 {args.model}")
+        except Exception as exc:
+            report.record("gateway_listed", False, str(exc)[:120])
+
+    # ── 4 chat 同步 + 6 上游头（同请求捕获；非 chat 面不适用） ──
+    chat_ok = False
+    if non_chat:
+        report.record("chat_completion", True, "非 chat 能力模型", skipped=True)
+        report.record("upstream_header", True, "非 chat 能力模型", skipped=True)
+        report.record("sse_stream", True, "非 chat 能力模型", skipped=True)
+        report.record("boundary_too_long", True, "非 chat 能力模型", skipped=True)
+    else:
+        try:
+            resp = _http_raw(
+                "POST",
+                f"{base}/v1/chat/completions",
+                api_key,
+                timeout=90,
+                body={
+                    "model": args.model,
+                    "max_tokens": args.max_tokens,
+                    "messages": [{"role": "user", "content": args.prompt}],
+                },
+            )
+            raw = resp.read().decode("utf-8", "replace")
+            headers_fixed["upstream"] = resp.headers.get("X-YYC3-Upstream", "")
+            body = json.loads(raw)
+            chat_ok = bool(body.get("choices"))
+            report.record(
+                "chat_completion",
+                chat_ok,
+                f"content={body['choices'][0]['message']['content'][:30]!r}",
+            )
+        except urllib.error.HTTPError as exc:
+            report.record("chat_completion", False, f"HTTP {exc.code}: {exc.read()[:120]!r}")
+        except Exception as exc:
+            report.record("chat_completion", False, str(exc)[:120])
+        report.record(
+            "upstream_header",
+            bool(headers_fixed.get("upstream")),
+            (
+                f"X-YYC3-Upstream: {headers_fixed.get('upstream') or '缺失'}"
+                if chat_ok
+                else "chat 失败连带跳过"
+            ),
+            skipped=not chat_ok,
+        )
 
     # ── 5 SSE 流式 ──
-    try:
-        resp = _http_raw(
-            "POST",
-            f"{base}/v1/chat/completions",
-            api_key,
-            timeout=90,
-            body={
-                "model": args.model,
-                "max_tokens": args.max_tokens,
-                "stream": True,
-                "messages": [{"role": "user", "content": args.prompt}],
-            },
-        )
-        chunks, done = 0, False
-        for line in resp:
-            text = line.decode("utf-8", "replace").strip()
-            if text.startswith("data: "):
-                chunks += 1
-                if text[6:] == "[DONE]":
-                    done = True
-                    break
-        report.record("sse_stream", chunks > 1 and done, f"chunks={chunks} done={done}")
-    except Exception as exc:
-        report.record("sse_stream", False, str(exc)[:120])
+    if not non_chat:
+        try:
+            resp = _http_raw(
+                "POST",
+                f"{base}/v1/chat/completions",
+                api_key,
+                timeout=90,
+                body={
+                    "model": args.model,
+                    "max_tokens": args.max_tokens,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": args.prompt}],
+                },
+            )
+            chunks, done = 0, False
+            for line in resp:
+                text = line.decode("utf-8", "replace").strip()
+                if text.startswith("data: "):
+                    chunks += 1
+                    if text[6:] == "[DONE]":
+                        done = True
+                        break
+            report.record("sse_stream", chunks > 1 and done, f"chunks={chunks} done={done}")
+        except Exception as exc:
+            report.record("sse_stream", False, str(exc)[:120])
 
     # ── 7 超长输入边界 ──
-    try:
-        resp = _http_raw(
-            "POST",
-            f"{base}/v1/chat/completions",
-            api_key,
-            timeout=60,
-            body={
-                "model": args.model,
-                "max_tokens": 8,
-                "messages": [{"role": "user", "content": "x" * (args.boundary_tokens * 4)}],
-            },
-        )
-        raw = resp.read()
-        # 流式响应错误仍 200 + error chunk → 解析状态；非流 4xx 直接判定
-        code = resp.status
-        ok = code < 500 and (code >= 400 or b'"error"' in raw or code == 200)
-        report.record("boundary_too_long", ok, f"HTTP {code}（非 5xx/挂起即合规）")
-    except urllib.error.HTTPError as exc:
-        report.record("boundary_too_long", exc.code < 500, f"HTTP {exc.code}（4xx 合规）")
-    except Exception as exc:
-        report.record("boundary_too_long", False, str(exc)[:120])
+    if not non_chat:
+        try:
+            resp = _http_raw(
+                "POST",
+                f"{base}/v1/chat/completions",
+                api_key,
+                timeout=60,
+                body={
+                    "model": args.model,
+                    "max_tokens": 8,
+                    "messages": [{"role": "user", "content": "x" * (args.boundary_tokens * 4)}],
+                },
+            )
+            raw = resp.read()
+            # 流式响应错误仍 200 + error chunk → 解析状态；非流 4xx 直接判定
+            code = resp.status
+            ok = code < 500 and (code >= 400 or b'"error"' in raw or code == 200)
+            report.record("boundary_too_long", ok, f"HTTP {code}（非 5xx/挂起即合规）")
+        except urllib.error.HTTPError as exc:
+            report.record("boundary_too_long", exc.code < 500, f"HTTP {exc.code}（4xx 合规）")
+        except Exception as exc:
+            report.record("boundary_too_long", False, str(exc)[:120])
 
     # ── 8 Registry 就绪（--registry） ──
     if args.registry:
