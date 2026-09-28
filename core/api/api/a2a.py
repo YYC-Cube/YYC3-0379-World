@@ -21,6 +21,7 @@
 
 import asyncio
 import logging
+import time
 import uuid
 from typing import List, Optional
 
@@ -53,6 +54,14 @@ async def _register(card: dict) -> dict:
 
 async def _heartbeat(agent_id: str) -> bool:
     return await a2a_protocol._registry_heartbeat(agent_id)
+
+
+async def _update_card(agent_id: str, patch: dict):
+    return await a2a_protocol._registry_update_card(agent_id, patch)
+
+
+async def _unregister(agent_id: str) -> bool:
+    return await a2a_protocol._registry_unregister(agent_id)
 
 
 async def _submit(receiver_agent_id: str, message: dict) -> str:
@@ -169,6 +178,64 @@ async def agent_heartbeat(agent_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail={"error": "agent_not_registered"})
     return {"agent_id": agent_id, "status": "online"}
+
+
+# ── 演进层管理端点（规范 docs/模型接入与注册/04-Agent注册规范.md §4）──
+
+
+@router.get("/v1/admin/a2a/agents", tags=["A2A 协同事务"])
+async def admin_list_agents(capability: Optional[str] = None):
+    """全量 Agent 列表（含离线；管理面视角）。扩展元数据（tools/限流/超时）随卡片返回。"""
+    cards = await a2a_protocol._registry_all_cards()
+    if capability:
+        cards = [c for c in cards if capability in c.get("capabilities", [])]
+    online = sum(1 for c in cards if c.get("status") == "online")
+    return {
+        "agents": sorted(cards, key=lambda c: c["agent_id"]),
+        "count": len(cards),
+        "online": online,
+        "offline": len(cards) - online,
+    }
+
+
+@router.patch("/v1/admin/a2a/agents/{agent_id}", tags=["A2A 协同事务"])
+async def admin_update_agent(agent_id: str, patch: dict):
+    """局部更新 Agent 扩展元数据（tools/timeout_seconds/max_concurrent/rate_limit_per_minute
+    等白名单字段，规范 04 §2）。未注册 404；变更入审计流。"""
+    updated = await _update_card(agent_id, patch or {})
+    if updated is None:
+        raise HTTPException(status_code=404, detail={"error": "agent_not_registered"})
+    await a2a_protocol.publish_audit(
+        {
+            "trace_id": agent_id,
+            "auditor": "a2a-admin",
+            "action": "agent.updated",
+            "detail": {"agent_id": agent_id, "fields": sorted((patch or {}).keys())},
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+    logger.info("[a2a] Agent %s 元数据已更新（字段：%s）", agent_id, sorted((patch or {}).keys()))
+    return updated
+
+
+@router.delete("/v1/admin/a2a/agents/{agent_id}", tags=["A2A 协同事务"])
+async def admin_unregister_agent(agent_id: str):
+    """注销外置 Agent（HDEL 注册中心）。内置编队成员会被 30s 心跳循环自愈重注册——
+    内置成员停用请调整 A2A_WORKER_AGENTS env（规范 04 §1.2）。"""
+    ok = await _unregister(agent_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail={"error": "agent_not_registered"})
+    await a2a_protocol.publish_audit(
+        {
+            "trace_id": agent_id,
+            "auditor": "a2a-admin",
+            "action": "agent.deregistered",
+            "detail": {"agent_id": agent_id},
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+    logger.info("[a2a] Agent %s 已注销", agent_id)
+    return {"agent_id": agent_id, "status": "deregistered"}
 
 
 @router.post(

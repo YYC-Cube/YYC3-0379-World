@@ -12,6 +12,11 @@
 - 消息信封：msg_id / trace_id / msg_type / sender / receiver / task_type / payload / priority / ttl
 - 审计流：stream:audit:log（XADD 尽力而为）；zhiyun set_audit_sink 注入线程安全同步 sink
 
+演进层（规范 docs/模型接入与注册/04-Agent注册规范.md §4，09-27）：
+- _registry_update_card：白名单字段局部更新（tools/timeout_seconds/限流等扩展元数据）
+- _registry_unregister：注销（HDEL；内置编队由心跳循环自愈，停用走 A2A_WORKER_AGENTS env）
+- 管理端点见 app/api/a2a.py 演进层区（GET 列表含离线 / PATCH / DELETE，均入审计流）
+
 工程化改造（相对原型）：
 - 原型直连 redis.Redis 全局单例 → 注册中心走网关异步客户端（app.cache.redis_client），
   审计 sink 因工作线程同步调用语义单独持有同步连接（懒初始化）
@@ -218,6 +223,50 @@ async def _registry_online_cards(capability: Optional[str] = None) -> List[dict]
     if capability:
         online = [c for c in online if capability in c.get("capabilities", [])]
     return sorted(online, key=lambda c: c["agent_id"])
+
+
+async def _registry_update_card(agent_id: str, patch: dict) -> Optional[dict]:
+    """局部更新 Agent Card（演进层：扩展元数据 tools/timeout_seconds/限流等白名单字段合并）。
+
+    规范 docs/模型接入与注册/04-Agent注册规范.md §4——在现有卡片上扩展，
+    不另起第二套注册体系。不存在返回 None；保留 register_time/last_heartbeat。
+    """
+    raw = await redis_client.hget(AGENT_REGISTRY_KEY, agent_id)
+    if not raw:
+        return None
+    card = json.loads(raw)
+    _EVOLUTION_FIELDS = {
+        "agent_name",
+        "role",
+        "layer",
+        "capabilities",
+        "endpoint",
+        "version",
+        "agent_type",
+        "tools",
+        "protocol",
+        "auth_type",
+        "timeout_seconds",
+        "max_concurrent",
+        "rate_limit_per_minute",
+        "owner",
+        "tags",
+    }
+    for key, value in (patch or {}).items():
+        if key in _EVOLUTION_FIELDS and value is not None:
+            card[key] = value
+    await redis_client.hset(AGENT_REGISTRY_KEY, agent_id, json.dumps(card, ensure_ascii=False))
+    return card
+
+
+async def _registry_unregister(agent_id: str) -> bool:
+    """注销 Agent（演进层）：HDEL 注册中心；未注册返回 False。
+
+    内置编队由 _registry_loop 周期重注册，注销后 30s 内自愈回归——
+    内置成员的停用应改用 A2A_WORKER_AGENTS env 调整编队（规范 04 §1.2）。
+    """
+    deleted = await redis_client.hdel(AGENT_REGISTRY_KEY, agent_id)
+    return bool(deleted)
 
 
 # -------------------------- 审计流（stream:audit:log） --------------------------

@@ -1,232 +1,223 @@
-#!/usr/bin/env python3
-# file: core/scripts/model_asset_verify.py
-# description: 模型资产完整性校验（依据 docs/模型接入与注册/01-接入现状规范-v2.3.md §2.3）
-#              三项校验：①分片清单 vs index 权重映射 ②safetensors 头部 magic ③config/tokenizer 存在性
-#              校验失败的模型禁止上线到 API 网关（规范原文）。
-#              零第三方依赖：NAS/DGX 任意 python3 可直接运行。
-# usage:
-#   python3 model_asset_verify.py <模型目录>                     # 单模型校验（人类可读）
-#   python3 model_asset_verify.py <模型目录> --json              # 机器可读（控制台/CI 消费）
-#   python3 model_asset_verify.py <父目录> --scan                # 扫描目录下全部模型（NAS 资产盘点）
-#   python3 model_asset_verify.py <父目录> --scan --json         # 盘点 + JSON（控制台纳管页）
-# exit codes: 0=通过  1=校验失败  2=参数/路径错误
+# file: model_asset_verify.py
+# description: NAS 模型资产完整性校验脚本 - 分片对账/safetensors 头部/配置存在性 + 报告落盘
 # author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
 # created: 2026-09-27
-# tags: [model-asset],[verify],[onboarding]
+# status: active
+# tags: [model-asset],[verify],[nas],[onboarding-gate]
+# spec: docs/模型接入与注册/01-接入现状规范-v2.3.md §2.3
 
+"""
+@file: core/scripts/model_asset_verify.py
+@description: HF 模型资产完整性校验（入库门禁，规划脚本 P1 落地）。
+    三项校验（对齐规范 01 §2.3）：
+      ① 分片对账：model.safetensors.index.json 权重映射清单 vs 实际 *.safetensors 文件
+      ② safetensors 头部校验：文件前 8 字节 magic（0x5A4B53CD 小端）识别截断/损坏
+      ③ 配置存在性：config/tokenizer 必需文件清单
+    输出：控制台报告 + 模型目录 model_checksum.report（JSON）
+    退出码：0=通过（可上线）；1=校验失败（禁止上线）；2=目录不存在/非模型目录
+    用法：
+      python core/scripts/model_asset_verify.py /Volume1/yyc3_hd/data/Qwen/Qwen3.8-27B
+      python core/scripts/model_asset_verify.py <dir> --json   # 仅输出 JSON（CI 集成）
+@author: YanYuCloudCube Team <admin@0379.email>
+@license: MIT
+@copyright Copyright (c) 2026 YanYuCloudCube Team
+"""
+
+import argparse
 import json
-import os
-import struct
 import sys
+import time
 from pathlib import Path
+from typing import List, Optional
 
-# ── 规范 §2.2 文件要求 ──
-# 核心必备（任何 HF 模型必须有）
-REQUIRED_FILES = [
+REPORT_NAME = "model_checksum.report"
+
+# safetensors 文件头 magic（小端 uint32）：b'?,ST' = 0x5A4B53CD
+SAFETENSORS_MAGIC = b"?,ST"
+
+# 必需配置文件（缺失判定资产不完整）；README/LICENSE 建议保留但不阻断
+REQUIRED_CONFIG_FILES = [
     "config.json",
+    "tokenizer.json",
     "tokenizer_config.json",
 ]
-# tokenizer 三证之一：老布局 / 新布局单文件 / tiktoken 形态（Kimi 系）
-TOKENIZER_LEGACY = ["vocab.json", "merges.txt"]
-TOKENIZER_MODERN = ["tokenizer.json"]
-TOKENIZER_TIKTOKEN = ["tiktoken.model"]
-OPTIONAL_FILES = ["LICENSE", "README.md", "chat_template.jinja", "generation_config.json",
-                  "preprocessor_config.json", "video_preprocessor_config.json"]
+# 存在任一组合即可（tokenizer 双形态：tiktoken 型 vocab/merges vs json 型）
+TOKENIZER_VOCAB_ALT = ["vocab.json", "vocab.txt", "tokenizer.model"]
 
-SAFETENSORS_MAGIC = 0x0BADB002  # safetensors 文件头 8 字节 magic（规范 §2.3 第 2 项）
+INDEX_FILE = "model.safetensors.index.json"
 
 
-def _check_safetensors_header(path: Path) -> tuple:
-    """校验单分片头部：返回 (ok, detail)。前 8 字节 = <little-endian u64 header_len>，
-    随后 header JSON。这里校验：可读、header_len 合理（8 < len < 100MB）、非全零。"""
+class VerifyResult:
+    """单项校验结果（ok=False 时 message 必填）。"""
+
+    def __init__(self, name: str, ok: bool, message: str = "", detail: Optional[dict] = None):
+        self.name = name
+        self.ok = ok
+        self.message = message
+        self.detail = detail or {}
+
+    def to_dict(self) -> dict:
+        return {"check": self.name, "ok": self.ok, "message": self.message, "detail": self.detail}
+
+
+def _load_index(model_dir: Path) -> Optional[dict]:
+    """读取 safetensors 索引；文件缺失返回 None（单文件模型无索引属合法形态）。"""
+    index_path = model_dir / INDEX_FILE
+    if not index_path.is_file():
+        return None
     try:
-        size = path.stat().st_size
-        if size < 12:
-            return False, f"文件过小({size}B)疑截断"
-        with open(path, "rb") as f:
-            raw = f.read(8)
-        header_len = struct.unpack("<Q", raw)[0]
-        if header_len <= 1 or header_len > 100 * 1024 * 1024:
-            return False, f"header_len 异常({header_len})"
-        return True, f"ok(header={header_len}B,size={size}B)"
-    except OSError as e:
-        return False, f"读取失败:{e}"
+        return json.loads(index_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"__corrupt__": True}
 
 
-def verify_model(model_dir: Path) -> dict:
-    """校验单个模型目录（HF snapshots 布局）。返回结果字典（--json 直接输出本结构）。"""
-    result = {
-        "model": str(model_dir),
-        "name": model_dir.name,
-        "ok": False,
-        "shards": {"expected": 0, "present": 0, "missing": [], "corrupt": []},
-        "files": {"missing_required": [], "present_optional": []},
-        "size_bytes": 0,
-        "errors": [],
-    }
-    if not model_dir.is_dir():
-        result["errors"].append(f"目录不存在: {model_dir}")
-        return result
+def check_shard_manifest(model_dir: Path) -> VerifyResult:
+    """① 分片对账：index.json 权重映射引用的分片文件必须全部存在。"""
+    index = _load_index(model_dir)
+    if index is None:
+        # 无索引：若目录也无任何 safetensors 文件则失败，否则视为单文件/量化包形态放行
+        has_st = any(model_dir.glob("*.safetensors"))
+        if has_st:
+            return VerifyResult(
+                "shard_manifest", True, "无 index.json（单文件/量化包形态），跳过分片对账"
+            )
+        return VerifyResult("shard_manifest", False, "无 safetensors 权重且无 index.json")
+    if index.get("__corrupt__"):
+        return VerifyResult("shard_manifest", False, f"{INDEX_FILE} 解析失败（文件损坏）")
 
-    # 总体积（轻量：stat 累加，不读内容）
-    try:
-        for p in model_dir.rglob("*"):
-            if p.is_file():
-                result["size_bytes"] += p.stat().st_size
-    except OSError:
-        pass
+    weight_map = index.get("weight_map") or {}
+    referenced = sorted(set(weight_map.values()))
+    if not referenced:
+        return VerifyResult("shard_manifest", False, f"{INDEX_FILE} weight_map 为空")
 
-    # ① 必备文件存在性（规范 §2.3 第 3 项）：核心必备 + tokenizer 双证之一
-    for fn in REQUIRED_FILES:
-        if not (model_dir / fn).is_file():
-            result["files"]["missing_required"].append(fn)
-    has_legacy = all((model_dir / fn).is_file() for fn in TOKENIZER_LEGACY)
-    has_modern = any((model_dir / fn).is_file() for fn in TOKENIZER_MODERN)
-    has_tiktoken = all((model_dir / fn).is_file() for fn in TOKENIZER_TIKTOKEN)
-    if not (has_legacy or has_modern or has_tiktoken):
-        result["files"]["missing_required"].append(
-            "tokenizer(vocab+merges / tokenizer.json / tiktoken.model 三缺一)"
+    missing = [s for s in referenced if not (model_dir / s).is_file()]
+    # 额外分片（index 未引用）仅提示不阻断（可能混存 LoRA/适配器）
+    actual = sorted(p.name for p in model_dir.glob("*.safetensors"))
+    extra = [s for s in actual if s not in referenced]
+
+    if missing:
+        return VerifyResult(
+            "shard_manifest",
+            False,
+            f"缺失 {len(missing)}/{len(referenced)} 个分片文件",
+            {"missing": missing[:20], "referenced_count": len(referenced)},
         )
-    for fn in OPTIONAL_FILES:
-        if (model_dir / fn).is_file():
-            result["files"]["present_optional"].append(fn)
+    msg = f"分片对账通过（{len(referenced)} 个分片全部在位）"
+    if extra:
+        msg += f"；{len(extra)} 个未引用分片（提示）"
+    return VerifyResult(
+        "shard_manifest", True, msg, {"referenced_count": len(referenced), "extra": extra}
+    )
 
-    # ② 分片完整性：index 权重映射 vs 实际文件（规范 §2.3 第 1 项）
-    # 分片匹配支持三种命名：HF 标准 model-XXXX-of-YYYY、vLLM/NIM 打包 model.safetensors-XXXX-of-YYYY、
-    # 分层打包 layers-X.safetensors（index 的 weight_map 指什么就认什么）
-    index_file = model_dir / "model.safetensors.index.json"
-    shard_files = sorted(model_dir.glob("*.safetensors"))
-    if index_file.is_file():
+
+def check_safetensors_headers(model_dir: Path, sample_limit: int = 0) -> VerifyResult:
+    """② 头部校验：每个 safetensors 文件前 8 字节含 magic；sample_limit>0 时只抽前 N 个（大目录提速）。"""
+    st_files = sorted(model_dir.glob("*.safetensors"))
+    if not st_files:
+        return VerifyResult("safetensors_headers", False, "目录中无任何 .safetensors 文件")
+    targets = st_files[:sample_limit] if sample_limit > 0 else st_files
+
+    broken: List[str] = []
+    truncated: List[str] = []
+    for st in targets:
         try:
-            index = json.loads(index_file.read_text(encoding="utf-8"))
-            weight_files = set(index.get("weight_map", {}).values())
-            present_files = {p.name for p in shard_files}
-            result["shards"]["expected"] = len(weight_files)
-            result["shards"]["present"] = len(weight_files & present_files)
-            result["shards"]["missing"] = sorted(weight_files - present_files)
-            extra = sorted(present_files - weight_files)
-            if extra:
-                result["errors"].append(f"存在映射外多余分片 {len(extra)} 个(如 {extra[0]})")
-        except (json.JSONDecodeError, OSError) as e:
-            result["errors"].append(f"index 解析失败: {e}")
+            with open(st, "rb") as f:
+                head = f.read(8)
+            if len(head) < 8:
+                truncated.append(st.name)
+            elif head[:4] != SAFETENSORS_MAGIC:
+                broken.append(st.name)
+        except OSError as exc:
+            broken.append(f"{st.name}（IO: {exc}）")
+
+    problems = []
+    if truncated:
+        problems.append(f"截断（<8B）: {truncated[:10]}")
+    if broken:
+        problems.append(f"magic 不符（损坏/非 safetensors）: {broken[:10]}")
+    if problems:
+        return VerifyResult(
+            "safetensors_headers", False, "；".join(problems), {"checked": len(targets)}
+        )
+    scope = f"（抽检 {len(targets)}/{len(st_files)}）" if sample_limit > 0 else ""
+    return VerifyResult(
+        "safetensors_headers", True, f"头部校验通过{scope}，共 {len(st_files)} 个权重文件"
+    )
+
+
+def check_config_files(model_dir: Path) -> VerifyResult:
+    """③ 配置存在性：必需文件清单（tokenizer 词表双形态兼容）。"""
+    missing = [f for f in REQUIRED_CONFIG_FILES if not (model_dir / f).is_file()]
+    has_vocab = any((model_dir / f).is_file() for f in TOKENIZER_VOCAB_ALT)
+    # tokenizer.json 存在时词表文件可省（fast tokenizer 自包含）
+    if not has_vocab and "tokenizer.json" not in missing:
+        missing_note = ""
     else:
-        single = model_dir / "model.safetensors"
-        if single.is_file():
-            result["shards"] = {"expected": 1, "present": 1, "missing": [], "corrupt": []}
-            shard_files = [single]
-        elif shard_files:
-            # 无 index 但有分片（分层打包等）：按实际分片计
-            result["shards"]["expected"] = len(shard_files)
-            result["shards"]["present"] = len(shard_files)
-        else:
-            result["shards"]["expected"] = 1
-            result["errors"].append("缺少 model.safetensors.index.json 且无任何 *.safetensors")
+        missing_note = "" if has_vocab else ";且无任一词表文件"
 
-    # ③ safetensors 头部校验（规范 §2.3 第 2 项）
-    for p in shard_files:
-        ok, detail = _check_safetensors_header(p)
-        if not ok:
-            result["shards"]["corrupt"].append({"file": p.name, "detail": detail})
-
-    # 综合判定：分片缺失/损坏/核心config缺失 = 硬失败；
-    # tokenizer 形态未识别但分片完整 → 降级为警告（不拦上线，人工确认即可）
-    shards_complete = (
-        not result["shards"]["missing"]
-        and not result["shards"]["corrupt"]
-        and result["shards"]["expected"] > 0
-        and result["shards"]["present"] == result["shards"]["expected"]
-    )
-    core_missing = [f for f in result["files"]["missing_required"] if not f.startswith("tokenizer(")]
-    if shards_complete and core_missing == [] and result["files"]["missing_required"]:
-        # 仅 tokenizer 形态未识别：从 missing_required 移入 errors 警告
-        tok_items = [f for f in result["files"]["missing_required"] if f.startswith("tokenizer(")]
-        result["files"]["missing_required"] = []
-        result["errors"].append(f"⚠ tokenizer 形态未识别({tok_items})，分片完整，请人工确认")
-        result["ok"] = True
-    hard_fail = (
-        bool(result["shards"]["missing"])
-        or bool(result["shards"]["corrupt"])
-        or bool(result["files"]["missing_required"])
-        or any("index 解析失败" in e for e in result["errors"])
-    )
-    result["ok"] = not hard_fail
-    return result
+    if missing:
+        return VerifyResult(
+            "config_files", False, f"缺失必需文件: {missing}{missing_note}", {"missing": missing}
+        )
+    return VerifyResult("config_files", True, "配置文件存在性校验通过")
 
 
-def scan_dir(root: Path) -> dict:
-    """扫描目录下的候选模型目录。NAS 资产布局为 家族目录/模型/snapshots/版本，
-    逐层下钻：若目录自身不像模型（无 config.json 且无 safetensors），则下探一层。"""
-    def looks_like_model(d: Path) -> bool:
-        return (d / "config.json").is_file() or bool(list(d.glob("*.safetensors"))) \
-            or (d / "model.safetensors.index.json").is_file()
-
-    candidates: list[Path] = []
-    for p in sorted(root.iterdir()):
-        if not p.is_dir() or p.name.startswith(".") or p.name.startswith("venv"):
-            continue
-        if looks_like_model(p):
-            candidates.append(p)
-            continue
-        # 家族目录：下探一层（模型层）
-        for m in sorted(p.iterdir()):
-            if not m.is_dir() or m.name.startswith("."):
-                continue
-            snap = m / "snapshots"
-            if snap.is_dir():
-                for s in sorted(snap.iterdir()):
-                    if s.is_dir():
-                        candidates.append(s)
-            elif looks_like_model(m):
-                candidates.append(m)
-    results = [verify_model(m) for m in candidates]
+def verify_model(model_dir: Path, sample_limit: int = 0) -> dict:
+    """执行全部校验，返回报告 dict（passed=全部通过）。"""
+    results = [
+        check_shard_manifest(model_dir),
+        check_safetensors_headers(model_dir, sample_limit),
+        check_config_files(model_dir),
+    ]
     return {
-        "root": str(root),
-        "scanned": len(models := results),
-        "passed": sum(1 for r in results if r["ok"]),
-        "failed": sum(1 for r in results if not r["ok"]),
-        "models": results,
+        "model_dir": str(model_dir),
+        "verified_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "passed": all(r.ok for r in results),
+        "checks": [r.to_dict() for r in results],
     }
 
 
-def _human(result: dict) -> str:
-    ok_mark = "✅" if result["ok"] else "❌"
-    gb = result["size_bytes"] / 1e9
-    lines = [
-        f"{ok_mark} {result['name']}  ({gb:.1f} GB)",
-        f"   分片: {result['shards']['present']}/{result['shards']['expected']}"
-        + (f"  缺失: {', '.join(result['shards']['missing'][:3])}" if result["shards"]["missing"] else "")
-        + (f"  损坏: {len(result['shards']['corrupt'])}" if result["shards"]["corrupt"] else ""),
-    ]
-    if result["files"]["missing_required"]:
-        lines.append(f"   缺必备文件: {', '.join(result['files']['missing_required'])}")
-    for e in result["errors"]:
-        lines.append(f"   ⚠ {e}")
-    return "\n".join(lines)
+def write_report(model_dir: Path, report: dict) -> Path:
+    """校验报告写入模型目录（规范要求落盘 model_checksum.report）。"""
+    out = model_dir / REPORT_NAME
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
 
 
-def main() -> int:
-    args = sys.argv[1:]
-    use_json = "--json" in args
-    do_scan = "--scan" in args
-    paths = [a for a in args if not a.startswith("--")]
-    if len(paths) != 1:
-        print(__doc__, file=sys.stderr)
+def _print_report(report: dict) -> None:
+    mark = "✅" if report["passed"] else "❌"
+    print(f"{mark} 模型资产校验: {report['model_dir']}")
+    for c in report["checks"]:
+        flag = "✅" if c["ok"] else "❌"
+        print(f"  {flag} [{c['check']}] {c['message']}")
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="HF 模型资产完整性校验（入库门禁）")
+    parser.add_argument("model_dir", help="模型目录（HF snapshots 根）")
+    parser.add_argument("--json", action="store_true", help="仅输出 JSON（CI 集成）")
+    parser.add_argument("--sample", type=int, default=0, help="头部抽检数（0=全量）")
+    parser.add_argument("--no-report", action="store_true", help="不写 model_checksum.report")
+    args = parser.parse_args(argv)
+
+    model_dir = Path(args.model_dir).expanduser().resolve()
+    if not model_dir.is_dir():
+        print(f"❌ 目录不存在: {model_dir}", file=sys.stderr)
         return 2
-    target = Path(paths[0]).expanduser().resolve()
-    if not target.is_dir():
-        print(f"错误: 目录不存在 {target}", file=sys.stderr)
-        return 2
 
-    if do_scan:
-        out = scan_dir(target)
-        print(json.dumps(out, ensure_ascii=False, indent=2) if use_json else
-              "\n".join([f"扫描 {out['root']}: {out['passed']}/{out['scanned']} 通过"] +
-                        [_human(r) for r in out["models"]]))
-        return 0 if out["failed"] == 0 else 1
+    report = verify_model(model_dir, sample_limit=args.sample)
+    if not args.no_report:
+        try:
+            write_report(model_dir, report)
+        except OSError as exc:
+            print(f"⚠️ 报告写入失败（只读挂载？）: {exc}", file=sys.stderr)
 
-    out = verify_model(target)
-    print(json.dumps(out, ensure_ascii=False, indent=2) if use_json else _human(out))
-    return 0 if out["ok"] else 1
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False))
+    else:
+        _print_report(report)
+    return 0 if report["passed"] else 1
 
 
 if __name__ == "__main__":

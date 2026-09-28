@@ -61,6 +61,10 @@ language: zh-CN
 - 🆕 Bearer OpenAI 生态兼容：`Authorization: Bearer <sk-*/vk-*>` 按 API Key 链认证（JWT 三段式无前缀零冲突），解锁 OpenAI SDK 标准 Bearer 姿势接入 vk 计费链；`tests/test_auth_bearer_compat.py` 5 用例
 - 🆕 NAS 数据库拓扑对齐（2026-09-27）：OPS-RECOVERY 新增数据库拓扑节（kb 主库 :5434 / 家族备库 :5433 只读 / PG14 退役 / 系统 PG13 勿连红线）+ 系统上下文/变量清单/设备全量信息三文档同步
 - 🆕 模型接入规范文档体系整合：原两份平行规范（模型接入 v2.3.0 / Agent 注册 MRS-2026，重复 40% 且细节冲突）拆分为 `docs/模型接入与注册/` 六文档——现状基线（01）/Registry 目标架构（02）/热切换版本管理（03）/Agent 注册（04，A2A 生产契约消除双轨）/监控 Runbook（05）+ README 索引（实现状态总览表）；四处幽灵脚本显式标注规划、统一设备命名/心跳 TTL/元数据载体口径；原文档归档 `docs/archive/`
+- 🆕 模型注册中心（Registry）Phase A MVP：005 迁移五表（存量 model_registry 增量列 + model_versions/model_heartbeats/model_events/model_audit_log，TEXT 存 JSON 防 asyncpg 绑定坑）+ `services/model_registry_svc.py`（幂等 CRUD/版本回滚防盲滚/心跳 TTL 三级阶梯 90s→180s→300s/事件 PG+Redis 双投递/审计）+ `api/model_registry.py` 12 端点（含 SSE 事件流先回放再订阅防漏）+ `upstream_registry.merge_registry_upstreams()` 双通道合并（registry-{model_id} 命名隔离 env 兜底，REGISTRY_ENABLED 灰度开关默认 false）
+- 🆕 A2A Agent 注册演进层：GET `/v1/admin/a2a/agents`（全量含离线+在线计数）/ PATCH `{id}`（tools/timeout_seconds/限流白名单扩展元数据）/ DELETE `{id}`（注销），均入审计流；内置编队自愈语义文档化（停用走 A2A_WORKER_AGENTS env）
+- 🆕 模型资产工具链：`core/scripts/model_asset_verify.py`（分片对账/safetensors 头部 magic/配置存在性三校验 + model_checksum.report 落盘 + CLI 退出码语义）+ `core/scripts/model_sync_to_node.py`（rsync 断点续传/--dry-run/--plan 增量计划/残片续传检测/同步后分片对账门禁）
+- 🆕 Registry/演进层测试 59 用例（快层 21 + integration 38）：svc 15（CRUD/幂等/回滚/心跳 TTL 阶梯/sqlite-UTC 时区归一）+ API 14（12 端点/RBAC 403/灰度 503/幂等）+ a2a admin 10（列表/PATCH/DELETE/审计/白名单）+ 脚本 20
 
 ### 变更 (Changed)
 

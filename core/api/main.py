@@ -34,6 +34,7 @@ from app.api import (
     documents,
     knowledge_base,
     mcp,
+    model_registry,
     proxy,
     rag,
     video_tasks,
@@ -247,6 +248,9 @@ from app.services.admin_ui import router as admin_ui_router  # noqa: E402
 
 app.include_router(admin_ui_router, tags=["📊 管理看板"])
 app.include_router(admin_upstreams.router, prefix="/v1/admin", tags=["🛠 上游池管理"])
+
+# 模型注册中心（规范 docs/模型接入与注册/02-Registry目标架构.md；Phase A 双通道，env 兜底）
+app.include_router(model_registry.router, tags=["📦 模型注册中心"])
 
 
 @app.get("/health")
@@ -916,6 +920,16 @@ async def start_probe_loop():
 
     await vk_manager.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 003 SQL 迁移管）
     await vk_manager.start_ledger()
+
+    # ── 模型注册中心（Phase A 双通道）：sqlite 自建五表 + Registry Pull 合并 ──
+    from app.services import model_registry_svc as mrs
+
+    await mrs.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 005 SQL 迁移管）
+    if mrs.registry_enabled():
+        from app.services import upstream_registry
+
+        merged = await upstream_registry.merge_registry_upstreams()
+        logger.info("Registry 双通道已启用：合并 %d 个注册中心上游（env 通道保留兜底）", merged)
 
 
 @app.on_event("shutdown")

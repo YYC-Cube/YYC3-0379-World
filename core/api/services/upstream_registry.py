@@ -11,6 +11,10 @@
 @description: 上游池注册表。解析 OPENAI_COMPATIBLE_UPSTREAMS (JSON) 为运行时上游实例，
              提供模型匹配（fnmatch 通配）、优先级+权重选择、连续失败熔断（OPEN 30s→半开探测）、
              EWMA 延迟/错误率统计。解析失败仅告警降级为空池，绝不 crash。
+             双通道（规范 docs/模型接入与注册/02-Registry目标架构.md §4.1 Phase A）：
+             REGISTRY_ENABLED=true 时经 merge_registry_upstreams() 并入模型注册中心
+             上游（registry-{model_id} 命名隔离），env 通道保留兜底；SSE Push 实时通道
+             见 /registry/v1/events（api/model_registry.py R-10）。
 @author: YanYuCloudCube Team <admin@0379.email>
 @license: MIT
 @copyright Copyright (c) 2026 YanYuCloudCube Team
@@ -362,3 +366,45 @@ class UpstreamRegistry:
 
 
 registry = UpstreamRegistry()
+
+
+# ── Registry 双通道合并（Phase A：规范 docs/模型接入与注册/02-Registry目标架构.md §4.1）──
+
+
+async def merge_registry_upstreams() -> int:
+    """拉取模型注册中心上游并入池（REGISTRY_ENABLED=true 时调用；env 通道保留兜底）。
+
+    语义：Registry 条目以 `registry-{model_id}` 命名与 env 上游隔离；重复合并幂等
+    （同名覆盖运行时实例，熔断/EWMA 状态随实例保留）。DB 不可达时 0 合并并告警，
+    绝不影响 env 通道现行为（高可用语义）。
+    :return: 本次合并的注册中心上游数
+    """
+    from app.services import model_registry_svc as mrs
+
+    entries = await mrs.registry_upstreams()
+    if not entries:
+        return 0
+    for item in entries:
+        try:
+            u = Upstream(
+                name=str(item["name"]),
+                base_url=str(item["base_url"]).rstrip("/"),
+                models=list(item.get("models", [])),
+                capability=str(item.get("capability", "chat")),
+                fallback_url=str(item.get("fallback_url", "")).rstrip("/"),
+                weight=float(item.get("weight", 100)),
+                priority=int(item.get("priority", 10)),
+                capacity=int(item.get("capacity", 32)),
+            )
+            # 幂等：保留既有运行时状态（熔断/EWMA/负载），仅刷新静态配置
+            existing = registry.upstreams.get(u.name)
+            if existing:
+                existing.base_url, existing.models = u.base_url, u.models
+                existing.capability, existing.priority = u.capability, u.priority
+                existing.fallback_url, existing.capacity = u.fallback_url, u.capacity
+            else:
+                registry.upstreams[u.name] = u
+        except Exception as e:
+            logger.warning(f"Registry 上游条目无效，已跳过（{item.get('name', '?')}）: {e}")
+    logger.info(f"Registry 通道已合并 {len(entries)} 个上游（env 通道保留兜底）")
+    return len(entries)
