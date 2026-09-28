@@ -65,6 +65,7 @@ language: zh-CN
 - 🆕 A2A Agent 注册演进层：GET `/v1/admin/a2a/agents`（全量含离线+在线计数）/ PATCH `{id}`（tools/timeout_seconds/限流白名单扩展元数据）/ DELETE `{id}`（注销），均入审计流；内置编队自愈语义文档化（停用走 A2A_WORKER_AGENTS env）
 - 🆕 模型资产工具链：`core/scripts/model_asset_verify.py`（分片对账/safetensors 头部 magic/配置存在性三校验 + model_checksum.report 落盘 + CLI 退出码语义）+ `core/scripts/model_sync_to_node.py`（rsync 断点续传/--dry-run/--plan 增量计划/残片续传检测/同步后分片对账门禁）
 - 🆕 Registry/演进层测试 59 用例（快层 21 + integration 38）：svc 15（CRUD/幂等/回滚/心跳 TTL 阶梯/sqlite-UTC 时区归一）+ API 14（12 端点/RBAC 403/灰度 503/幂等）+ a2a admin 10（列表/PATCH/DELETE/审计/白名单）+ 脚本 20
+- 🆕 Registry 生产灰度开闸（2026-09-28，NAS 生产十连验证全通）：005 迁移上网关栈 PG + REGISTRY_ENABLED=true；双通道合并生产实证（探针上游入路由池）；两项生产修复——nas compose 补 REGISTRY_ENABLED env 传递（b2c0c2d）、enabled 列 PG boolean 参数化（fac630a，sqlite=1 习惯在 PG 报 UndefinedFunctionError）；OPS-RECOVERY cron 锚定实测定论（全 NAS 无 cron 挂载，两脚本为手动触发范式）
 
 ### 变更 (Changed)
 
