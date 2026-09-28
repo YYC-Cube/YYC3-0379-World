@@ -27,22 +27,25 @@ from app.config import settings
 from app.services.rerank_svc import rerank_scores
 
 # ── 端点字面量注册表（配置选键，不拼 URL）─────────────────────
+# 注：N2 服务走 tailscale IP（100.76.167.103）。原 10.100.168.1 为 N1↔N2
+# 背对背直连网段（mtu9000），NAS 网关容器不可达（2026-09-28 P1 生产实测发现：
+# 出站挂起 60s 超时）——网关出站唯一稳定路由为 tailscale 链。
 EMB_ENDPOINTS = {
-    "n2_8b": "http://10.100.168.1:8103/v1/embeddings",
+    "n2_8b": "http://100.76.167.103:8103/v1/embeddings",
     "n1_06b": "http://100.65.64.49:8100/v1/embeddings",
 }
 EMB_MODELS = {"n2_8b": "qwen3-embedding-8b", "n1_06b": "qwen3-embedding-0.6b"}
 
 # 注：URL 为不可拆分的整串字面量（安全设计），超长行 noqa
 CHROMA_QUERY_URLS = {
-    "main": "http://10.100.168.1:8102/api/v2/tenants/default_tenant/databases/default_database/collections/89ba3e52-ad0d-42ae-a66c-1f7dbfc5e1a0/query",  # noqa: E501
-    "prompts": "http://10.100.168.1:8102/api/v2/tenants/default_tenant/databases/default_database/collections/7500800b-d076-46f7-b75e-bda9cea1e949/query",  # noqa: E501
-    "premium": "http://10.100.168.1:8102/api/v2/tenants/default_tenant/databases/default_database/collections/8feb7b7a-1725-4384-92bb-66e454d41c30/query",  # noqa: E501
-    "online": "http://10.100.168.1:8102/api/v2/tenants/default_tenant/databases/default_database/collections/f505a0b4-f5e9-45f3-9938-a650c9566cb6/query",  # noqa: E501
+    "main": "http://100.76.167.103:8102/api/v2/tenants/default_tenant/databases/default_database/collections/89ba3e52-ad0d-42ae-a66c-1f7dbfc5e1a0/query",  # noqa: E501
+    "prompts": "http://100.76.167.103:8102/api/v2/tenants/default_tenant/databases/default_database/collections/7500800b-d076-46f7-b75e-bda9cea1e949/query",  # noqa: E501
+    "premium": "http://100.76.167.103:8102/api/v2/tenants/default_tenant/databases/default_database/collections/8feb7b7a-1725-4384-92bb-66e454d41c30/query",  # noqa: E501
+    "online": "http://100.76.167.103:8102/api/v2/tenants/default_tenant/databases/default_database/collections/f505a0b4-f5e9-45f3-9938-a650c9566cb6/query",  # noqa: E501
 }
-CHROMA_GET_MAIN_URL = "http://10.100.168.1:8102/api/v2/tenants/default_tenant/databases/default_database/collections/89ba3e52-ad0d-42ae-a66c-1f7dbfc5e1a0/get"  # noqa: E501
+CHROMA_GET_MAIN_URL = "http://100.76.167.103:8102/api/v2/tenants/default_tenant/databases/default_database/collections/89ba3e52-ad0d-42ae-a66c-1f7dbfc5e1a0/get"  # noqa: E501
 EMB_MODELS_PROBE_URLS = {
-    "n2_8b": "http://10.100.168.1:8103/v1/models",
+    "n2_8b": "http://100.76.167.103:8103/v1/models",
     "n1_06b": "http://100.65.64.49:8100/v1/models",
 }
 
