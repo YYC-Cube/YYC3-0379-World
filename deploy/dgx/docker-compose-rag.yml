@@ -1,10 +1,10 @@
 # file: docker-compose-rag.yml
-# description: RAG 三件套（Embedding/Reranker/ChromaDB）容器化编排——yyc3-102 N2 部署
+# description: RAG 三件套（Embedding/Reranker/ChromaDB）+ 8B 嵌入常驻——yyc3-102 N2 部署
 # author: YanYuCloudCube Team
-# version: v1.0.0
+# version: v1.1.0
 # created: 2026-09-03
 # status: active
-# tags: [rag],[embedding],[reranker],[chromadb]
+# tags: [rag],[embedding],[reranker],[chromadb],[8b]
 #
 # 设计决策（2026-09-03 实勘）：
 #   - 旗舰 TP=2 独占期双机可用内存仅 16-19G → 先上 0.6B 轻量版（各 ~3G，与旗舰同存安全）
@@ -13,10 +13,16 @@
 #   - 端口复用历史约定 :8100/:8101/:8102（N2 systemd 旧位）
 #   - 网关侧：OPENAI_COMPATIBLE_UPSTREAMS 加 capability=embedding/rerank 条目即接入
 #
+# v1.1.0（2026-09-28 P1-T2）：新增 embedding-8b 服务（:8103 主库 8B 嵌入常驻）。
+#   教训：8B 原为 N2 ~/emb8b_serve.sh 临时 nohup 形态，宿主重启即失联——8B 下线
+#   三周无人知，ops_rag main 库恒降级 online（0.6b），评测基线失真。容器化
+#   unless-stopped 常驻根治；GPU 余量实测 ~106G，util 0.15（≈18.25G）安全。
+#
 # 顺序铁律：先旗舰(head→6379→worker→startup complete)后 RAG；反向必崩
 # 启动: docker compose -f docker-compose-rag.yml up -d embedding reranker  # chroma 常驻 N2
-# 验收: curl :8100/v1/embeddings | curl :8101/v1/completions(生成式打分) | curl :8102/api/v2/heartbeat
+# 验收: curl :8100/v1/embeddings | curl :8101/v1/completions(生成式打分) | curl :8102/api/v2/heartbeat | curl :8103/v1/models
 # nightly 镜像注意: ENTRYPOINT=[vllm serve] 勿写前缀; 无 --task/--runner(自动检测); 0.6B 需 0.04+eager(权重1.1G+ctx2.7G)
+#   embedding-8b 因需先打 UMA 补丁再 serve → entrypoint 覆写为 bash /entry.sh
 
 services:
   embedding:
@@ -53,6 +59,20 @@ services:
       --max-model-len 2048
       --gpu-memory-utilization 0.04
       --enforce-eager
+
+  # 8B 主库嵌入（ops_rag n2_8b → tailscale 100.76.167.103:8103；main/prompts/premium 库向量均为 8B 索引，
+  # 8B 离线 = 三库全不可查）。需先打 UMA 断言补丁 → entrypoint 覆写为 bash。
+  embedding-8b:
+    image: docker.m.daocloud.io/vllm/vllm-openai:nightly
+    container_name: yyc3-emb8b
+    network_mode: host
+    ipc: host
+    gpus: all
+    restart: unless-stopped
+    entrypoint: ["bash", "/entry.sh"]
+    volumes:
+      - /home/yyc3/yyc3-102-projects/models/Qwen3-Embedding-8B:/model:ro
+      - ./emb8b_entry.sh:/entry.sh:ro
 
   chroma:
     image: docker.m.daocloud.io/chromadb/chroma:latest
