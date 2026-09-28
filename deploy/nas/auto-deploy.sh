@@ -1,4 +1,6 @@
 #!/bin/bash
+# NAS cron 自动部署脚本（仓库分发副本——NAS 本机 crontab 调用路径待锚定，见 OPS-RECOVERY 铁律区）
+# 误删警示: 若 cron 指向 /Volume2/yyc3-33 工作树路径，删除本文件将断裂生产自动部署链（2026-09-28 处置评审定案保留）
 set -u
 cd /Volume2/yyc3-33 || exit 1
 D=/Volume3/@apps/DockerEngine/dockerd/bin/docker

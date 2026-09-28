@@ -1,4 +1,5 @@
 #!/bin/bash
+# NAS 手动重建入口（仓库分发副本 + smoke-test.sh 部署后冒烟挂载点；cron 路径锚定见 OPS-RECOVERY）
 chmod 755 /home/YYC3 2>/dev/null   # 护栏: TOS 复位 777 会导致 StrictModes 拒绝公钥认证(全网锁死)
 set -u
 cd /Volume2/yyc3-33 || exit 1

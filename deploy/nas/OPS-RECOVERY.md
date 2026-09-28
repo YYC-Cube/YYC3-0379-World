@@ -35,6 +35,14 @@ bash deploy/nas/smoke-test.sh                # 全量冒烟
 5. 验证：`/healthz` 200 + `pg_stat_activity` + compose ps 全 healthy
 6. 全家巡检：`bash /Volume2/@apps/yyc3_pg.sh status-all`（三实例+Redis）
 
+## cron 路径锚定（待 NAS 实测回填）
+
+- `auto-deploy.sh` / `rebuild-gateway.sh` 为**仓库分发副本**（deploy/nas/，随 git 同步至 /Volume2/yyc3-33 工作树）
+- ⚠️ NAS 本机 crontab 实际调用路径**尚未锚定**——下次 NAS 侧操作执行 `crontab -l` 回填此处：
+  - auto-deploy cron 路径：`待回填（crontab -l 实测）`
+  - rebuild cron/手动路径：`待回填`
+- 回填确认前**禁止删除仓库副本**（2026-09-28 处置评审定案；若 cron 走工作树路径，删除即断裂生产自动部署链）
+
 ## 端口契约（勿回退到 0.0.0.0）
 
 gateway 8000 / grafana 3000 / gitbucket 8080·29418 —— 均绑 `192.168.3.45` + `100.65.172.88`（LAN+Tailscale）。
