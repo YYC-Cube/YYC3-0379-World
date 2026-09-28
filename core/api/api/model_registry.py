@@ -44,7 +44,9 @@ class ModelRegisterRequest(BaseModel):
     model_id: str = Field(..., max_length=100, description="全局唯一模型 ID")
     display_name: str = Field(..., max_length=200)
     backend: str = Field(
-        "vllm", max_length=20, description="vllm/nim/ollama/openai/zhipu/deepseek/upstream"
+        "vllm",
+        max_length=20,
+        description="vllm/nim/ollama/openai/zhipu/deepseek/upstream",
     )
     version: str = Field("v1.0.0", max_length=50)
     capabilities: list = Field(
@@ -68,7 +70,9 @@ class ModelRegisterRequest(BaseModel):
     model_type: str = Field("chat", description="chat/embedding/rerank/asr/ocr")
     owner: Optional[str] = Field(None, max_length=200)
     tags: list = Field(default_factory=list)
-    manifest: Optional[dict] = Field(None, description="版本清单（不可变，见规范 02 §2.2）")
+    manifest: Optional[dict] = Field(
+        None, description="版本清单（不可变，见规范 02 §2.2）"
+    )
 
 
 class RollbackRequest(BaseModel):
@@ -91,7 +95,9 @@ class HeartbeatRequest(BaseModel):
 class AliasSetRequest(BaseModel):
     """别名切换（规范 03 §3.5：改别名指向，公网 API 不中断）"""
 
-    model_id: str = Field(..., max_length=100, description="别名新指向的模型 ID（须 ready）")
+    model_id: str = Field(
+        ..., max_length=100, description="别名新指向的模型 ID（须 ready）"
+    )
     reason: str = Field("", max_length=500, description="切换原因（审计）")
 
 
@@ -104,7 +110,9 @@ class DrainRequest(BaseModel):
 def _require_admin(request: Request) -> None:
     """写操作管理权限校验（AuthMiddleware 已注入 request.state.user）。"""
     user = getattr(request.state, "user", None)
-    if not isinstance(user, dict) or not (user.get("admin") or user.get("role") == "admin"):
+    if not isinstance(user, dict) or not (
+        user.get("admin") or user.get("role") == "admin"
+    ):
         raise HTTPException(
             status_code=403,
             detail={
@@ -132,7 +140,9 @@ def _require_registry_enabled() -> None:
 @router.get("/registry/v1/models", tags=["📦 模型注册中心"])
 async def list_models(
     enabled_only: bool = Query(False, description="仅 enabled=true"),
-    model_type: Optional[str] = Query(None, description="按能力过滤 chat/embedding/..."),
+    model_type: Optional[str] = Query(
+        None, description="按能力过滤 chat/embedding/..."
+    ),
 ):
     """R-01 模型列表（Pull 通道数据源；含 TTL 实时健康判定）。"""
     models = await svc.list_models(enabled_only=enabled_only, model_type=model_type)
@@ -211,7 +221,11 @@ async def rollback_model(model_id: str, req: RollbackRequest, request: Request):
         raise HTTPException(status_code=422, detail={"error": str(exc)})
     if updated is None:
         raise HTTPException(status_code=404, detail={"error": "model_not_found"})
-    return {"status": "rolled_back", "target_version": req.target_version, "model": updated}
+    return {
+        "status": "rolled_back",
+        "target_version": req.target_version,
+        "model": updated,
+    }
 
 
 # ── R-08/R-09 心跳与健康 ─────────────────────────────────────────
@@ -249,7 +263,11 @@ async def get_health(model_id: str):
 async def list_aliases():
     """R-13 别名列表（alias → model_id 路由表现状）。"""
     aliases = await svc.list_aliases()
-    return {"aliases": aliases, "count": len(aliases), "route_cache": dict(svc._alias_cache)}
+    return {
+        "aliases": aliases,
+        "count": len(aliases),
+        "route_cache": dict(svc._alias_cache),
+    }
 
 
 @router.put("/registry/v1/aliases/{alias}", tags=["📦 模型注册中心"])
@@ -315,7 +333,9 @@ async def events_stream(
         deadline = asyncio.get_event_loop().time() + timeout_seconds
         try:
             while asyncio.get_event_loop().time() < deadline:
-                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=5.0
+                )
                 if msg and msg.get("type") == "message":
                     data = msg["data"]
                     if isinstance(data, bytes):
@@ -343,37 +363,9 @@ async def events_stream(
 @router.get("/registry/v1/manifests/{manifest_hash}", tags=["📦 模型注册中心"])
 async def get_manifest(manifest_hash: str):
     """R-11 按 hash 取 Manifest（不可变版本清单）。"""
-    from sqlalchemy import text
-
-    from app.db import async_session
-
-    try:
-        async with async_session() as session:
-            row = (
-                (
-                    await session.execute(
-                        text(
-                            "SELECT model_id, version, manifest, manifest_hash, action, actor, "
-                            "created_at FROM model_versions WHERE manifest_hash = :h "
-                            "ORDER BY id DESC LIMIT 1"
-                        ),
-                        {"h": manifest_hash},
-                    )
-                )
-                .mappings()
-                .first()
-            )
-    except Exception as exc:
-        logger.warning("[registry] manifest 查询失败: %s", exc)
-        row = None
-    if row is None:
+    rec = await svc.get_manifest_by_hash(manifest_hash)
+    if rec is None:
         raise HTTPException(status_code=404, detail={"error": "manifest_not_found"})
-    rec = dict(row)
-    raw = rec.get("manifest")
-    try:
-        rec["manifest"] = json.loads(raw) if isinstance(raw, str) else (raw or {})
-    except Exception:
-        rec["manifest"] = {}
     return rec
 
 
@@ -385,36 +377,7 @@ async def list_audit(
 ):
     """R-12 审计日志（admin；保留 365 天）。"""
     _require_admin(request)
-    from sqlalchemy import text
-
-    from app.db import async_session
-
-    sql = (
-        "SELECT id, actor, action, model_id, before_state, after_state, created_at "
-        "FROM model_audit_log"
-    )
-    params: dict = {"lim": limit}
-    if model_id:
-        sql += " WHERE model_id = :m"
-        params["m"] = model_id
-    sql += " ORDER BY id DESC LIMIT :lim"
-    try:
-        async with async_session() as session:
-            rows = (await session.execute(text(sql), params)).mappings().all()
-    except Exception as exc:
-        logger.warning("[registry] 审计查询失败: %s", exc)
-        return {"logs": [], "count": 0}
-    logs = []
-    for r in rows:
-        rec = dict(r)
-        for field in ("before_state", "after_state"):
-            raw = rec.get(field)
-            if isinstance(raw, str) and raw:
-                try:
-                    rec[field] = json.loads(raw)
-                except Exception:
-                    pass
-        logs.append(rec)
+    logs = await svc.list_audit_logs(model_id, limit)
     return {"logs": logs, "count": len(logs)}
 
 

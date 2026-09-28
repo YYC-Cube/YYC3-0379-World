@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.db_access import get_db
-from app.services.rag_service import rag_service
 from app.services.ops_rag import ops_rag_service
+from app.services.rag_service import rag_service
 
 router = APIRouter(prefix="/v1/rag")
 
@@ -26,7 +26,9 @@ class SearchRequest(BaseModel):
     knowledge_base_ids: List[str] = Field(..., description="知识库ID列表")
     top_k: int = Field(default=5, ge=1, le=20, description="返回结果数量")
     threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="相似度阈值")
-    search_type: str = Field(default="semantic", description="检索类型：semantic 或 hybrid")
+    search_type: str = Field(
+        default="semantic", description="检索类型：semantic 或 hybrid"
+    )
 
 
 class SearchResult(BaseModel):
@@ -87,7 +89,9 @@ async def search(
             db=db,
         )
     else:
-        raise HTTPException(status_code=400, detail=f"不支持的检索类型: {request.search_type}")
+        raise HTTPException(
+            status_code=400, detail=f"不支持的检索类型: {request.search_type}"
+        )
 
     response_time_ms = int((time.time() - start_time) * 1000)
 
@@ -147,7 +151,9 @@ async def ask_with_context(
 
     context_parts = []
     for i, result in enumerate(results, 1):
-        context_parts.append(f"[文档{i}] {result['document_title']}\n{result['content']}\n")
+        context_parts.append(
+            f"[文档{i}] {result['document_title']}\n{result['content']}\n"
+        )
 
     context = "\n".join(context_parts)
 
@@ -176,7 +182,9 @@ async def ask_with_context(
     )
 
     # chat_completion 第二参数是 FastAPI Request，用于 metrics
-    fake_request = StarletteRequest(scope={"type": "http", "method": "POST", "headers": []})
+    fake_request = StarletteRequest(
+        scope={"type": "http", "method": "POST", "headers": []}
+    )
     response = await chat_completion(chat_request, fake_request)
 
     response_time_ms = int((time.time() - start_time) * 1000)
@@ -224,8 +232,13 @@ async def ask_with_context(
 class OpsSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="查询文本")
     top_k: int = Field(default=5, ge=1, le=20, description="返回结果数量")
-    library: str = Field(default="main", description="库：main(默认)|premium|prompts|online")
+    library: str = Field(
+        default="main", description="库：main(默认)|premium|prompts|online"
+    )
     hybrid: bool = Field(default=False, description="BM25+RRF 混合检索（仅 main 库）")
+    rerank: bool = Field(
+        default=False, description="候选经 Qwen3-Reranker 精排（失败自动降级原序）"
+    )
 
 
 class OpsSearchResponse(BaseModel):
@@ -233,17 +246,25 @@ class OpsSearchResponse(BaseModel):
     library: str
     embedded_by: str
     hybrid: bool
+    reranked: bool = False
     notes: List[str]
     results: List[dict]
 
 
-@router.post("/ops", response_model=OpsSearchResponse, summary="运维知识库检索（四库+可选混合）")
+@router.post(
+    "/ops",
+    response_model=OpsSearchResponse,
+    summary="运维知识库检索（四库+可选混合+可选精排）",
+)
 async def ops_search(request: OpsSearchRequest):
     """
-    运维知识检索：chroma 向量（main 430 块主库为默认）+ 可选 BM25 词面（RRF 融合）。
+    运维知识检索：chroma 向量（main 430 块主库为默认）+ 可选 BM25 词面（RRF 融合）
+    + 可选 rerank 精排（v1.1.0 P1）。
 
     - 降级链：8B 嵌入离线 → 自动降级 online(0.6b)，notes 留痕；
     - hybrid=true 且库为 main 时启用混合检索（BM25 补事实型/关键词型问题）；
+    - rerank=true 时候选池经上游池 rerank 能力（Qwen3-Reranker 生成式打分）精排，
+      重排失败自动降级原序（notes 留痕，检索不因重排失败而失败）；
     - 索引重建走 POST /v1/rag/ops/reindex（管理动作）。
     """
     import time as _t
@@ -254,6 +275,7 @@ async def ops_search(request: OpsSearchRequest):
         top_k=request.top_k,
         library=request.library,
         hybrid=request.hybrid,
+        rerank=request.rerank,
     )
     result["elapsed_ms"] = int((_t.perf_counter() - t0) * 1000)
     return result

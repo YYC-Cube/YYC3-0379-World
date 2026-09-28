@@ -47,7 +47,9 @@ from app.cache import redis_client
 
 logger = logging.getLogger(__name__)
 
-REGISTRY_EVENTS_CHANNEL = "yyc3:registry:events"  # Redis pub/sub 事件通道（网关 SSE 转发源）
+REGISTRY_EVENTS_CHANNEL = (
+    "yyc3:registry:events"  # Redis pub/sub 事件通道（网关 SSE 转发源）
+)
 
 # 心跳 TTL 三级阶梯（秒，规范 02 §4.4 统一口径）
 TTL_DEGRADED = 90
@@ -98,12 +100,19 @@ _WRITABLE = {
 
 def registry_enabled() -> bool:
     """Registry 双通道开关（REGISTRY_ENABLED，默认 false=纯 env 现状行为）。"""
-    return os.getenv("REGISTRY_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("REGISTRY_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _j(value: Any) -> str:
     """结构化值 → JSON 串（capabilities/tags/manifest 统一 TEXT 存储，跨方言）。"""
-    return value if isinstance(value, str) else json.dumps(value or [], ensure_ascii=False)
+    return (
+        value if isinstance(value, str) else json.dumps(value or [], ensure_ascii=False)
+    )
 
 
 def _parse_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -238,13 +247,19 @@ async def _emit_event(
     except Exception as exc:
         logger.warning("[registry] 事件落库失败（继续推送）: %s", exc)
     try:
-        await redis_client.publish(REGISTRY_EVENTS_CHANNEL, json.dumps(event, ensure_ascii=False))
+        await redis_client.publish(
+            REGISTRY_EVENTS_CHANNEL, json.dumps(event, ensure_ascii=False)
+        )
     except Exception as exc:
         logger.debug("[registry] 事件 Redis 推送失败: %s", exc)
 
 
 async def _audit(
-    actor: str, action: str, model_id: str, before: Optional[dict], after: Optional[dict]
+    actor: str,
+    action: str,
+    model_id: str,
+    before: Optional[dict],
+    after: Optional[dict],
 ) -> None:
     """审计日志（model_audit_log；失败仅告警不阻断）。"""
     from sqlalchemy import text
@@ -335,7 +350,9 @@ async def register_model(payload: dict, actor: str = "registry-api") -> dict:
         "display_name": display_name,
         "backend_type": str(backend_type),
         "backend_name": str(backend_name),
-        "enabled": bool(payload.get("enabled", True)),  # PG boolean 列须绑 bool（整数会炸）
+        "enabled": bool(
+            payload.get("enabled", True)
+        ),  # PG boolean 列须绑 bool（整数会炸）
         "version": str(version),
     }
     for key in _WRITABLE - set(fields):
@@ -374,10 +391,15 @@ async def register_model(payload: dict, actor: str = "registry-api") -> dict:
         await session.commit()
 
     manifest = payload.get("manifest") or {"registered_fields": sorted(fields)}
-    m_hash = payload.get("manifest_hash") or _manifest_hash(model_id, str(version), manifest)
+    m_hash = payload.get("manifest_hash") or _manifest_hash(
+        model_id, str(version), manifest
+    )
     await _append_version(model_id, str(version), "register", actor, manifest, m_hash)
     await _emit_event(
-        "registered" if not existing else "updated", model_id, str(version), {"actor": actor}
+        "registered" if not existing else "updated",
+        model_id,
+        str(version),
+        {"actor": actor},
     )
     await _audit(
         actor,
@@ -402,7 +424,8 @@ async def get_model(model_id: str) -> Optional[dict]:
             row = (
                 (
                     await session.execute(
-                        text(f"SELECT {_COLS} FROM model_registry WHERE id = :id"), {"id": model_id}
+                        text(f"SELECT {_COLS} FROM model_registry WHERE id = :id"),
+                        {"id": model_id},
                     )
                 )
                 .mappings()
@@ -414,7 +437,9 @@ async def get_model(model_id: str) -> Optional[dict]:
     return _parse_row(dict(row)) if row else None
 
 
-async def list_models(enabled_only: bool = False, model_type: Optional[str] = None) -> List[dict]:
+async def list_models(
+    enabled_only: bool = False, model_type: Optional[str] = None
+) -> List[dict]:
     """模型列表（Pull 通道数据源）。"""
     from sqlalchemy import text
 
@@ -442,7 +467,9 @@ async def list_models(enabled_only: bool = False, model_type: Optional[str] = No
     return [_parse_row(dict(r)) for r in rows]
 
 
-async def update_model(model_id: str, patch: dict, actor: str = "registry-api") -> Optional[dict]:
+async def update_model(
+    model_id: str, patch: dict, actor: str = "registry-api"
+) -> Optional[dict]:
     """局部更新（白名单字段）；写事件 + 审计。不存在返回 None。"""
     from sqlalchemy import text
 
@@ -468,7 +495,9 @@ async def update_model(model_id: str, patch: dict, actor: str = "registry-api") 
             {**fields, "id": model_id},
         )
         await session.commit()
-    await _emit_event("updated", model_id, before.get("version"), {"fields": sorted(fields)})
+    await _emit_event(
+        "updated", model_id, before.get("version"), {"fields": sorted(fields)}
+    )
     await _audit(actor, "model.updated", model_id, before, patch)
     return await get_model(model_id)
 
@@ -483,7 +512,9 @@ async def deregister_model(model_id: str, actor: str = "registry-api") -> bool:
     if before is None:
         return False
     async with async_session() as session:
-        await session.execute(text("DELETE FROM model_registry WHERE id = :id"), {"id": model_id})
+        await session.execute(
+            text("DELETE FROM model_registry WHERE id = :id"), {"id": model_id}
+        )
         await session.execute(
             text("DELETE FROM model_heartbeats WHERE model_id = :id"), {"id": model_id}
         )
@@ -523,7 +554,9 @@ async def rollback_model(
         target.get("manifest_hash") or "",
         reason or "rollback",
     )
-    await _emit_event("updated", model_id, target_version, {"rollback_from": None, "actor": actor})
+    await _emit_event(
+        "updated", model_id, target_version, {"rollback_from": None, "actor": actor}
+    )
     await _audit(
         actor,
         "model.rolled_back",
@@ -598,7 +631,10 @@ async def heartbeat(model_id: str, status: str = "healthy", **runtime: Any) -> b
                 "ON CONFLICT(model_id) DO UPDATE SET last_beat_at = CURRENT_TIMESTAMP, "
                 "consecutive_miss = 0, metadata = :meta"
             ),
-            {"m": model_id, "meta": _j({"status": status, **{k: v for k, v in runtime.items()}})},
+            {
+                "m": model_id,
+                "meta": _j({"status": status, **{k: v for k, v in runtime.items()}}),
+            },
         )
         await session.execute(
             text(
@@ -772,11 +808,16 @@ async def _handle_registry_event(event: dict) -> None:
     if event_type == "deregistered" and model_id:
         removed = upstream_registry.registry.upstreams.pop(f"registry-{model_id}", None)
         if removed:
-            logger.info("[registry] Phase B 事件摘除上游 registry-%s（无需重启）", model_id)
+            logger.info(
+                "[registry] Phase B 事件摘除上游 registry-%s（无需重启）", model_id
+            )
     elif event_type in ("registered", "updated"):
         merged = await upstream_registry.merge_registry_upstreams()
         logger.info(
-            "[registry] Phase B 事件重合并（%s → %s）：%d 上游入池", event_type, model_id, merged
+            "[registry] Phase B 事件重合并（%s → %s）：%d 上游入池",
+            event_type,
+            model_id,
+            merged,
         )
 
 
@@ -784,7 +825,9 @@ async def _merge_consumer_loop() -> None:
     """pub/sub 订阅循环：yyc3:registry:events → _handle_registry_event。"""
     pubsub = redis_client.pubsub()
     await pubsub.subscribe(REGISTRY_EVENTS_CHANNEL)
-    logger.info("[registry] Phase B 增量合并消费者已启动（频道 %s）", REGISTRY_EVENTS_CHANNEL)
+    logger.info(
+        "[registry] Phase B 增量合并消费者已启动（频道 %s）", REGISTRY_EVENTS_CHANNEL
+    )
     try:
         while True:
             msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
@@ -883,7 +926,9 @@ async def _watch_once(models: Optional[List[dict]] = None) -> None:
         _stale_state[mid] = stale
         if gauges:
             gauges[0].labels(model_id=mid, node_id=node).set(age)
-            gauges[1].labels(model_id=mid, node_id=node).set(1 if m.get("state") == "ready" else 0)
+            gauges[1].labels(model_id=mid, node_id=node).set(
+                1 if m.get("state") == "ready" else 0
+            )
 
 
 async def _watch_loop() -> None:
@@ -893,7 +938,9 @@ async def _watch_loop() -> None:
     （既有 shipper 链）→ Grafana 可查/可接既有告警通道；Prometheus 抓取 15s 自动采集
     Gauge（NAS prometheus.yml job=yyc3-gateway 已覆盖 /metrics）。
     """
-    logger.info("[registry] 心跳观测循环已启动（周期 30s，断流阈值 %ds）", _STALE_THRESHOLD)
+    logger.info(
+        "[registry] 心跳观测循环已启动（周期 30s，断流阈值 %ds）", _STALE_THRESHOLD
+    )
     while True:
         try:
             await _watch_once()
@@ -937,12 +984,20 @@ async def load_alias_cache() -> int:
     try:
         async with async_session() as session:
             rows = (
-                (await session.execute(text("SELECT alias, model_id FROM model_aliases")))
+                (
+                    await session.execute(
+                        text("SELECT alias, model_id FROM model_aliases")
+                    )
+                )
                 .mappings()
                 .all()
             )
     except Exception as exc:
-        logger.warning("[registry] 别名路由表加载失败（保留旧表 %d 条）: %s", len(_alias_cache), exc)
+        logger.warning(
+            "[registry] 别名路由表加载失败（保留旧表 %d 条）: %s",
+            len(_alias_cache),
+            exc,
+        )
         return len(_alias_cache)
     _alias_cache.clear()
     for r in rows:
@@ -1006,7 +1061,9 @@ async def set_alias(
     if target is None:
         raise ValueError(f"目标模型 {model_id} 未注册")
     if target.get("state") != "ready":
-        raise ValueError(f"目标模型 {model_id} state={target.get('state')}，仅 ready 可接别名流量")
+        raise ValueError(
+            f"目标模型 {model_id} state={target.get('state')}，仅 ready 可接别名流量"
+        )
     before = _alias_cache.get(alias)
     async with async_session() as session:
         await session.execute(
@@ -1023,7 +1080,13 @@ async def set_alias(
         "alias_switched",
         model_id,
         target.get("version"),
-        {"alias": alias, "from": before, "to": model_id, "reason": reason, "actor": actor},
+        {
+            "alias": alias,
+            "from": before,
+            "to": model_id,
+            "reason": reason,
+            "actor": actor,
+        },
     )
     await _audit(
         actor,
@@ -1054,7 +1117,9 @@ async def delete_alias(alias: str, actor: str = "registry-api") -> bool:
     return True
 
 
-async def drain_model(model_id: str, actor: str = "registry-api", reason: str = "") -> Optional[dict]:
+async def drain_model(
+    model_id: str, actor: str = "registry-api", reason: str = ""
+) -> Optional[dict]:
     """置 draining 排空态（规范 03 §3.4：不接新流量，存量 SSE 自然完成后下线）。
 
     语义接线（既有机制自动生效，无需额外代码）：
@@ -1076,3 +1141,77 @@ async def drain_model(model_id: str, actor: str = "registry-api", reason: str = 
         {"state": "draining", "reason": reason},
     )
     return await get_health(model_id)  # 含 runtime.active_requests 排空观测
+
+
+# ── Manifest / 审计读取（R-11/R-12 查询下沉：api 层禁止裸连 DB 红线）──
+
+
+async def get_manifest_by_hash(manifest_hash: str) -> Optional[Dict[str, Any]]:
+    """R-11 按 hash 取最新 Manifest 记录（manifest JSON 反序列化；未命中返回 None）"""
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    try:
+        async with async_session() as session:
+            row = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT model_id, version, manifest, manifest_hash, action, actor, "
+                            "created_at FROM model_versions WHERE manifest_hash = :h "
+                            "ORDER BY id DESC LIMIT 1"
+                        ),
+                        {"h": manifest_hash},
+                    )
+                )
+                .mappings()
+                .first()
+            )
+    except Exception as exc:
+        logger.warning("[registry] manifest 查询失败: %s", exc)
+        return None
+    if row is None:
+        return None
+    rec = dict(row)
+    raw = rec.get("manifest")
+    try:
+        rec["manifest"] = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception:
+        rec["manifest"] = {}
+    return rec
+
+
+async def list_audit_logs(model_id: Optional[str], limit: int) -> List[Dict[str, Any]]:
+    """R-12 审计日志读取（按 model_id 可选过滤 + before/after JSON 反序列化）"""
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    sql = (
+        "SELECT id, actor, action, model_id, before_state, after_state, created_at "
+        "FROM model_audit_log"
+    )
+    params: dict = {"lim": limit}
+    if model_id:
+        sql += " WHERE model_id = :m"
+        params["m"] = model_id
+    sql += " ORDER BY id DESC LIMIT :lim"
+    try:
+        async with async_session() as session:
+            rows = (await session.execute(text(sql), params)).mappings().all()
+    except Exception as exc:
+        logger.warning("[registry] 审计查询失败: %s", exc)
+        return []
+    logs = []
+    for r in rows:
+        rec = dict(r)
+        for field in ("before_state", "after_state"):
+            raw = rec.get(field)
+            if isinstance(raw, str) and raw:
+                try:
+                    rec[field] = json.loads(raw)
+                except Exception:
+                    pass
+        logs.append(rec)
+    return logs

@@ -36,6 +36,10 @@ ignore_imports =
     app.api.** -> app.services.rag_service
     app.api.** -> app.services.agent_retriever
     app.api.** -> app.services.document_processor
+    app.api.** -> app.services.pricing
+    app.api.** -> app.services.model_registry_svc
+    app.api.** -> app.services.upstream_registry
+    app.api.** -> app.services.ops_rag
 
 [importlinter:contract:services-independent]
 name = services 内平级模块禁止互相 import（providers 除外），防网状耦合

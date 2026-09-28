@@ -1,16 +1,18 @@
 # file: ops_rag.py
-# description: 运维知识库检索服务（chroma 四库 + 零依赖 BM25 + RRF 融合，含降级链）
+# description: 运维知识库检索服务（chroma 四库 + 零依赖 BM25 + RRF 融合 + rerank 精排，含降级链）
 # author: YanYuCloudCube Team
-# version: v1.0.0
+# version: v1.1.0
 # created: 2026-09-27
 # status: active
-# tags: [service],[rag],[ops],[bm25],[rrf]
+# tags: [service],[rag],[ops],[bm25],[rrf],[rerank]
 #
 # 设计要点（评审说明）：
 # 1. 出站端点全部为编译期字面量（ENDPOINTS 注册表），配置只选择键名，无任何 URL 拼接；
 # 2. BM25 为零依赖实现（Okapi），索引 JSON 落盘，reindex 从 chroma 主库全量拉取重建；
 # 3. 降级链：8B 嵌入离线 → 0.6b+online 库（notes 留痕）；chroma 不可达 → 返回 503 明确错误；
-# 4. 评测基线（2026-09-27, golden set v2 · 40 题 Top3）：online 31% / premium 45% / main 55%。
+# 4. 评测基线（2026-09-27, golden set v2 · 40 题 Top3）：online 31% / premium 45% / main 55%；
+# 5. rerank 精排（v1.1.0 P1）：候选池（≤top_k×4）经 rerank_svc 生成式打分重排；
+#    失败自动降级原序（notes 留痕），检索不因重排失败而失败。
 
 import json
 import math
@@ -22,6 +24,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.config import settings
+from app.services.rerank_svc import rerank_scores
 
 # ── 端点字面量注册表（配置选键，不拼 URL）─────────────────────
 EMB_ENDPOINTS = {
@@ -246,6 +249,7 @@ class OpsRAGService:
         top_k: int = 5,
         library: str = "main",
         hybrid: bool = False,
+        rerank: bool = False,
     ) -> Dict[str, Any]:
         notes: List[str] = []
         if library not in CHROMA_QUERY_URLS:
@@ -262,30 +266,52 @@ class OpsRAGService:
 
         fused = False
         if hybrid and library == "main" and self.load_bm25():
-            bm25_hits = []
-            for i in self._bm25.search(query, top_k * 4):
-                d = self._bm25_docs[i]
-                bm25_hits.append(
-                    {
-                        "source": d["source"],
-                        "heading": d["heading"],
-                        "text": d["text"],
-                        "distance": None,
-                    }
-                )
-            hits = self.rrf_fuse(hits, bm25_hits, top_k)
-            fused = True
+            bm25 = self._bm25
+            if bm25 is not None:
+                bm25_hits = []
+                for i in bm25.search(query, top_k * 4):
+                    d = self._bm25_docs[i]
+                    bm25_hits.append(
+                        {
+                            "source": d["source"],
+                            "heading": d["heading"],
+                            "text": d["text"],
+                            "distance": None,
+                        }
+                    )
+                hits = self.rrf_fuse(hits, bm25_hits, top_k)
+                fused = True
         else:
             if hybrid and library != "main":
                 notes.append("hybrid 仅支持 main 库")
+
+        # rerank 精排（v1.1.0）：候选池整体打分重排，失败降级原序（可用性优先）
+        reranked = False
+        if rerank and hits:
+            try:
+                scores, upstream = await rerank_scores(query, [h["text"] for h in hits])
+                for i, s in enumerate(scores):
+                    hits[i]["_rerank_score"] = round(s, 4)
+                order = sorted(range(len(hits)), key=lambda i: -scores[i])
+                hits = [hits[i] for i in order]
+                reranked = True
+                notes.append(f"rerank by {upstream}")
+            except Exception as e:
+                notes.append(f"rerank 降级原序: {e}")
+
+        def _score(h: Dict[str, Any]) -> float:
+            # 分数语义：rerank 分（最终相关性）> RRF 融合分 > 向量相似度
+            if reranked:
+                return float(h.get("_rerank_score", 0.0))
+            if fused:
+                return float(h.get("score", 0.0))
+            return round(1.0 - h.get("distance", 0.0), 4)
 
         results = [
             {
                 "source": h["source"],
                 "heading": h["heading"],
-                "score": (
-                    h.get("score") if fused else round(1.0 - h.get("distance", 0.0), 4)
-                ),
+                "score": _score(h),
                 "snippet": h["text"][:400],
             }
             for h in hits[:top_k]
@@ -295,6 +321,7 @@ class OpsRAGService:
             "library": library,
             "embedded_by": EMB_MODELS[engine_key],
             "hybrid": fused,
+            "reranked": reranked,
             "notes": notes,
             "results": results,
         }
