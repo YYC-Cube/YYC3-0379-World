@@ -35,13 +35,12 @@ bash deploy/nas/smoke-test.sh                # 全量冒烟
 5. 验证：`/healthz` 200 + `pg_stat_activity` + compose ps 全 healthy
 6. 全家巡检：`bash /Volume2/@apps/yyc3_pg.sh status-all`（三实例+Redis）
 
-## cron 路径锚定（待 NAS 实测回填）
+## cron 路径锚定（2026-09-28 实测回填）
 
 - `auto-deploy.sh` / `rebuild-gateway.sh` 为**仓库分发副本**（deploy/nas/，随 git 同步至 /Volume2/yyc3-33 工作树）
-- ⚠️ NAS 本机 crontab 实际调用路径**尚未锚定**——下次 NAS 侧操作执行 `crontab -l` 回填此处：
-  - auto-deploy cron 路径：`待回填（crontab -l 实测）`
-  - rebuild cron/手动路径：`待回填`
-- 回填确认前**禁止删除仓库副本**（2026-09-28 处置评审定案；若 cron 走工作树路径，删除即断裂生产自动部署链）
+- ✅ 实测定论（09-28 `crontab -l` + `/etc/config/crontab` + spool + TOS sch 四路核验）：**全 NAS 无 cron/计划任务挂载**——两脚本实为**手动触发范式**（auto-deploy.log 中 `rebuild at <C>` 条目均为手动执行 rebuild-gateway.sh 产物）
+- 部署语义：版本推进 = `git fetch && git reset --hard origin/main` + `bash deploy/nas/rebuild-gateway.sh`（后者不做 fetch，依赖工作树已推进）
+- 处置：仓库副本**保留**（标准化手动入口 + smoke 挂载点；若未来加 cron 直接引用工作树路径 `bash /Volume2/yyc3-33/deploy/nas/auto-deploy.sh`）
 
 ## 端口契约（勿回退到 0.0.0.0）
 
