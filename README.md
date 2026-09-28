@@ -246,6 +246,14 @@ Client Request
 
 上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。
 
+**模型注册中心（`/registry/v1`，09-27 Phase A 上线）**——env 之上的动态注册通道（`REGISTRY_ENABLED=true` 开启，env 保留兜底）：
+
+- **12 端点**：模型 CRUD / 版本历史 / 回滚（目标版本必须在历史中）/ 心跳上报（TTL 三级阶梯 90s→degraded、180s→unreachable、300s→摘除）/ 实时健康 / 事件流 SSE / Manifest / 审计
+- **双通道**：Pull（R-01 列表轮询）+ Push（R-10 SSE 订阅 `yyc3:registry:events`，连接建立先回放在途事件防漏）；网关启动经 `merge_registry_upstreams()` 合并（`registry-{model_id}` 命名与 env 上游隔离，幂等保留熔断/EWMA 状态）
+- **五表 Schema**（005 迁移）：主表增量列（存量 6 列全保留）+ model_versions（不可变版本历史）+ model_heartbeats + model_events + model_audit_log（365 天）
+- **接入工具链**：`core/scripts/model_asset_verify.py`（NAS 资产完整性三校验：分片对账/头部 magic/配置存在性，报告落 `model_checksum.report`）+ `model_sync_to_node.py`（NAS→节点 SSD 增量同步，rsync 断点续传 + 同步后分片对账门禁）
+- 规范文档：`docs/模型接入与注册/`（01 现状基线 / 02 Registry 目标架构 / 03 热切换 / 04 Agent 注册 / 05 Runbook）
+
 ### 智能路由与负载均衡
 
 - **上游池三段式路由**（现行）：云前缀 → 上游池（fnmatch 模型匹配+分层优先级）→ Ollama 兜底；`ROUTER_ENABLED` 一键灰度回退
@@ -471,6 +479,15 @@ YYC3-0379-World/
 |:----:|:-------|:-----|
 | **API Key** | `X-API-Key: your_key` | 简单直接，适合服务端调用 |
 | **JWT** | `Authorization: Bearer your_token` | 带过期时间，适合客户端应用 |
+| **Bearer 兼容** | `Authorization: Bearer sk-*/vk-*` | OpenAI 生态兼容（09-27 起支持，vk 计费链同姿势） |
+
+### 关键端点族
+
+| 端点族 | 说明 | 规范文档 |
+|:-------|:-----|:---------|
+| `/registry/v1/**` | 模型注册中心 12 端点（CRUD/版本/回滚/心跳/SSE 事件/审计） | `docs/模型接入与注册/02-Registry目标架构.md` |
+| `/v1/admin/a2a/agents*` | A2A Agent 注册面（register/heartbeat + 演进层 list/PATCH/DELETE 含 tools 扩展元数据） | `docs/模型接入与注册/04-Agent注册规范.md` |
+| `/v1/agent/a2a/tasks*` | A2A 任务提交（异步 202 / 同步回执；vk 三闸门 + X-A2A-Cost 计费直报） | `docs/架构与部署/A2A开放API契约.md` |
 
 ---
 
