@@ -924,7 +924,8 @@ async def start_probe_loop():
     # ── 模型注册中心（Phase A 双通道 + Phase B 增量合并）：sqlite 自建五表 ──
     from app.services import model_registry_svc as mrs
 
-    await mrs.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 005 SQL 迁移管）
+    await mrs.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 005/006 SQL 迁移管）
+    await mrs.load_alias_cache()  # Phase C：别名路由表预热（DB 不可达保留空表，env 行为不变）
     if mrs.registry_enabled():
         from app.services import upstream_registry
 

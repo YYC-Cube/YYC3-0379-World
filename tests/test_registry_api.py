@@ -159,3 +159,98 @@ class TestWriteGuardrails:
         resp = sqlite_db.get(f"/registry/v1/manifests/{m_hash}", headers=_normal())
         assert resp.status_code == 200
         assert resp.json()["model_id"] == "glm-5.3-flash"
+
+
+class TestAliasAndDrainEndpoints:
+    """Phase C 别名热切换与排空端点（规范 03 §3）。"""
+
+    def _ready(self, client):
+        client.post("/registry/v1/models", json=_BODY, headers=_admin())
+        client.patch(
+            "/registry/v1/models/glm-5.3-flash", json={"state": "ready"}, headers=_admin()
+        )
+
+    def test_alias_requires_admin(self, sqlite_db):
+        resp = sqlite_db.put(
+            "/registry/v1/aliases/chat", json={"model_id": "glm-5.3-flash"}, headers=_normal()
+        )
+        assert resp.status_code == 403
+
+    def test_alias_write_disabled_when_registry_off(self, sqlite_db, monkeypatch):
+        monkeypatch.setenv("REGISTRY_ENABLED", "false")
+        resp = sqlite_db.put(
+            "/registry/v1/aliases/chat", json={"model_id": "glm-5.3-flash"}, headers=_admin()
+        )
+        assert resp.status_code == 503
+
+    def test_alias_set_switch_list_delete_flow(self, sqlite_db):
+        self._ready(sqlite_db)
+        # 设别名
+        resp = sqlite_db.put(
+            "/registry/v1/aliases/chat-prod",
+            json={"model_id": "glm-5.3-flash", "reason": "演练"},
+            headers=_admin(),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "switched"
+        assert resp.json()["previous"] is None
+        # 列表含路由缓存
+        listed = sqlite_db.get("/registry/v1/aliases", headers=_normal()).json()
+        assert listed["count"] == 1
+        assert listed["route_cache"]["chat-prod"] == "glm-5.3-flash"
+        # 切换指向（previous 可追溯）
+        resp = sqlite_db.put(
+            "/registry/v1/aliases/chat-prod",
+            json={"model_id": "glm-5.3-flash", "reason": "切换"},
+            headers=_admin(),
+        )
+        assert resp.json()["previous"] == "glm-5.3-flash"
+        # 删除 + 404
+        assert sqlite_db.delete("/registry/v1/aliases/chat-prod", headers=_admin()).status_code == 200
+        assert sqlite_db.delete("/registry/v1/aliases/chat-prod", headers=_admin()).status_code == 404
+
+    def test_alias_target_not_ready_rejected(self, sqlite_db):
+        sqlite_db.post("/registry/v1/models", json=_BODY, headers=_admin())  # offline
+        resp = sqlite_db.put(
+            "/registry/v1/aliases/chat-prod", json={"model_id": "glm-5.3-flash"}, headers=_admin()
+        )
+        assert resp.status_code == 422
+        assert "仅 ready" in resp.json()["detail"]["error"]
+
+    def test_alias_unknown_target_404_as_422(self, sqlite_db):
+        resp = sqlite_db.put(
+            "/registry/v1/aliases/chat-prod", json={"model_id": "ghost"}, headers=_admin()
+        )
+        assert resp.status_code == 422
+        assert "未注册" in resp.json()["detail"]["error"]
+
+    def test_drain_endpoint_flow(self, sqlite_db):
+        self._ready(sqlite_db)
+        resp = sqlite_db.post(
+            "/registry/v1/models/glm-5.3-flash/drain",
+            json={"reason": "演练排空"},
+            headers=_admin(),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "draining"
+        assert resp.json()["drain_observation"]["state"] == "draining"
+        assert isinstance(resp.json()["drain_observation"]["runtime"], dict)  # 排空观测面
+        # undrain 语义 = 既有 PATCH ready
+        undrained = sqlite_db.patch(
+            "/registry/v1/models/glm-5.3-flash", json={"state": "ready"}, headers=_admin()
+        )
+        assert undrained.json()["state"] == "ready"
+
+    def test_drain_requires_admin_and_unknown_404(self, sqlite_db):
+        assert (
+            sqlite_db.post(
+                "/registry/v1/models/x/drain", json={}, headers=_normal()
+            ).status_code
+            == 403
+        )
+        assert (
+            sqlite_db.post(
+                "/registry/v1/models/ghost/drain", json={}, headers=_admin()
+            ).status_code
+            == 404
+        )

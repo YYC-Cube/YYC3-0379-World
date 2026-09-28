@@ -45,14 +45,15 @@ category: spec
 | Agent 管理演进层（GET 列表含离线 / PATCH 扩展元数据 / DELETE + 审计） | ✅ 已落地（09-28） | `core/api/api/a2a.py` 演进层区 |
 | MCP 工具声明（tools 字段随 Agent Card PATCH 维护） | ✅ 已落地（09-28，白名单字段） | `a2a_protocol.py`（`_registry_update_card`） |
 | 模型服务契约端点（`/v1/model/metadata` 等 3 个 YYC³ 新增） | 📋 规划（模型服务侧实现） | [02](02-Registry目标架构.md) §2 |
-| Shadow / Canary / 蓝绿热切换 | 📋 规划 | [03](03-热切换与版本管理.md) |
-| 别名 alias 动态切换 + draining 排空 | 📋 规划 | [03](03-热切换与版本管理.md) §3.5 |
+| **别名 alias 热切换**（`model_aliases` 表 + 内存路由表 + `alias_switched` 事件 + `/registry/v1/aliases` 3 端点） | ✅ 已落地（09-28 Phase C） | `model_registry_svc.py`（`set_alias`/`resolve_alias`/`load_alias_cache`）+ `chat.py`（`_select_backend` 首行解析） |
+| **draining 排空**（`POST /models/{id}/drain` + 排空观测；不进池/心跳不覆盖既有机制自动生效） | ✅ 已落地（09-28 Phase C） | `model_registry_svc.py`（`drain_model`）+ `model_registry.py`（R-15） |
+| Shadow / Canary / 蓝绿热切换 | 📋 规划（别名切换已落地，见上行） | [03](03-热切换与版本管理.md) §4-§5 |
 | A2A Agent 注册（Agent Card + Redis stream + 心跳 + 能力发现） | ✅ 生产 | `core/api/api/a2a.py` / `core/api/services/a2a_protocol.py` |
 | A2A vk 计费门控（白名单/预算/TPM + X-A2A-Cost） | ✅ 生产（2026-09-27 生产首验通过） | `core/api/api/a2a.py`（`_enforce_agent_vk_gates`） |
 | 模型资产完整性校验脚本 `model_asset_verify.py` | ✅ 已落地（09-28，21 用例中 12 覆盖） | `core/scripts/model_asset_verify.py` |
 | NAS → 节点增量同步脚本 `model_sync_to_node.py` | ✅ 已落地（09-28，plan/dry-run/续传检测） | `core/scripts/model_sync_to_node.py` |
 | 注册 Agent `model_register_agent.py`（模型服务侧自动注册+心跳） | ✅ 已落地（09-28 TOP2，stdlib 零依赖：就绪探测/注册/ready/30s 心跳/优雅 offline） | `core/scripts/model_register_agent.py` |
-| 模型上线冒烟脚本 `model_smoke_test.py` | 📋 规划待实现 | 同上 |
+| 模型上线冒烟脚本 `model_smoke_test.py` | ✅ 已落地（09-28，九用例能力面感知） | `core/scripts/model_smoke_test.py` |
 
 ## 整合时统一的关键决策
 
@@ -80,3 +81,4 @@ category: spec
 | --- | --- | --- |
 | v1.0.0 | 2026-09-27 | 两规范整合拆分为五文档 + 索引；统一命名/心跳/元数据载体/状态机口径；幽灵脚本标注规划 |
 | v1.1.0 | 2026-09-28 | 实施推进落地：Registry Phase A MVP（五表/12端点/心跳TTL/双通道合并）、Agent 演进层三端点、资产校验与增量同步双脚本——状态总览表 8 项 📋→✅ |
+| v1.2.0 | 2026-09-28 | Phase C 热切换落地：别名 alias（006 迁移 + 3 端点 + 网关解析）+ draining 排空（R-15 + 观测）；冒烟脚本状态修正；规范 03 §3 转已实施 |

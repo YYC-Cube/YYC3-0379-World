@@ -230,3 +230,130 @@ class TestEventsAndUpstreams:
         assert svc.registry_enabled() is False
         monkeypatch.setenv("REGISTRY_ENABLED", "true")
         assert svc.registry_enabled() is True
+
+
+class TestAliasHotSwap:
+    """Phase C 别名热切换（规范 03 §3.1/§3.5）。"""
+
+    @pytest.fixture(autouse=True)
+    def _clean_cache(self):
+        svc._alias_cache.clear()
+        yield
+        svc._alias_cache.clear()
+
+    def _ready_model(self, model_id="qwen3.8-27b", **kw):
+        _register(dict(_PAYLOAD, model_id=model_id, **kw))
+        asyncio.run(svc.update_model(model_id, {"state": "ready"}))
+
+    def test_resolve_alias_hit_and_miss(self, sqlite_db):
+        self._ready_model()
+        result = asyncio.run(svc.set_alias("chat", "qwen3.8-27b"))
+        assert result["previous"] is None
+        assert svc.resolve_alias("chat") == "qwen3.8-27b"
+        assert svc.resolve_alias("qwen3.8-27b") == "qwen3.8-27b"  # 非 alias 原样旁路
+        assert svc.resolve_alias("unknown-name") == "unknown-name"
+
+    def test_set_alias_requires_ready_target(self, sqlite_db):
+        _register()  # 默认 offline
+        with pytest.raises(ValueError, match="仅 ready"):
+            asyncio.run(svc.set_alias("chat", "qwen3.8-27b"))
+        with pytest.raises(ValueError, match="未注册"):
+            asyncio.run(svc.set_alias("chat", "ghost-model"))
+
+    def test_set_alias_rejects_blank(self, sqlite_db):
+        with pytest.raises(ValueError, match="alias 非法"):
+            asyncio.run(svc.set_alias("a b", "x"))  # 含空白
+        with pytest.raises(ValueError, match="alias 非法"):
+            asyncio.run(svc.set_alias("", "x"))
+
+    def test_switch_alias_updates_route_and_cache(self, sqlite_db):
+        """切换指向：缓存直更 + 事件广播 + 审计留痕（回滚依据）。"""
+        self._ready_model("model-a")
+        self._ready_model("model-b")
+        asyncio.run(svc.set_alias("chat", "model-a"))
+        result = asyncio.run(svc.set_alias("chat", "model-b", reason="演练切换"))
+        assert result["previous"] == "model-a"  # before 可追溯
+        assert svc.resolve_alias("chat") == "model-b"  # 即时生效（免等事件回环）
+        events = asyncio.run(svc.recent_events())
+        assert events[-1]["event_type"] == "alias_switched"
+        assert events[-1]["payload"]["from"] == "model-a"
+        assert events[-1]["payload"]["to"] == "model-b"
+
+    def test_alias_event_refreshes_cache(self, sqlite_db):
+        """事件驱动路由表刷新（跨进程一致性通道）。"""
+        self._ready_model("model-a")
+        asyncio.run(svc.set_alias("chat", "model-a"))  # 先落库别名行
+        svc._alias_cache["chat"] = "stale-model"  # 模拟另一进程缓存陈旧
+        asyncio.run(svc._handle_registry_event({"event_type": "alias_switched", "model_id": "model-a"}))
+        assert svc.resolve_alias("chat") == "model-a"  # 全量重载已修正
+
+    def test_delete_alias(self, sqlite_db):
+        self._ready_model()
+        asyncio.run(svc.set_alias("chat", "qwen3.8-27b"))
+        assert asyncio.run(svc.delete_alias("chat")) is True
+        assert svc.resolve_alias("chat") == "chat"  # 删除后原样旁路
+        assert asyncio.run(svc.delete_alias("chat")) is False
+        events = asyncio.run(svc.recent_events())
+        assert events[-1]["event_type"] == "alias_deleted"
+
+    def test_list_aliases_and_load_cache(self, sqlite_db):
+        self._ready_model()
+        asyncio.run(svc.set_alias("chat", "qwen3.8-27b"))
+        svc._alias_cache.clear()  # 模拟重启
+        count = asyncio.run(svc.load_alias_cache())
+        assert count == 1
+        assert svc.resolve_alias("chat") == "qwen3.8-27b"
+        rows = asyncio.run(svc.list_aliases())
+        assert rows[0]["alias"] == "chat" and rows[0]["model_id"] == "qwen3.8-27b"
+
+
+class TestDrainSemantics:
+    """Phase C draining 排空（规范 03 §3.4/§3.5 第 4 步）。"""
+
+    def test_drain_excludes_from_upstream_pool(self, sqlite_db):
+        """draining → registry_upstreams 不再产出（新流量不进，对账摘除）。"""
+        _register()
+        asyncio.run(svc.update_model("qwen3.8-27b", {"state": "ready"}))
+        assert len(asyncio.run(svc.registry_upstreams())) == 1
+        health = asyncio.run(svc.drain_model("qwen3.8-27b", reason="演练排空"))
+        assert health["state"] == "draining"
+        assert asyncio.run(svc.registry_upstreams()) == []  # 摘出池
+
+    def test_drain_idempotent_returns_observation(self, sqlite_db):
+        """幂等：重复 drain 不再变更，返回排空观测（runtime.active_requests）。"""
+        _register()
+        asyncio.run(svc.update_model("qwen3.8-27b", {"state": "ready"}))
+        first = asyncio.run(svc.drain_model("qwen3.8-27b"))
+        second = asyncio.run(svc.drain_model("qwen3.8-27b"))
+        assert first["state"] == second["state"] == "draining"
+        assert isinstance(second["runtime"], dict)  # 排空观测面（心跳 runtime 指标）
+        assert "heartbeat_age_seconds" in second
+
+    def test_drain_unknown_model(self, sqlite_db):
+        assert asyncio.run(svc.drain_model("ghost")) is None
+
+    def test_full_swap_flow_v1_to_v2_and_rollback(self, sqlite_db):
+        """规范 03 §3.5 五步切换全链路（单测形态演练）：v1 服务 → v2 ready →
+        切别名 → v1 draining 摘池 → 回滚切 v1 → v2 draining。"""
+        self._v1 = dict(_PAYLOAD, model_id="swap-model", version="v1.0.0")
+        _register(self._v1)
+        asyncio.run(svc.update_model("swap-model", {"state": "ready"}))
+        asyncio.run(svc.set_alias("chat-swap", "swap-model"))  # ① v1 承接流量
+        # ② v2 部署注册 ready（别名不指向，不接公网流量）
+        _register(dict(_PAYLOAD, model_id="swap-model-v2", version="v2.0.0"))
+        asyncio.run(svc.update_model("swap-model-v2", {"state": "ready"}))
+        # ③ 改别名映射：新请求走 v2（存量 SSE 在 v1 完成）
+        asyncio.run(svc.set_alias("chat-swap", "swap-model-v2", reason="版本切换演练"))
+        assert svc.resolve_alias("chat-swap") == "swap-model-v2"
+        # ④ v1 置 draining → 摘出上游池
+        asyncio.run(svc.drain_model("swap-model"))
+        entries = asyncio.run(svc.registry_upstreams())
+        assert {e["name"] for e in entries} == {"registry-swap-model-v2"}
+        # ⑤ 回滚：别名切回 v1（v2 排空）
+        asyncio.run(svc.update_model("swap-model", {"state": "ready"}))  # 排空完成重新上线
+        asyncio.run(svc.set_alias("chat-swap", "swap-model", reason="回滚演练"))
+        asyncio.run(svc.drain_model("swap-model-v2"))
+        assert svc.resolve_alias("chat-swap") == "swap-model"
+        entries = asyncio.run(svc.registry_upstreams())
+        assert {e["name"] for e in entries} == {"registry-swap-model"}
+

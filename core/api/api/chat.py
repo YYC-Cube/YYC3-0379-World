@@ -33,7 +33,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.api.schemas import CompletionRequest
 from app.config import settings
 from app.errors.handler import error_handler, with_retry
-from app.services import deepseek, ollama
+from app.services import deepseek, model_registry_svc, ollama
 from app.services import openai as openai_service
 from app.services import openai_compatible, zhipu
 from app.services.pricing import pricing
@@ -198,6 +198,10 @@ class _UpstreamBackend:
 def _select_backend(model_name: str, sovereign: bool = False):
     """选择模型后端，返回 (backend_module, backend_name, backend_type)
 
+    Phase C 别名解析（规范 03 §3.1）首行生效：公网调用名（alias）→ model_id，
+    同步内存查零开销；未命中原样返回（非别名请求行为不变）。VK 白名单仍校验
+    公网名（权限面在 chat_completion 主流程），路由/上游请求用解析后 model_id。
+
     三段式：
     1. 云前缀/云模型名（zhipu:/deepseek:/openai: 及默认名单）→ 云适配器
     2. 上游池模型匹配（fnmatch 通配，router_enabled 灰度开关）→ _UpstreamBackend
@@ -206,6 +210,7 @@ def _select_backend(model_name: str, sovereign: bool = False):
     sovereign=True（请求头 X-YYC3-Sovereign: required）：
     跳过云适配器，仅路由 sovereign 上游；无可用抛 SovereignUnavailableError（→503 不降级到云）
     """
+    model_name = model_registry_svc.resolve_alias(model_name)
     if sovereign:
         if settings.router_enabled and upstream_registry.upstreams:
             u = upstream_registry.select_sovereign(model_name)

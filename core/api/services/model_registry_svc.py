@@ -1,7 +1,7 @@
 # file: model_registry_svc.py
-# description: 模型注册中心服务 - 五表 CRUD / 心跳 TTL / 事件发布 / env 双通道合并（Phase A MVP）
+# description: 模型注册中心服务 - 五表 CRUD / 心跳 TTL / 事件发布 / env 双通道合并（Phase A/B）+ 别名热切换（Phase C）
 # author: YanYuCloudCube Team <admin@0379.email>
-# version: v1.0.0
+# version: v1.1.0
 # created: 2026-09-27
 # status: active
 # tags: [registry],[model],[heartbeat],[events],[dual-channel]
@@ -25,6 +25,10 @@
       registry_upstreams 不衰减；一旦开始上报心跳，停跳超 300s（TTL_REMOVED）即从
       产出中摘除——register_agent.py 落地（规范 01 附录 A）前的生产注册均用手动模式
     高可用语义：DB 不可达一律返回空/False 并告警，绝不阻塞网关（env 通道兜底）。
+    Phase C（2026-09-28，规范 03 §3）：别名热切换——model_aliases 表（006 迁移）+
+    内存路由表（alias→model_id）+ set/delete 直更 + alias_switched/alias_deleted
+    事件跨进程刷新 + drain_model 排空态（draining 不进池、心跳不覆盖，既有机制
+    自动生效）。规范 03 §3.5 五步切换流程的管理面操作齐备。
 @author: YanYuCloudCube Team <admin@0379.email>
 @license: MIT
 @copyright Copyright (c) 2026 YanYuCloudCube Team
@@ -194,6 +198,11 @@ async def ensure_tables() -> None:
             "id INTEGER PRIMARY KEY AUTOINCREMENT, actor VARCHAR(200) NOT NULL, "
             "action VARCHAR(50) NOT NULL, model_id VARCHAR(100), before_state TEXT, "
             "after_state TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+            # Phase C 别名热切换（规范 03 §3.1，006 迁移）
+            "CREATE TABLE IF NOT EXISTS model_aliases ("
+            "alias VARCHAR(200) PRIMARY KEY, model_id VARCHAR(100) NOT NULL, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         ):
             await conn.execute(text(ddl))
 
@@ -753,6 +762,13 @@ async def _handle_registry_event(event: dict) -> None:
 
     event_type = str(event.get("event_type") or "")
     model_id = str(event.get("model_id") or "")
+    if event_type in ("alias_switched", "alias_deleted"):
+        # Phase C：别名路由表热更新（全量重载幂等；同进程 set_alias 已直更，此处兜底跨进程）
+        count = await load_alias_cache()
+        logger.info(
+            "[registry] Phase C 别名事件 %s → 路由表已刷新（%d 条）", event_type, count
+        )
+        return
     if event_type == "deregistered" and model_id:
         removed = upstream_registry.registry.upstreams.pop(f"registry-{model_id}", None)
         if removed:
@@ -903,3 +919,160 @@ async def stop_heartbeat_watch() -> None:
         except asyncio.CancelledError:
             pass
         _watch_task = None
+
+
+# ── Phase C 别名热切换（规范 03 §3 别名与实例状态机） ─────────────
+
+# 内存路由表：alias → model_id（网关热路径同步查，零 DB 开销；
+# startup 全量加载 + set/delete 直更 + alias 事件跨进程刷新，三路一致）
+_alias_cache: Dict[str, str] = {}
+
+
+async def load_alias_cache() -> int:
+    """全量加载别名路由表（startup / 事件刷新；幂等。DB 不可达保留旧表——高可用语义）。"""
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    try:
+        async with async_session() as session:
+            rows = (
+                (await session.execute(text("SELECT alias, model_id FROM model_aliases")))
+                .mappings()
+                .all()
+            )
+    except Exception as exc:
+        logger.warning("[registry] 别名路由表加载失败（保留旧表 %d 条）: %s", len(_alias_cache), exc)
+        return len(_alias_cache)
+    _alias_cache.clear()
+    for r in rows:
+        _alias_cache[str(r["alias"])] = str(r["model_id"])
+    return len(_alias_cache)
+
+
+def resolve_alias(model: str) -> str:
+    """公网调用名 → model_id（同步内存查；未命中原样返回——非别名请求零开销旁路）。
+
+    网关 _select_backend 首行调用：VK 白名单仍校验公网名（权限面），路由面用解析后
+    model_id 匹配上游池（registry-{model_id} models:[model_id] 精确命中）。
+    """
+    return _alias_cache.get(model, model)
+
+
+async def list_aliases() -> List[dict]:
+    """别名列表（管理面只读）。"""
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    try:
+        async with async_session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT alias, model_id, created_at, updated_at "
+                            "FROM model_aliases ORDER BY alias"
+                        )
+                    )
+                )
+                .mappings()
+                .all()
+            )
+    except Exception as exc:
+        logger.warning("[registry] 别名列表查询失败: %s", exc)
+        return []
+    return [dict(r) for r in rows]
+
+
+async def set_alias(
+    alias: str, model_id: str, actor: str = "registry-api", reason: str = ""
+) -> dict:
+    """设置/切换别名指向（规范 03 §3.5 无缝版本切换核心操作）。
+
+    防呆：目标 model_id 必须已注册且 state==ready（新版本未 ready 不接公网流量——
+    §3.5 第 1 步约束）。成功后：路由表直更（本进程即时生效）+ alias_switched 事件
+    （跨进程刷新 + SSE 广播）+ 审计（before/after 指向可追溯，回滚依据）。
+    :raises ValueError: 别名格式非法 / 目标模型不存在 / 目标未 ready
+    """
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    alias = (alias or "").strip()
+    if not alias or len(alias) > 200 or any(c.isspace() for c in alias):
+        raise ValueError("alias 非法（非空、≤200 字符、不含空白）")
+    target = await get_model(model_id)
+    if target is None:
+        raise ValueError(f"目标模型 {model_id} 未注册")
+    if target.get("state") != "ready":
+        raise ValueError(f"目标模型 {model_id} state={target.get('state')}，仅 ready 可接别名流量")
+    before = _alias_cache.get(alias)
+    async with async_session() as session:
+        await session.execute(
+            text(
+                "INSERT INTO model_aliases (alias, model_id) VALUES (:a, :m) "
+                "ON CONFLICT(alias) DO UPDATE SET model_id = :m, "
+                "updated_at = CURRENT_TIMESTAMP"
+            ),
+            {"a": alias, "m": model_id},
+        )
+        await session.commit()
+    _alias_cache[alias] = model_id  # 本进程路由表直更（免等事件回环）
+    await _emit_event(
+        "alias_switched",
+        model_id,
+        target.get("version"),
+        {"alias": alias, "from": before, "to": model_id, "reason": reason, "actor": actor},
+    )
+    await _audit(
+        actor,
+        "alias.switched",
+        model_id,
+        {"alias": alias, "model_id": before},
+        {"alias": alias, "model_id": model_id, "reason": reason},
+    )
+    return {"alias": alias, "model_id": model_id, "previous": before}
+
+
+async def delete_alias(alias: str, actor: str = "registry-api") -> bool:
+    """删除别名（规范 03 §8 下线第 2 步：移除 alias 指向）。不存在返回 False。"""
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    async with async_session() as session:
+        result = await session.execute(
+            text("DELETE FROM model_aliases WHERE alias = :a"), {"a": alias}
+        )
+        await session.commit()
+    if not result.rowcount:
+        return False
+    model_id = _alias_cache.pop(alias, "")
+    await _emit_event("alias_deleted", model_id, None, {"alias": alias, "actor": actor})
+    await _audit(actor, "alias.deleted", model_id, {"alias": alias}, None)
+    return True
+
+
+async def drain_model(model_id: str, actor: str = "registry-api", reason: str = "") -> Optional[dict]:
+    """置 draining 排空态（规范 03 §3.4：不接新流量，存量 SSE 自然完成后下线）。
+
+    语义接线（既有机制自动生效，无需额外代码）：
+    - registry_upstreams() 仅收 state==ready → draining 条目被对账摘出上游池（新流量不进）
+    - heartbeat() 自愈回升 CASE WHEN state='offline' → draining 不被心跳覆盖（运维意图保持）
+    排空观测：返回最近心跳 active_requests（register_agent 30s 上报），归零即可下线。
+    """
+    before = await get_model(model_id)
+    if before is None:
+        return None
+    if before.get("state") == "draining":
+        return await get_health(model_id)  # 幂等：已排空中直接返回观测
+    await update_model(model_id, {"state": "draining"}, actor=actor)
+    await _audit(
+        actor,
+        "model.draining",
+        model_id,
+        {"state": before.get("state")},
+        {"state": "draining", "reason": reason},
+    )
+    return await get_health(model_id)  # 含 runtime.active_requests 排空观测

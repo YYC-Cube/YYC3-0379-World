@@ -1,7 +1,7 @@
 # file: model_registry.py
-# description: 模型注册中心 API - /registry/v1 12 端点（CRUD/版本/回滚/心跳/健康/事件SSE/审计）
+# description: 模型注册中心 API - /registry/v1 16 端点（CRUD/版本/回滚/心跳/健康/事件SSE/审计 + 别名热切换/排空）
 # author: YanYuCloudCube Team <admin@0379.email>
-# version: v1.0.0
+# version: v1.1.0
 # created: 2026-09-27
 # status: active
 # tags: [api],[registry],[model],[sse],[heartbeat]
@@ -86,6 +86,19 @@ class HeartbeatRequest(BaseModel):
     gpu_memory_used_gb: Optional[float] = None
     active_requests: Optional[int] = None
     uptime_seconds: Optional[int] = None
+
+
+class AliasSetRequest(BaseModel):
+    """别名切换（规范 03 §3.5：改别名指向，公网 API 不中断）"""
+
+    model_id: str = Field(..., max_length=100, description="别名新指向的模型 ID（须 ready）")
+    reason: str = Field("", max_length=500, description="切换原因（审计）")
+
+
+class DrainRequest(BaseModel):
+    """排空置位（规范 03 §3.4：不接新流量，存量 SSE 自然完成后下线）"""
+
+    reason: str = Field("", max_length=500, description="排空原因（审计）")
 
 
 def _require_admin(request: Request) -> None:
@@ -227,6 +240,55 @@ async def get_health(model_id: str):
     if health is None:
         raise HTTPException(status_code=404, detail={"error": "model_not_found"})
     return health
+
+
+# ── Phase C：别名热切换与排空（规范 03 §3；admin 写 + 灰度闸门） ──
+
+
+@router.get("/registry/v1/aliases", tags=["📦 模型注册中心"])
+async def list_aliases():
+    """R-13 别名列表（alias → model_id 路由表现状）。"""
+    aliases = await svc.list_aliases()
+    return {"aliases": aliases, "count": len(aliases), "route_cache": dict(svc._alias_cache)}
+
+
+@router.put("/registry/v1/aliases/{alias}", tags=["📦 模型注册中心"])
+async def set_alias(alias: str, req: AliasSetRequest, request: Request):
+    """R-14 设置/切换别名（admin；防呆：目标须 ready。切换事件实时广播，公网 API 不中断）。"""
+    _require_admin(request)
+    _require_registry_enabled()
+    try:
+        result = await svc.set_alias(
+            alias, req.model_id, actor=_actor(request), reason=req.reason
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": str(exc)})
+    return {"status": "switched", **result}
+
+
+@router.delete("/registry/v1/aliases/{alias}", tags=["📦 模型注册中心"])
+async def delete_alias(alias: str, request: Request):
+    """R-14b 删除别名（admin；下线流程 §8 第 2 步）。"""
+    _require_admin(request)
+    _require_registry_enabled()
+    ok = await svc.delete_alias(alias, actor=_actor(request))
+    if not ok:
+        raise HTTPException(status_code=404, detail={"error": "alias_not_found"})
+    return {"status": "deleted", "alias": alias}
+
+
+@router.post("/registry/v1/models/{model_id}/drain", tags=["📦 模型注册中心"])
+async def drain_model(model_id: str, req: DrainRequest, request: Request):
+    """R-15 置 draining 排空态（admin；不接新流量 + 存量排空观测，幂等）。
+
+    恢复承接流量用既有 PATCH state=ready（undrain 语义）；彻底下线见规范 03 §8。
+    """
+    _require_admin(request)
+    _require_registry_enabled()
+    health = await svc.drain_model(model_id, actor=_actor(request), reason=req.reason)
+    if health is None:
+        raise HTTPException(status_code=404, detail={"error": "model_not_found"})
+    return {"status": "draining", "drain_observation": health}
 
 
 # ── R-10 事件流（SSE） ───────────────────────────────────────────
