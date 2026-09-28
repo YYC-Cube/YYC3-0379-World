@@ -1,0 +1,611 @@
+{
+  "version": "v4-20260928",
+  "library": "main",
+  "provenance": "v2 原件（2026-09-27 评测 40 题）未存档，基线 online 31%/premium 45%/main 55% 不可复现；本集按 chroma main 库 373 个唯一 (source,heading) 对人工选配 40 题，匹配规则 source/heading 前缀命中（startwith），前缀截取自 2026-09-28 主库元数据实拉；v4（同日）扩容 40→100：+60 题覆盖 AI-Family 编程体系/高可用API/DEVICE 档案/模型资产/NemoClaw/运维实战等（AI-Family 子路径重复入库，沿用目录级宽前缀消歧）",
+  "match": {
+    "rule": "result.source.startswith(item.source_prefix) AND result.heading.startswith(item.heading_prefix)",
+    "top_k": 3
+  },
+  "items": [
+    {
+      "id": 1,
+      "query": "TP=2 双机张量并行场景下主模型候选矩阵有哪些？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "17.1"
+    },
+    {
+      "id": 2,
+      "query": "模型上线前必办的阻断项按序有哪些？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "18.2"
+    },
+    {
+      "id": 3,
+      "query": "dsv4 重启排障实录的四轮根因链是什么？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "19.3-ter"
+    },
+    {
+      "id": 4,
+      "query": "NCCL 留档测试 Hub g35 的结论是什么？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "5.2"
+    },
+    {
+      "id": 5,
+      "query": "全线统一的量化标准是什么？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "8.1"
+    },
+    {
+      "id": 6,
+      "query": "N1 组件服务机的 docker-compose 包含哪些服务？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "9.2"
+    },
+    {
+      "id": 7,
+      "query": "NIM 缓存预热 shm-size 官方口径是多少？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "NIM 缓存预热"
+    },
+    {
+      "id": 8,
+      "query": "RAG 全链路组件部署的六层闭环指什么？",
+      "source_prefix": "DGX-Spark双机推理部署指南.md",
+      "heading_prefix": "十、Phase ⑦"
+    },
+    {
+      "id": 9,
+      "query": "五端设备矩阵具体是哪五端？",
+      "source_prefix": "API全链路闭环文档.md",
+      "heading_prefix": "2.1"
+    },
+    {
+      "id": 10,
+      "query": "NAS 模型路径是怎么映射的？",
+      "source_prefix": "API全链路闭环文档.md",
+      "heading_prefix": "3.2"
+    },
+    {
+      "id": 11,
+      "query": "网关的缓存策略是怎样的？",
+      "source_prefix": "API全链路闭环文档.md",
+      "heading_prefix": "5.2"
+    },
+    {
+      "id": 12,
+      "query": "API 性能基线实测数据是多少？",
+      "source_prefix": "API全链路闭环文档.md",
+      "heading_prefix": "8.4"
+    },
+    {
+      "id": 13,
+      "query": "全链路故障排查从哪里入手？",
+      "source_prefix": "API全链路闭环文档.md",
+      "heading_prefix": "10.2"
+    },
+    {
+      "id": 14,
+      "query": "A2A 开放 API 契约定义了哪些错误码？",
+      "source_prefix": "A2A开放API契约.md",
+      "heading_prefix": "5. 错误码"
+    },
+    {
+      "id": 15,
+      "query": "ASR 上游第四能力补齐方案的结论是什么？",
+      "source_prefix": "ASR上游第四能力补齐方案.md",
+      "heading_prefix": "ASR 上游第四"
+    },
+    {
+      "id": 16,
+      "query": "CI/CD 部署的必需服务有哪些？",
+      "source_prefix": "CI-CD部署配置指南.md",
+      "heading_prefix": "4.1"
+    },
+    {
+      "id": 17,
+      "query": "NAS 存储架构的设备概览有哪些设备？",
+      "source_prefix": "NAS-存储架构文档.md",
+      "heading_prefix": "一、设备概览"
+    },
+    {
+      "id": 18,
+      "query": "NAS 的 LVM 逻辑卷是怎么划分的？",
+      "source_prefix": "NAS-存储架构文档.md",
+      "heading_prefix": "3.2"
+    },
+    {
+      "id": 19,
+      "query": "NAS 存储健康评分怎么算？",
+      "source_prefix": "NAS-存储架构文档.md",
+      "heading_prefix": "9.1"
+    },
+    {
+      "id": 20,
+      "query": "NAS 构建 OOM 137 根治记录做了什么？",
+      "source_prefix": "NAS构建OOM根治",
+      "heading_prefix": "NAS 构建 OOM"
+    },
+    {
+      "id": 21,
+      "query": "智能路由实装阶段要做什么？",
+      "source_prefix": "Gateway代码分析与落地方案.md",
+      "heading_prefix": "Phase 1 · 智能路由"
+    },
+    {
+      "id": 22,
+      "query": "NIM 嵌入模型向量化核心选哪些？",
+      "source_prefix": "NVIDIA-NIM模型分析报告.md",
+      "heading_prefix": "2.3.1"
+    },
+    {
+      "id": 23,
+      "query": "NIM 音频增强与翻译模型有什么？",
+      "source_prefix": "NVIDIA-NIM模型分析报告.md",
+      "heading_prefix": "2.4.3"
+    },
+    {
+      "id": 24,
+      "query": "128GB 统一内存单机最优模型组合是什么？",
+      "source_prefix": "NVIDIA-NIM模型分析报告.md",
+      "heading_prefix": "3.1"
+    },
+    {
+      "id": 25,
+      "query": "NIM 图像生成与编辑模型有几款？",
+      "source_prefix": "NVIDIA-NIM-全量模型-分析报告.md",
+      "heading_prefix": "2.5"
+    },
+    {
+      "id": 26,
+      "query": "生物科技与药物发现模型有多少款？",
+      "source_prefix": "NVIDIA-NIM-全量模型-分析报告.md",
+      "heading_prefix": "2.7"
+    },
+    {
+      "id": 27,
+      "query": "NIM 安全合规模型用于什么场景？",
+      "source_prefix": "NVIDIA-NIM-全量模型-分析报告.md",
+      "heading_prefix": "2.9"
+    },
+    {
+      "id": 28,
+      "query": "量化技术对比表的结论是什么？",
+      "source_prefix": "NVIDIA-ku/11-模型选型与量化建议总结.md",
+      "heading_prefix": "2.1"
+    },
+    {
+      "id": 29,
+      "query": "主 LLM 选型详细对比结论是什么？",
+      "source_prefix": "NVIDIA-ku/11-模型选型与量化建议总结.md",
+      "heading_prefix": "4.1"
+    },
+    {
+      "id": 30,
+      "query": "NVIDIA 设备优化的运行时部署要点？",
+      "source_prefix": "NVIDIA-ku/12-NVIDIA设备优化技术总结.md",
+      "heading_prefix": "4. 运行时部署"
+    },
+    {
+      "id": 31,
+      "query": "多设备协同的模型并行配置怎么做？",
+      "source_prefix": "NemoClaw-多设备协同架构.md",
+      "heading_prefix": "6.2"
+    },
+    {
+      "id": 32,
+      "query": "NemoClaw 重启服务的正确步骤？",
+      "source_prefix": "NemoClaw-运维指导手册-完整版.md",
+      "heading_prefix": "3. 重启服务"
+    },
+    {
+      "id": 33,
+      "query": "NemoClaw 要监控哪些关键指标？",
+      "source_prefix": "NemoClaw-运维指导手册-完整版.md",
+      "heading_prefix": "关键指标监控"
+    },
+    {
+      "id": 34,
+      "query": "RAG 管道嵌入阶段 69 批怎么执行的？",
+      "source_prefix": "RAG-管道手册-v1",
+      "heading_prefix": "② 嵌入"
+    },
+    {
+      "id": 35,
+      "query": "文档导航中心的关联图在哪？",
+      "source_prefix": "README-文档导航中心.md",
+      "heading_prefix": "🔗 文档关联图"
+    },
+    {
+      "id": 36,
+      "query": "这个仓库的分支策略是什么？",
+      "source_prefix": "README.md",
+      "heading_prefix": "分支策略"
+    },
+    {
+      "id": 37,
+      "query": "网关请求流转链路经过哪些环节？",
+      "source_prefix": "README.md",
+      "heading_prefix": "请求流转链路"
+    },
+    {
+      "id": 38,
+      "query": "GPU 内存不足场景怎么处理？",
+      "source_prefix": "03-运维实战指南.md",
+      "heading_prefix": "场景1"
+    },
+    {
+      "id": 39,
+      "query": "AI Family 家人矩阵第五条是什么？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "第五条 家人矩阵"
+    },
+    {
+      "id": 40,
+      "query": "五维评估层设计是怎么规定的？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "第十一条 五维评估"
+    },
+    {
+      "id": 41,
+      "query": "AI Family 九层规划设计的整体思路是什么？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "YYC³ AI Family 九层规划设计"
+    },
+    {
+      "id": 42,
+      "query": "创生八步曲具体指哪八步？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "创生八步曲"
+    },
+    {
+      "id": 43,
+      "query": "九层架构每层的职责怎么划分？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "层级职责"
+    },
+    {
+      "id": 44,
+      "query": "AI Family 成员总览有哪些成员？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "成员总览"
+    },
+    {
+      "id": 45,
+      "query": "五高五标五化五维的映射关系是什么？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "五高五标五化五维映射"
+    },
+    {
+      "id": 46,
+      "query": "家族徽章的 SVG 源在哪里可以调整？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "14.1 家族徽章"
+    },
+    {
+      "id": 47,
+      "query": "PDF 文档水印如何自动生成？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "15.2 PDF"
+    },
+    {
+      "id": 48,
+      "query": "网页全局平铺水印的 CSS 写法？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "7.1 网页全局平铺水印"
+    },
+    {
+      "id": 49,
+      "query": "移动端水印组件怎么实现？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "19.2 移动端水印"
+    },
+    {
+      "id": 50,
+      "query": "CLI 工具的情感启动画面是什么设计？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "CLI 工具情感启动画面"
+    },
+    {
+      "id": 51,
+      "query": "全链路自动化 CI/CD 流水线总览？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "十七、全链路自动化"
+    },
+    {
+      "id": 52,
+      "query": "私信系统怎么设计的？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "1.3 私信系统"
+    },
+    {
+      "id": 53,
+      "query": "技能管理器的设计思路？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "2. 技能管理器设计"
+    },
+    {
+      "id": 54,
+      "query": "学习引擎 LearningEngine 是什么？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "3. 学习引擎"
+    },
+    {
+      "id": 55,
+      "query": "包加载与热重载机制怎么工作？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "3. 包加载与热重载"
+    },
+    {
+      "id": 56,
+      "query": "完整功能模块组件文件树怎么组织？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "完整功能模块组件文件树架构"
+    },
+    {
+      "id": 57,
+      "query": "导航栏完整架构图长什么样？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "导航栏完整架构图"
+    },
+    {
+      "id": 58,
+      "query": "智能编程界面的交互设计？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "3.1 智能编程界面"
+    },
+    {
+      "id": 59,
+      "query": "多模态 API 集成了哪些能力？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "2. 集成的多模态API"
+    },
+    {
+      "id": 60,
+      "query": "UI/UX 提示词怎么写？",
+      "source_prefix": "YYC3-AI-FAmily-Agent-编程体系/",
+      "heading_prefix": "UI/UX提示词"
+    },
+    {
+      "id": 61,
+      "query": "全局端口分配总表怎么防跨节点冲突？",
+      "source_prefix": "YYC3-高可用API架构闭环-最佳指导文档.md",
+      "heading_prefix": "2.2 全局端口分配总表"
+    },
+    {
+      "id": 62,
+      "query": "七层 API 视图怎么对九层架构重组？",
+      "source_prefix": "YYC3-高可用API架构闭环-最佳指导文档.md",
+      "heading_prefix": "3.1 七层 API 视图"
+    },
+    {
+      "id": 63,
+      "query": "网关层双活高可用怎么实现？",
+      "source_prefix": "YYC3-高可用API架构闭环-最佳指导文档.md",
+      "heading_prefix": "5.2 网关层 HA"
+    },
+    {
+      "id": 64,
+      "query": "Gateway 上游表的内部端点语义？",
+      "source_prefix": "YYC3-高可用API架构闭环-最佳指导文档.md",
+      "heading_prefix": "6.2 内部端点语义"
+    },
+    {
+      "id": 65,
+      "query": "出现故障按什么 Runbook 处理？",
+      "source_prefix": "YYC3-高可用API架构闭环-最佳指导文档.md",
+      "heading_prefix": "十、Runbook"
+    },
+    {
+      "id": 66,
+      "query": "全部服务怎么启用与验证？",
+      "source_prefix": "YYC3-高可用API架构闭环-最佳指导文档.md",
+      "heading_prefix": "启用与验证"
+    },
+    {
+      "id": 67,
+      "query": "yyc3-101 旗舰推理主节点的定位？",
+      "source_prefix": "yyc3-101-DEVICE.md",
+      "heading_prefix": "yyc3-101"
+    },
+    {
+      "id": 68,
+      "query": "yyc3-102 训练与 Agent 平台的定位？",
+      "source_prefix": "yyc3-102-DEVICE.md",
+      "heading_prefix": "yyc3-102"
+    },
+    {
+      "id": 69,
+      "query": "yyc3-22 MacBook 主控驾驶舱的职责？",
+      "source_prefix": "yyc3-22-DEVICE.md",
+      "heading_prefix": "yyc3-22"
+    },
+    {
+      "id": 70,
+      "query": "yyc3-33 阿里云 ECS 公网网关的用途？",
+      "source_prefix": "yyc3-33-DEVICE.md",
+      "heading_prefix": "yyc3-33"
+    },
+    {
+      "id": 71,
+      "query": "yyc3-45 NAS 在架构中的角色？",
+      "source_prefix": "yyc3-45-DEVICE.md",
+      "heading_prefix": "yyc3-45"
+    },
+    {
+      "id": 72,
+      "query": "yyc3-77 应用承载备机跑什么服务？",
+      "source_prefix": "yyc3-77-DEVICE.md",
+      "heading_prefix": "yyc3-77"
+    },
+    {
+      "id": 73,
+      "query": "DeepSeek 模型路径及详情在哪？",
+      "source_prefix": "YYC3-Models-资产详情.md",
+      "heading_prefix": "DeepSeek 模型路径及详情"
+    },
+    {
+      "id": 74,
+      "query": "模型资产总览包含什么？",
+      "source_prefix": "YYC3-Models-资产详情.md",
+      "heading_prefix": "模型资产总览"
+    },
+    {
+      "id": 75,
+      "query": "NAS 模型路径及详情怎么查？",
+      "source_prefix": "YYC3-Models-路径及详情.md",
+      "heading_prefix": "NAS 模型路径及详情"
+    },
+    {
+      "id": 76,
+      "query": "任务类型的路由规则是什么？",
+      "source_prefix": "YYC3-Agent-模型配置详细映射表.md",
+      "heading_prefix": "任务类型路由规则"
+    },
+    {
+      "id": 77,
+      "query": "创想灵韵创意官用什么模型？",
+      "source_prefix": "YYC3-Agent-模型配置详细映射表.md",
+      "heading_prefix": "创想·灵韵 - 创意官"
+    },
+    {
+      "id": 78,
+      "query": "多设备网络拓扑的节点矩阵？",
+      "source_prefix": "多设备网络拓扑与架构链路.md",
+      "heading_prefix": "2.1 节点矩阵"
+    },
+    {
+      "id": 79,
+      "query": "网络拓扑 Phase 2-3 还待补齐什么？",
+      "source_prefix": "多设备网络拓扑与架构链路.md",
+      "heading_prefix": "4.2 待补齐"
+    },
+    {
+      "id": 80,
+      "query": "全链路模型部署矩阵怎么对齐实况？",
+      "source_prefix": "全链路模型部署规划-NVIDIA核心技术.md",
+      "heading_prefix": "3.1 部署矩阵"
+    },
+    {
+      "id": 81,
+      "query": "family-ai-agents 模型搭配方案？",
+      "source_prefix": "全链路模型部署规划-NVIDIA核心技术.md",
+      "heading_prefix": "五、yyc3-family-ai-agents"
+    },
+    {
+      "id": 82,
+      "query": "公开仓密钥安审 P0 事件的来龙去脉？",
+      "source_prefix": "YYC3-公开仓密钥安审报告-P0-2026-09-20.md",
+      "heading_prefix": "公开仓密钥安审报告"
+    },
+    {
+      "id": 83,
+      "query": "密钥安审处置执行记录包含什么？",
+      "source_prefix": "YYC3-公开仓密钥安审报告-P0-2026-09-20.md",
+      "heading_prefix": "六、处置执行记录"
+    },
+    {
+      "id": 84,
+      "query": "RAG 语料清单 v1 收录了哪些语料？",
+      "source_prefix": "YYC3-RAG-语料清单-v1-2026-09-26.md",
+      "heading_prefix": "语料清单"
+    },
+    {
+      "id": 85,
+      "query": "NemoClaw 多设备协同的核心设计理念？",
+      "source_prefix": "NemoClaw-多设备协同架构.md",
+      "heading_prefix": "核心设计理念"
+    },
+    {
+      "id": 86,
+      "query": "NemoClaw 多设备协同的系统架构图？",
+      "source_prefix": "NemoClaw-多设备协同架构.md",
+      "heading_prefix": "系统架构图"
+    },
+    {
+      "id": 87,
+      "query": "NemoClaw 快速参考卡片有什么命令？",
+      "source_prefix": "NemoClaw-快速参考卡片.md",
+      "heading_prefix": "NemoClaw 快速参考卡片"
+    },
+    {
+      "id": 88,
+      "query": "NemoClaw 的项目目录结构？",
+      "source_prefix": "NemoClaw-运维指导手册-完整版.md",
+      "heading_prefix": "项目目录结构"
+    },
+    {
+      "id": 89,
+      "query": "NemoClaw 核心组件有哪些？",
+      "source_prefix": "NemoClaw-运维指导手册-完整版.md",
+      "heading_prefix": "核心组件"
+    },
+    {
+      "id": 90,
+      "query": "NemoClaw 基础服务怎么检查？",
+      "source_prefix": "NemoClaw-运维指导手册-完整版.md",
+      "heading_prefix": "1. 基础服务检查"
+    },
+    {
+      "id": 91,
+      "query": "NemoClaw 故障排查找谁联系？",
+      "source_prefix": "NemoClaw-运维指导手册-完整版.md",
+      "heading_prefix": "故障排查联系"
+    },
+    {
+      "id": 92,
+      "query": "NemoClaw 代理全面审核分析的结论？",
+      "source_prefix": "NemoClaw-OpenClaw-代理全面审核分析报告.md",
+      "heading_prefix": ""
+    },
+    {
+      "id": 93,
+      "query": "推理服务怎么检查健康？",
+      "source_prefix": "03-运维实战指南.md",
+      "heading_prefix": "推理服务检查"
+    },
+    {
+      "id": 94,
+      "query": "怎么查看 GPU 利用率？",
+      "source_prefix": "03-运维实战指南.md",
+      "heading_prefix": "nvidia-smi 查看 GPU"
+    },
+    {
+      "id": 95,
+      "query": "DGX MoE 架构与模型链路总结？",
+      "source_prefix": "07-DGX-GB10-MoE架构与模型链路总结报告.md",
+      "heading_prefix": "DGX GB10 MoE架构与模型链路总结报告"
+    },
+    {
+      "id": 96,
+      "query": "预期性能指标 6.1 的数据？",
+      "source_prefix": "NVIDIA-ku/11-模型选型与量化建议总结.md",
+      "heading_prefix": "6.1 预期性能指标"
+    },
+    {
+      "id": 97,
+      "query": "文档索引 A.2 列了哪些文档？",
+      "source_prefix": "NVIDIA-ku/11-模型选型与量化建议总结.md",
+      "heading_prefix": "A.2 文档索引"
+    },
+    {
+      "id": 98,
+      "query": "DGX Spark 容器相关要点？",
+      "source_prefix": "NVIDIA-ku/DGX-Spark.md",
+      "heading_prefix": "Containers"
+    },
+    {
+      "id": 99,
+      "query": "三线并进方案的风险与关键假设？",
+      "source_prefix": "言语智能科技-三线并进-上线落地统筹协同方案-2026-09-18.md",
+      "heading_prefix": "八、风险与关键假设"
+    },
+    {
+      "id": 100,
+      "query": "多阶段性能优化与 AI 扩展计划？",
+      "source_prefix": "04-性能优化与AI扩展计划.md",
+      "heading_prefix": "性能优化与 AI 能力扩展计划"
+    }
+  ]
+}

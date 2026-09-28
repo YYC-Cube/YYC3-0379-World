@@ -1,7 +1,7 @@
 # file: docker-compose-rag.yml
 # description: RAG 三件套（Embedding/Reranker/ChromaDB）+ 8B 嵌入常驻——yyc3-102 N2 部署
 # author: YanYuCloudCube Team
-# version: v1.1.0
+# version: v1.1.1
 # created: 2026-09-03
 # status: active
 # tags: [rag],[embedding],[reranker],[chromadb],[8b]
@@ -73,6 +73,20 @@ services:
     volumes:
       - /home/yyc3/yyc3-102-projects/models/Qwen3-Embedding-8B:/model:ro
       - ./emb8b_entry.sh:/entry.sh:ro
+
+  # 8B 重排（2026-09-28 上探：golden v4 100 题 rerank 量化；网关池 rerank-n2-8b priority=1 → rerank-n1(0.6b) 2 降级链）。
+  # max_model_len 4096 + util 0.16：15.25G 权重后 KV 需 1.12G（8192 长度下 0.86G 不足必挂，实测教训）。
+  reranker-8b:
+    image: docker.m.daocloud.io/vllm/vllm-openai:nightly
+    container_name: yyc3-rerank8b
+    network_mode: host
+    ipc: host
+    gpus: all
+    restart: unless-stopped
+    entrypoint: ["bash", "/entry.sh"]
+    volumes:
+      - /home/yyc3/yyc3-102-projects/models/Qwen3-Reranker-8B:/model:ro
+      - ./rerank8b_entry.sh:/entry.sh:ro
 
   chroma:
     image: docker.m.daocloud.io/chromadb/chroma:latest
