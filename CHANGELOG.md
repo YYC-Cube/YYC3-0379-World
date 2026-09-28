@@ -68,6 +68,7 @@ language: zh-CN
 - 🆕 Registry 生产灰度开闸（2026-09-28，NAS 生产十连验证全通）：005 迁移上网关栈 PG + REGISTRY_ENABLED=true；双通道合并生产实证（探针上游入路由池）；两项生产修复——nas compose 补 REGISTRY_ENABLED env 传递（b2c0c2d）、enabled 列 PG boolean 参数化（fac630a，sqlite=1 习惯在 PG 报 UndefinedFunctionError）；OPS-RECOVERY cron 锚定实测定论（全 NAS 无 cron 挂载，两脚本为手动触发范式）
 - 🆕 五生产上游双写 Registry 入中心（2026-09-28 TOP1）：dsv4/embedding/rerank/asr/ocr 注册 ready（node_id 对齐 yyc3-101/102）——startup merge 合并 5，路由池 12 上游同池（registry 5 + env 7，priority 5 零切换零风险）；Phase A 手动模式定型（不发心跳免 TTL 衰减，语义入 svc docstring）；README/.env.example 生产态对齐
 - 🆕 注册 Agent + Phase B 事件驱动增量合并（2026-09-28 TOP2/TOP3，cffd3cd）：`model_register_agent.py`（stdlib 零依赖：就绪探测/注册/ready/30s 心跳/优雅 offline，TTL 300s 兜底）；svc pub/sub 消费者（`yyc3:registry:events` 驱动运行时入池/定点摘除，**生产免重启四态闭环实证**）；修 merge 全量对账缺口（registry-* 陈旧条目随重合并清池）；变量清单新增「网关应用变量」节；N1:8001 502 定论（dsv4-head 僵尸容器，Ray 宿主 OOM 杀 TP worker 09-26 23:54，建议 restart + OOM 缓解）
+- 🆕 下轮 TOP3 全闭环（2026-09-28，513aab7/4c1e649）：dsv4-head 重启恢复（:8001 200，网关旗舰 502→200；OOM 实勘 mem_limit=0 + recreate 建议）；`model_smoke_test.py` 九用例冒烟（生产首验旗舰 8/8 + embedding 9/9，能力面感知修复）——**规范附录 A 规划项全部落地清零**；五服务注册 Agent 实拉起（101×3+102×2 常驻，心跳 2.7~4.0s，TTL 自愈语义激活，dsv4 agent 自动跟随引擎恢复零人工）
 
 ### 变更 (Changed)
 
