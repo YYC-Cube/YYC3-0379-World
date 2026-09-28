@@ -246,10 +246,11 @@ Client Request
 
 上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。
 
-**模型注册中心（`/registry/v1`，09-27 Phase A 上线）**——env 之上的动态注册通道（`REGISTRY_ENABLED=true` 开启，env 保留兜底）：
+**模型注册中心（`/registry/v1`，09-28 生产灰度已开闸）**——env 之上的动态注册通道（NAS 生产 `REGISTRY_ENABLED=true` 运行中，env 保留兜底；本地默认 false）：
 
+- **生产实况（09-28）**：五生产上游已双写入中心（dsv4/embedding/rerank/asr/ocr，node_id 对齐 yyc3-101/102）——startup merge 合并 5 个 registry 上游与 7 个 env 上游同池共存（registry 条目 priority 5，env 优先级层不变，流量零切换零风险）
 - **12 端点**：模型 CRUD / 版本历史 / 回滚（目标版本必须在历史中）/ 心跳上报（TTL 三级阶梯 90s→degraded、180s→unreachable、300s→摘除）/ 实时健康 / 事件流 SSE / Manifest / 审计
-- **双通道**：Pull（R-01 列表轮询）+ Push（R-10 SSE 订阅 `yyc3:registry:events`，连接建立先回放在途事件防漏）；网关启动经 `merge_registry_upstreams()` 合并（`registry-{model_id}` 命名与 env 上游隔离，幂等保留熔断/EWMA 状态）
+- **双通道**：Pull（R-01 列表轮询）+ Push（R-10 SSE 订阅 `yyc3:registry:events`，连接建立先回放在途事件防漏）；网关启动经 `merge_registry_upstreams()` 合并（`registry-{model_id}` 命名与 env 上游隔离，幂等保留熔断/EWMA 状态）。Phase A 边界：merge 为 startup 一次性，运行时增量合并（SSE 事件驱动）属 Phase B
 - **五表 Schema**（005 迁移）：主表增量列（存量 6 列全保留）+ model_versions（不可变版本历史）+ model_heartbeats + model_events + model_audit_log（365 天）
 - **接入工具链**：`core/scripts/model_asset_verify.py`（NAS 资产完整性三校验：分片对账/头部 magic/配置存在性，报告落 `model_checksum.report`）+ `model_sync_to_node.py`（NAS→节点 SSD 增量同步，rsync 断点续传 + 同步后分片对账门禁）
 - 规范文档：`docs/模型接入与注册/`（01 现状基线 / 02 Registry 目标架构 / 03 热切换 / 04 Agent 注册 / 05 Runbook）

@@ -18,6 +18,12 @@
     - 双通道兼容：registry_upstreams() 产出 env 同构上游条目供 upstream_registry 合并，
             REGISTRY_ENABLED=false 时完全旁路（env 通道行为不变）
     - 幂等注册：重复注册同 model_id = 覆盖更新（不产生副本），版本历史追加
+    Phase A 边界（生产实况 2026-09-28）：
+    - merge 为 startup 一次性（main.py startup 钩子）——运行中注册需网关重启方入池，
+      运行时增量合并（SSE 事件驱动）属 Phase B（规范 02 §4.2）
+    - 心跳衰减语义：last_heartbeat_at 为 NULL 的注册（未启用心跳的手动模式）持续纳入
+      registry_upstreams 不衰减；一旦开始上报心跳，停跳超 300s（TTL_REMOVED）即从
+      产出中摘除——register_agent.py 落地（规范 01 附录 A）前的生产注册均用手动模式
     高可用语义：DB 不可达一律返回空/False 并告警，绝不阻塞网关（env 通道兜底）。
 @author: YanYuCloudCube Team <admin@0379.email>
 @license: MIT
