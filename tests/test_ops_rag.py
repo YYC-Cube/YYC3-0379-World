@@ -25,8 +25,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
-from app.services.ops_rag import (BM25Okapi, OpsRAGService,  # noqa: E402
-                                  _tokenize)
+from app.services.ops_rag import BM25Okapi, OpsRAGService, _tokenize  # noqa: E402
 
 client = TestClient(app)
 
@@ -73,6 +72,14 @@ def test_tokenize_mixed_cn_en():
     assert "GLM".lower() in toks and "点" in toks
 
 
+def test_tokenize_cjk_bigram():
+    """v1.2.0：相邻中文单字产出 bigram（消歧义），跨英文词不产"""
+    toks = _tokenize("旗舰断链")
+    assert "旗舰" in toks and "舰断" in toks and "断链" in toks
+    toks2 = _tokenize("点 TP")
+    assert "点t" not in [t.lower() for t in toks2]
+
+
 # ── 纯数学：RRF 融合 ────────────────────────────────────────
 def test_rrf_fuse_cross_channel_promotion():
     vec_hits = [
@@ -98,6 +105,20 @@ def test_rrf_fuse_rank_monotonic():
     scores = [h["score"] for h in fused]
     assert scores == sorted(scores, reverse=True)
     assert len(fused) == 5
+
+
+def test_rrf_fuse_duplicate_key_no_stuffing():
+    """v1.2.0 修复回归：同 key 多 chunk 在单通道重复出现只计首现 rank，
+    不得逐位累加灌分（19-chunk 重复标题霸榜事故的护栏）"""
+    # 通道内：spam key 占 rank0-19；真目标 target 在 rank20
+    spam = [
+        {"source": "spam.md", "heading": "重复标题", "text": "t", "distance": 0.1}
+    ] * 20
+    target = [{"source": "target.md", "heading": "唯一", "text": "t", "distance": 0.1}]
+    fused = OpsRAGService.rrf_fuse(spam + target, [], top_k=2)
+    # spam 只计首现一次（1/61≈0.0164）→ 与 target 同分时按序，spam 单次分不应 > target
+    # 直接断言：spam 的 score 恰为首现一次的值
+    assert abs(fused[0]["score"] - 1.0 / 61) < 1e-4, "重复 key 只能计一次首现分（score round5）"
 
 
 # ── 服务层：降级链与混合开关（桩替网络）─────────────────────

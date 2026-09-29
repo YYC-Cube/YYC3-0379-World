@@ -1,7 +1,7 @@
 # file: ops_rag.py
 # description: 运维知识库检索服务（chroma 四库 + 零依赖 BM25 + RRF 融合 + rerank 精排，含降级链）
 # author: YanYuCloudCube Team
-# version: v1.1.0
+# version: v1.2.0
 # created: 2026-09-27
 # status: active
 # tags: [service],[rag],[ops],[bm25],[rrf],[rerank]
@@ -62,8 +62,21 @@ _RRF_K = 60  # Reciprocal Rank Fusion 常数
 
 
 def _tokenize(text: str) -> List[str]:
-    """轻量分词：中文单字 + 英数词（BM25 对中文单字有效）"""
-    return [t for t in _TOKEN_RE.findall(text.lower()) if t.strip()]
+    """轻量分词：中文单字+bigram + 英数词（bigram 消单字歧义，v1.2.0 hybrid 修复）"""
+    base = [t for t in _TOKEN_RE.findall(text.lower()) if t.strip()]
+    out = list(base)
+    prev = None
+    for t in base:
+        is_cjk = len(t) == 1 and "\u4e00" <= t <= "\u9fff"
+        if is_cjk and prev is not None:
+            out.append(prev + t)
+        prev = t if is_cjk else None
+    return out
+
+
+def _index_text(d: Dict[str, str]) -> List[str]:
+    """BM25 索引文本 = heading 前置 + 正文（标题词面直配，v1.2.0 hybrid 修复）"""
+    return _tokenize((str(d.get("heading", "")) + "\n" + str(d.get("text", "")))[:4000])
 
 
 class BM25Okapi:
@@ -179,7 +192,7 @@ class OpsRAGService:
         try:
             idx = json.loads(p.read_text(encoding="utf-8"))
             self._bm25_docs = idx["docs"]
-            self._bm25 = BM25Okapi([_tokenize(d["text"][:4000]) for d in idx["docs"]])
+            self._bm25 = BM25Okapi([_index_text(d) for d in idx["docs"]])
             self._bm25_loaded_at = time.time()
             return True
         except Exception:
@@ -205,7 +218,7 @@ class OpsRAGService:
             )
         ]
         self._bm25_docs = docs
-        self._bm25 = BM25Okapi([_tokenize(d["text"][:4000]) for d in docs])
+        self._bm25 = BM25Okapi([_index_text(d) for d in docs])
         self._bm25_loaded_at = time.time()
         p = self._index_path()
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -214,7 +227,7 @@ class OpsRAGService:
                 {
                     "built_at": time.time(),
                     "count": len(docs),
-                    "doc_toks": [_tokenize(d["text"][:4000]) for d in docs],
+                    "doc_toks": [_index_text(d) for d in docs],
                     "docs": docs,
                 },
                 ensure_ascii=False,
@@ -228,12 +241,22 @@ class OpsRAGService:
     def rrf_fuse(
         vec_hits: List[Dict[str, Any]], bm25_hits: List[Dict[str, Any]], top_k: int
     ) -> List[Dict[str, Any]]:
-        """Reciprocal Rank Fusion：score = Σ 1/(k+rank)，双通道各自排名后融合"""
+        """Reciprocal Rank Fusion：score = Σ 1/(k+rank)，双通道各自排名后融合。
+
+        v1.2.0 修复：同 key（source::heading）在单通道内多 chunk 重复出现时只计
+        首现 rank——否则同标题 N 个 chunk 占 N 个 rank 位逐位累加，形成灌分
+        霸榜（v4 评测归因：「📂 完整功能模块组件文件树架构」19 chunks 霸榜
+        吞掉 5 题，hybrid 61% vs vec 65% 负收益的主因）。
+        """
         scores: Dict[str, float] = {}
         pooled: Dict[str, Dict[str, Any]] = {}
         for hits in (vec_hits, bm25_hits):
+            counted: set = set()
             for rank, h in enumerate(hits):
                 key = f"{h['source']}::{h['heading']}"
+                if key in counted:
+                    continue
+                counted.add(key)
                 scores[key] = scores.get(key, 0.0) + 1.0 / (_RRF_K + rank + 1)
                 if key not in pooled:
                     pooled[key] = dict(h)
