@@ -44,7 +44,7 @@ category: spec
 | 心跳 TTL（30s 上报 / 90s degraded / 180s unreachable / 300s 摘除） | ✅ 已落地（09-28） | `model_registry_svc.py`（`heartbeat`/`_parse_row`） |
 | Agent 管理演进层（GET 列表含离线 / PATCH 扩展元数据 / DELETE + 审计） | ✅ 已落地（09-28） | `core/api/api/a2a.py` 演进层区 |
 | MCP 工具声明（tools 字段随 Agent Card PATCH 维护） | ✅ 已落地（09-28，白名单字段） | `a2a_protocol.py`（`_registry_update_card`） |
-| 模型服务契约端点（`/v1/model/metadata` 等 3 个 YYC³ 新增） | 📋 规划（模型服务侧实现） | [02](02-Registry目标架构.md) §2 |
+| 模型服务契约端点（`/v1/model/metadata` 等 3 个 YYC³ 新增） | ✅ 已落地（09-29，register_agent v1.1.0 `--contract-port` stdlib 内嵌；五服务全覆盖 102×2+101×3，drop-in 模板 `deploy/nodes/yyc3-registry-agent.contract.conf`） | `core/scripts/model_register_agent.py`（`start_contract_server`） |
 | **别名 alias 热切换**（`model_aliases` 表 + 内存路由表 + `alias_switched` 事件 + `/registry/v1/aliases` 3 端点） | ✅ 已落地（09-28 Phase C） | `model_registry_svc.py`（`set_alias`/`resolve_alias`/`load_alias_cache`）+ `chat.py`（`_select_backend` 首行解析） |
 | **draining 排空**（`POST /models/{id}/drain` + 排空观测；不进池/心跳不覆盖既有机制自动生效） | ✅ 已落地（09-28 Phase C） | `model_registry_svc.py`（`drain_model`）+ `model_registry.py`（R-15） |
 | Shadow / Canary / 蓝绿热切换 | 📋 规划（别名切换已落地，见上行） | [03](03-热切换与版本管理.md) §4-§5 |
