@@ -1,7 +1,7 @@
 # file: ops_rag.py
 # description: 运维知识库检索服务（chroma 四库 + 零依赖 BM25 + RRF 融合 + rerank 精排，含降级链）
 # author: YanYuCloudCube Team
-# version: v1.3.0
+# version: v1.3.1
 # created: 2026-09-27
 # status: active
 # tags: [service],[rag],[ops],[bm25],[rrf],[rerank]
@@ -329,9 +329,9 @@ class OpsRAGService:
         hits = _dedupe_hits(await self.chroma_query(library, vec, top_k), top_k * 4)
 
         fused = False
-        if hybrid and library == "main" and self.load_bm25():
-            bm25 = self._bm25
-            if bm25 is not None:
+        if hybrid and library == "main":
+            if self.load_bm25() and self._bm25 is not None:
+                bm25 = self._bm25
                 bm25_hits = []
                 # 源扩 ×8（去重后仍保 top_k×4 多样候选）
                 for i in bm25.search(query, top_k * 8):
@@ -346,6 +346,12 @@ class OpsRAGService:
                     )
                 hits = self.rrf_fuse(hits, _dedupe_hits(bm25_hits, top_k * 4), top_k)
                 fused = True
+            else:
+                # 索引缺失/损坏时显式留痕（v1.3.1：防静默降级——容器重建 data 非
+                # 持久卷，索引丢失曾致 hybrid 无提示退化纯向量，评测险误判）
+                notes.append(
+                    "BM25 索引不可用，降级纯向量（POST /v1/rag/ops/reindex 重建）"
+                )
         else:
             if hybrid and library != "main":
                 notes.append("hybrid 仅支持 main 库")
