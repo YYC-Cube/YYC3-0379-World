@@ -92,6 +92,9 @@ services:
       - /Volume1/yyc3_hd/video_tasks:/data/video_archive
       # 上游池写通道（2026-09-27 第 3 步）：CRUD 双写宿主 .env（真源），registry 热重载零重启
       - /Volume2/yyc3-33/.env:/run/secrets/gateway.env
+      # BM25 索引持久化（2026-09-29 根治，TOP3#1）：data/ 原为容器层，rebuild 即丢
+      # 索引致 hybrid 降级（三次实证）——命名卷跨重建存活，首次 reindex 后免维护
+      - gateway-data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -168,3 +171,7 @@ services:
 networks:
   yyc3-network:
     driver: bridge
+
+volumes:
+  # 网关运行时数据（BM25 索引）：命名卷跨 rebuild 存活（2026-09-29 TOP3#1 根治）
+  gateway-data:
