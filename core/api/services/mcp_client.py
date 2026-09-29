@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,7 +63,9 @@ class MCPClient:
         try:
             with open(self.mcp_config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
-                logger.info(f"Loaded MCP config with {len(config.get('mcpServers', {}))} servers")
+                logger.info(
+                    f"Loaded MCP config with {len(config.get('mcpServers', {}))} servers"
+                )
                 return config
         except Exception as e:
             logger.error(f"Failed to load MCP config: {e}")
@@ -110,8 +112,10 @@ class MCPClient:
             return self.mcp_config.get("mcpServers", {}).get(server_name, {})
         return None
 
-    def build_mcp_command(self, mcp_server: Dict, tool_name: str, parameters: Dict) -> List[str]:
-        """构建MCP调用命令"""
+    def build_mcp_command(
+        self, mcp_server: Dict, _tool_name: str, _parameters: Dict
+    ) -> Tuple[List[str], Dict[str, str]]:
+        """构建MCP调用命令（返回 (命令列表, 环境变量)；占位符 ${VAR} 就地展开）"""
         command = mcp_server.get("command", "")
         args = mcp_server.get("args", [])
         env = mcp_server.get("env", {})
@@ -130,7 +134,9 @@ class MCPClient:
 
         return cmd_parts, processed_env
 
-    async def execute_mcp_command(self, command: List[str], env: Dict[str, str]) -> Dict[str, Any]:
+    async def execute_mcp_command(
+        self, command: List[str], env: Dict[str, str]
+    ) -> Dict[str, Any]:
         """执行MCP命令"""
         try:
             # 创建子进程
@@ -143,7 +149,9 @@ class MCPClient:
 
             # 设置超时
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30.0)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=30.0
+                )
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
@@ -172,7 +180,9 @@ class MCPClient:
             logger.error(f"Error executing MCP command: {e}")
             raise
 
-    async def call_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def call_tool(
+        self, tool_name: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """调用MCP工具
 
         Args:
@@ -209,8 +219,8 @@ class MCPClient:
 
     async def list_available_tools(self) -> Dict[str, Any]:
         """列出所有可用的MCP工具"""
-        # 为每个工具生成描述
-        tool_descriptions = {
+        # 为每个工具生成描述（值域 Any：后续写入 mcp_server:str / enabled:bool 混合字段）
+        tool_descriptions: Dict[str, Dict[str, Any]] = {
             # 文件系统工具
             "read_file": {
                 "name": "read_file",
@@ -375,7 +385,9 @@ class MCPClient:
                     status[server_name] = {
                         "status": "online" if result.get("success") else "offline",
                         "command": server_config.get("command", ""),
-                        "error": (result.get("error") if not result.get("success") else None),
+                        "error": (
+                            result.get("error") if not result.get("success") else None
+                        ),
                     }
                 else:
                     status[server_name] = {
@@ -396,11 +408,13 @@ class MCPClient:
 class LocalMCPManager:
     """本地MCP工具管理器"""
 
-    def __init__(self, mcp_config_path: str = None):
+    def __init__(self, mcp_config_path: Optional[str] = None):
         """初始化本地MCP管理器"""
         self.client = MCPClient(mcp_config_path)
 
-    async def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_tool(
+        self, tool_name: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """执行本地MCP工具"""
         return await self.client.call_tool(tool_name, parameters)
 

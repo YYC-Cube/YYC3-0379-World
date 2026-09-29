@@ -22,7 +22,9 @@
 import asyncio
 import json
 import logging
+import secrets
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from app.cache import redis_client
@@ -251,10 +253,12 @@ class VirtualKeyManager:
                 raw = await redis_client.rpop(SPEND_QUEUE_KEY)
                 if raw is None:
                     break
-                try:
-                    batch.append(json.loads(raw))
-                except Exception:
-                    continue
+                # 类型收窄：单键 RPOP 运行时必为 str|bytes（list 仅 count 变体）
+                if isinstance(raw, (str, bytes, bytearray)):
+                    try:
+                        batch.append(json.loads(raw))
+                    except Exception:
+                        continue
         except Exception as e:
             logger.debug(f"spend 出队失败: {e}")
         return batch
@@ -330,9 +334,6 @@ def _sha256(s: str) -> str:
 
 
 # ── ④ 管理操作（CRUD）：供 /v1/admin/virtual-keys 端点调用 ──
-
-import secrets
-import uuid
 
 
 async def vk_create(
@@ -448,7 +449,8 @@ async def vk_update_status(key_id: str, status: str) -> bool:
             {"s": status, "id": key_id},
         )
         await session.commit()
-        changed = (result.rowcount or 0) > 0
+        # rowcount 在 CursorResult（DML 实跑形态）；基类 Result 桩缺声明 → getattr 兼容
+        changed = (getattr(result, "rowcount", 0) or 0) > 0
     if changed:
         # 精确失效：查 hash 后逐级剔除，强制下次校验回源 PG
         async with async_session() as session:
@@ -499,7 +501,7 @@ async def vk_update_fields(
             text(f"UPDATE virtual_keys SET {', '.join(sets)} WHERE id = :id"), params
         )
         await session.commit()
-        changed = (result.rowcount or 0) > 0
+        changed = (getattr(result, "rowcount", 0) or 0) > 0
     if changed:
         async with async_session() as session:
             row = (
