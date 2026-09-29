@@ -127,7 +127,9 @@ class VirtualKeyManager:
         record["_expires"] = time.time() + VK_CACHE_TTL
         if len(self._mem_cache) > 1000:  # 防无限膨胀
             now = time.time()
-            self._mem_cache = {k: v for k, v in self._mem_cache.items() if v["_expires"] > now}
+            self._mem_cache = {
+                k: v for k, v in self._mem_cache.items() if v["_expires"] > now
+            }
         self._mem_cache[key_hash] = record
 
     # ── ② 预算闸门 ─────────────────────────────────────────
@@ -162,7 +164,10 @@ class VirtualKeyManager:
         limit = int(record.get("rate_limit_tpm") or 0)
         if limit <= 0:
             return True
-        key = f"{VirtualKeyManager.TPM_PREFIX}" f"{record.get('id')}:{time.strftime('%Y%m%d%H%M')}"
+        key = (
+            f"{VirtualKeyManager.TPM_PREFIX}"
+            f"{record.get('id')}:{time.strftime('%Y%m%d%H%M')}"
+        )
         try:
             count = await redis_client.incr(key)
             if count == 1:
@@ -289,9 +294,9 @@ class VirtualKeyManager:
                     if key_id:
                         for rec in self._mem_cache.values():
                             if str(rec.get("id")) == str(key_id):
-                                rec["spent_usd"] = float(rec.get("spent_usd") or 0) + float(
-                                    b.get("cost_usd") or 0
-                                )
+                                rec["spent_usd"] = float(
+                                    rec.get("spent_usd") or 0
+                                ) + float(b.get("cost_usd") or 0)
                 # DB 态预算增量同步（对齐 docstring 语义；否则重启后预算闸门从 PG 读旧值失守）
                 for b in batch:
                     key_id = b.get("key_id")
@@ -311,7 +316,9 @@ class VirtualKeyManager:
             logger.warning(f"spend 批量落库失败（回灌队首重试）: {e}")
             for b in reversed(batch):
                 try:
-                    await redis_client.lpush(SPEND_QUEUE_KEY, json.dumps(b, default=str))
+                    await redis_client.lpush(
+                        SPEND_QUEUE_KEY, json.dumps(b, default=str)
+                    )
                 except Exception:
                     break
 
@@ -396,7 +403,9 @@ async def vk_create(
     return {"key": plaintext, **rec}
 
 
-async def vk_list(owner: Optional[str] = None, include_disabled: bool = True) -> List[Dict]:
+async def vk_list(
+    owner: Optional[str] = None, include_disabled: bool = True
+) -> List[Dict]:
     """列虚拟密钥（脱敏：只露 hash 前 8 位）"""
     from sqlalchemy import text
 
@@ -522,7 +531,9 @@ async def vk_delete(key_id: str) -> bool:
         ).scalar()
         if not row:
             return False
-        await session.execute(text("DELETE FROM virtual_keys WHERE id = :id"), {"id": key_id})
+        await session.execute(
+            text("DELETE FROM virtual_keys WHERE id = :id"), {"id": key_id}
+        )
         await session.commit()
     vk_manager._mem_cache.pop(row, None)
     try:
@@ -560,6 +571,67 @@ async def vk_usage(key_id: str, days: int = 30) -> Dict[str, Any]:
         "days": days,
         "total_cost_usd": round(total, 6),
         "by_model": by_model,
+    }
+
+
+# ── 全局用量聚合（11 报告 P3：A2A 用量报表——计费数据面已全，补只读消费面）──
+
+# 分组列白名单（列名经字典硬编码取值，group_by 参数不拼接 SQL——防注入红线）
+_USAGE_GROUP_COLS = {
+    "key": "key_id",
+    "model": "model",
+    "upstream": "upstream",
+    "capability": "capability",
+}
+
+
+async def usage_summary(
+    days: int = 7, group_by: str = "model", key_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """全局用量聚合：近 N 天按 key/model/upstream/capability 分组
+    （calls/tokens/cost + 总量；供 GET /v1/admin/usage/summary 看板/账单面）"""
+    col = _USAGE_GROUP_COLS.get(group_by)
+    if col is None:
+        raise ValueError(
+            f"invalid group_by '{group_by}'（可选：{'/'.join(_USAGE_GROUP_COLS)}）"
+        )
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    since = datetime.utcnow() - timedelta(days=int(days))
+    where = "created_at >= :since"
+    params: Dict[str, Any] = {"since": since}
+    if key_id:
+        where += " AND key_id = :kid"
+        params["kid"] = key_id
+    async with async_session() as session:
+        result = await session.execute(
+            text(
+                f"SELECT {col} AS grp, COUNT(*) AS calls, "
+                "SUM(prompt_tokens) AS prompt_tokens, "
+                "SUM(completion_tokens) AS completion_tokens, "
+                "SUM(cost_usd) AS cost_usd, AVG(latency_ms) AS avg_latency_ms "
+                f"FROM spend_logs WHERE {where} "
+                f"GROUP BY {col} ORDER BY cost_usd DESC LIMIT 200"
+            ),
+            params,
+        )
+        rows = [dict(r) for r in result.mappings()]
+    for r in rows:
+        r["cost_usd"] = round(float(r.get("cost_usd") or 0), 6)
+        r["prompt_tokens"] = int(r.get("prompt_tokens") or 0)
+        r["completion_tokens"] = int(r.get("completion_tokens") or 0)
+        r["avg_latency_ms"] = round(float(r.get("avg_latency_ms") or 0), 1)
+    return {
+        "days": int(days),
+        "group_by": group_by,
+        "key_id_filter": key_id,
+        "total_calls": sum(r["calls"] for r in rows),
+        "total_cost_usd": round(sum(r["cost_usd"] for r in rows), 6),
+        "groups": rows,
     }
 
 
