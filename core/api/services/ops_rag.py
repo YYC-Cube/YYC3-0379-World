@@ -1,7 +1,7 @@
 # file: ops_rag.py
 # description: 运维知识库检索服务（chroma 四库 + 零依赖 BM25 + RRF 融合 + rerank 精排，含降级链）
 # author: YanYuCloudCube Team
-# version: v1.2.0
+# version: v1.2.1
 # created: 2026-09-27
 # status: active
 # tags: [service],[rag],[ops],[bm25],[rrf],[rerank]
@@ -59,6 +59,23 @@ LIBRARY_ENGINE = {
 
 _TOKEN_RE = re.compile(r"[\u4e00-\u9fff]|[a-zA-Z0-9_]+")
 _RRF_K = 60  # Reciprocal Rank Fusion 常数
+
+# 语料准入黑名单：YYC³ 会话文档三件（01-规划/02-日志/03-总结，时效性语料不混
+# 知识库；2026-09-28 摘除 23 chunks 后固化为管道级防再混入规则，reindex 与查询
+# 双口径拦截）。用精确名单而非 ^0\d- 模式：「03-运维实战指南.md」等编号知识文档
+# 是 golden 目标，模式匹配会误伤）。
+_SOURCE_BLACKLIST = frozenset(
+    {
+        "01-任务规划与节点目标.md",
+        "02-执行日志与进度跟踪.md",
+        "03-总结文档与状态同步.md",
+    }
+)
+
+
+def _admitted(source: str) -> bool:
+    """语料准入：黑名单外放行（reindex 索引准入 + 查询结果运行时准入）"""
+    return (source or "") not in _SOURCE_BLACKLIST
 
 
 def _tokenize(text: str) -> List[str]:
@@ -164,6 +181,8 @@ class OpsRAGService:
         for m, d, dist in zip(
             body["metadatas"][0], body["documents"][0], body["distances"][0]
         ):
+            if not _admitted(m.get("source", "")):  # 运行时准入：黑名单语料不出结果
+                continue
             hits.append(
                 {
                     "source": m.get("source", ""),
@@ -216,6 +235,7 @@ class OpsRAGService:
             for i, (m, d) in enumerate(
                 zip(body.get("metadatas", []), body.get("documents", []))
             )
+            if _admitted(m.get("source", ""))  # 索引准入：黑名单语料不入 BM25
         ]
         self._bm25_docs = docs
         self._bm25 = BM25Okapi([_index_text(d) for d in docs])

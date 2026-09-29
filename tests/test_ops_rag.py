@@ -80,6 +80,20 @@ def test_tokenize_cjk_bigram():
     assert "点t" not in [t.lower() for t in toks2]
 
 
+# ── 语料准入黑名单（v1.2.1）────────────────────────────────
+def test_source_blacklist_exact_names():
+    from app.services.ops_rag import _admitted
+
+    assert not _admitted("01-任务规划与节点目标.md")
+    assert not _admitted("02-执行日志与进度跟踪.md")
+    assert not _admitted("03-总结文档与状态同步.md")
+    # 编号知识文档不得误伤（golden 目标）
+    assert _admitted("03-运维实战指南.md")
+    assert _admitted("02-NVIDIA集成方案回顾.md")
+    assert _admitted("README.md")
+    assert _admitted("")
+
+
 # ── 纯数学：RRF 融合 ────────────────────────────────────────
 def test_rrf_fuse_cross_channel_promotion():
     vec_hits = [
@@ -118,7 +132,9 @@ def test_rrf_fuse_duplicate_key_no_stuffing():
     fused = OpsRAGService.rrf_fuse(spam + target, [], top_k=2)
     # spam 只计首现一次（1/61≈0.0164）→ 与 target 同分时按序，spam 单次分不应 > target
     # 直接断言：spam 的 score 恰为首现一次的值
-    assert abs(fused[0]["score"] - 1.0 / 61) < 1e-4, "重复 key 只能计一次首现分（score round5）"
+    assert (
+        abs(fused[0]["score"] - 1.0 / 61) < 1e-4
+    ), "重复 key 只能计一次首现分（score round5）"
 
 
 # ── 服务层：降级链与混合开关（桩替网络）─────────────────────

@@ -1,9 +1,9 @@
 {
   "version": "v4-20260928",
   "library": "main",
-  "provenance": "v2 原件（2026-09-27 评测 40 题）未存档，基线 online 31%/premium 45%/main 55% 不可复现；本集按 chroma main 库 373 个唯一 (source,heading) 对人工选配 40 题，匹配规则 source/heading 前缀命中（startwith），前缀截取自 2026-09-28 主库元数据实拉；v4（同日）扩容 40→100：+60 题覆盖 AI-Family 编程体系/高可用API/DEVICE 档案/模型资产/NemoClaw/运维实战等（AI-Family 子路径重复入库，沿用目录级宽前缀消歧）",
+  "provenance": "v2 原件（2026-09-27 评测 40 题）未存档，基线 online 31%/premium 45%/main 55% 不可复现；本集按 chroma main 库 373 个唯一 (source,heading) 对人工选配 40 题，匹配规则 source/heading 前缀命中（startwith），前缀截取自 2026-09-28 主库元数据实拉；v4（同日）扩容 40→100：+60 题覆盖 AI-Family 编程体系/高可用API/DEVICE 档案/模型资产/NemoClaw/运维实战等（AI-Family 子路径重复入库，沿用目录级宽前缀消歧）；v4.1 匹配规则修正：heading 由 startswith 改 contains+去 emoji——8 题伪失归因（检索命中正确 chunk 但装饰前缀致前缀匹配失败）；q100 heading 前缀对齐实际标题格式",
   "match": {
-    "rule": "result.source.startswith(item.source_prefix) AND result.heading.startswith(item.heading_prefix)",
+    "rule": "result.source.startswith(item.source_prefix) AND norm(item.heading_prefix) in norm(result.heading)（norm=去 emoji 装饰；contains 兼容「九、/使用/YYC³ 」式标题前缀）",
     "top_k": 3
   },
   "items": [
@@ -605,7 +605,7 @@
       "id": 100,
       "query": "多阶段性能优化与 AI 扩展计划？",
       "source_prefix": "04-性能优化与AI扩展计划.md",
-      "heading_prefix": "性能优化与 AI 能力扩展计划"
+      "heading_prefix": "性能优化与AI扩展计划"
     }
   ]
 }

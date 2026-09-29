@@ -10,8 +10,6 @@
 
 import importlib.util
 import json
-import os
-import sys
 from pathlib import Path
 
 _SCRIPTS = Path(__file__).parent.parent / "core" / "scripts"
@@ -48,7 +46,10 @@ def test_fixture_prefixes_unique_within_source():
 def test_is_hit_prefix_semantics():
     item = {"source_prefix": "DGX-Spark双机推理部署指南.md", "heading_prefix": "18.2"}
     assert eval_mod.is_hit(
-        {"source": "DGX-Spark双机推理部署指南.md", "heading": "18.2 上线前必办（阻断项，按序）"},
+        {
+            "source": "DGX-Spark双机推理部署指南.md",
+            "heading": "18.2 上线前必办（阻断项，按序）",
+        },
         item,
     )
     assert not eval_mod.is_hit(
@@ -58,7 +59,23 @@ def test_is_hit_prefix_semantics():
     assert not eval_mod.is_hit(
         {"source": "DGX-Spark双机推理部署指南.md", "heading": "19.3-ter 重启排障"},
         item,
-    )
+    ), "heading 无包含关系不得命中"
+
+
+def test_is_hit_emoji_and_decorated_prefix():
+    """v4.1：emoji/装饰性标题前缀不算语义差异（8 题伪失归因的护栏）"""
+    item = {"source_prefix": "X.md", "heading_prefix": "CLI 工具情感启动画面"}
+    assert eval_mod.is_hit(
+        {"source": "X.md", "heading": "🖥️ 九、CLI 工具情感启动画面"}, item
+    ), "emoji + 编号前缀应命中"
+    assert eval_mod.is_hit(
+        {"source": "X.md", "heading": "YYC³ 公开仓密钥安审报告（P0 事件）"},
+        {"source_prefix": "X.md", "heading_prefix": "公开仓密钥安审报告"},
+    ), "「YYC³ 」式标题前缀应命中"
+    assert eval_mod.is_hit(
+        {"source": "X.md", "heading": "使用 nvidia-smi 查看 GPU 利用率"},
+        {"source_prefix": "X.md", "heading_prefix": "nvidia-smi 查看 GPU"},
+    ), "「使用 」式前缀应命中"
 
 
 def test_configs_matrix_covers_four():
