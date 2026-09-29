@@ -1,7 +1,7 @@
 # file: ops_rag.py
 # description: 运维知识库检索服务（chroma 四库 + 零依赖 BM25 + RRF 融合 + rerank 精排，含降级链）
 # author: YanYuCloudCube Team
-# version: v1.2.1
+# version: v1.3.0
 # created: 2026-09-27
 # status: active
 # tags: [service],[rag],[ops],[bm25],[rrf],[rerank]
@@ -137,6 +137,23 @@ class BM25Okapi:
         scored = [(i, s) for i, s in scored if s > 0]
         scored.sort(key=lambda x: -x[1])
         return [i for i, _ in scored[:top_n]]
+
+
+def _dedupe_hits(hits: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    """候选池 key 去重：同 source::heading 只留首现（v1.3.0 长 miss 攻坚——
+    同 key N chunks 在通道候选列表占 N 个 slot，挤出多样文档候选入融合，
+    实测「📂 文件树」19 chunks 霸占 BM25 top12 槽位的主因）"""
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+    for h in hits:
+        key = f"{h['source']}::{h['heading']}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(h)
+        if len(out) >= limit:
+            break
+    return out
 
 
 class OpsRAGService:
@@ -308,14 +325,16 @@ class OpsRAGService:
             notes.append("8B 嵌入离线, 降级 online(0.6b)")
 
         vec = await self.embed(query, engine_key)
-        hits = await self.chroma_query(library, vec, top_k)
+        # v1.3.0：双通道候选池 key 去重（重复 chunk 不占 slot，多样文档进融合）
+        hits = _dedupe_hits(await self.chroma_query(library, vec, top_k), top_k * 4)
 
         fused = False
         if hybrid and library == "main" and self.load_bm25():
             bm25 = self._bm25
             if bm25 is not None:
                 bm25_hits = []
-                for i in bm25.search(query, top_k * 4):
+                # 源扩 ×8（去重后仍保 top_k×4 多样候选）
+                for i in bm25.search(query, top_k * 8):
                     d = self._bm25_docs[i]
                     bm25_hits.append(
                         {
@@ -325,7 +344,7 @@ class OpsRAGService:
                             "distance": None,
                         }
                     )
-                hits = self.rrf_fuse(hits, bm25_hits, top_k)
+                hits = self.rrf_fuse(hits, _dedupe_hits(bm25_hits, top_k * 4), top_k)
                 fused = True
         else:
             if hybrid and library != "main":

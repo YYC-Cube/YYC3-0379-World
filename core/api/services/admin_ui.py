@@ -1,14 +1,15 @@
 # file: admin_ui.py
-# description: vk 管理看板 - 零依赖单页（挂 /v1/admin/dashboard，受 Auth 中间件保护）
+# description: vk 管理看板 - 零依赖单页（挂 /v1/admin/dashboard，受 Auth 中间件保护）+ 全局用量区块
 # author: YanYuCloudCube Team
 # created: 2026-09-20
 # status: active
-# tags: [dashboard],[virtual-keys],[visualization]
+# tags: [dashboard],[virtual-keys],[visualization],[usage]
 # flake8: noqa: E501（内嵌 HTML/CSS 为 minified 风格单行，折行破坏模板可维护性）
 
 """虚拟密钥管理看板（五化-可视化）：
 零前端工程依赖——FastAPI 直接返回单页 HTML+fetch，调既有 /v1/admin/virtual-keys* API。
-功能：密钥列表（用量/预算进度）+ 创建 + 启停 + 编辑（预算/TPM/白名单）+ 搜索 + 分页 + 按模型用量查询。
+功能：密钥列表（用量/预算进度）+ 创建 + 启停 + 编辑（预算/TPM/白名单）+ 搜索 + 分页 + 按模型用量查询
++ 全局用量区块（GET /v1/admin/usage/summary 按 key/model/upstream/capability 分组，16 报告 TOP3）。
 """
 
 from fastapi import APIRouter
@@ -64,6 +65,19 @@ _PAGE = """<!DOCTYPE html>
 <table id="tbl"><thead><tr>
 <th>名称</th><th>所有者</th><th>Key</th><th>状态</th><th>预算消耗</th><th>TPM上限</th><th>操作</th>
 </tr></thead><tbody></tbody></table>
+<details><summary>📊 全局用量（账单面）</summary>
+<div class="toolbar">
+  <label>近 <input id="u-days" type="number" value="7" style="width:4rem"> 天，按
+  <select id="u-grp" onchange="loadUsage()">
+    <option value="model">模型</option><option value="key">虚拟密钥</option>
+    <option value="upstream">上游</option><option value="capability">能力</option>
+  </select> 分组
+  <span class="muted" id="u-sum"></span>
+  <button onclick="loadUsage()">刷新</button>
+</div>
+<table id="utbl"><thead><tr>
+<th>分组</th><th>调用</th><th>Prompt tokens</th><th>Completion tokens</th><th>成本USD</th><th>均时延ms</th>
+</tr></thead><tbody></tbody></table></details>
 <dialog id="dlg"><h3 id="dlg-t"></h3><pre id="dlg-b"></pre>
 <form method="dialog"><button>关闭</button></form></dialog>
 <dialog id="edlg"><h3>编辑 — <span id="ed-name"></span></h3>
@@ -167,7 +181,23 @@ async function usage(id,name){
 }
 function show(t,b){document.getElementById('dlg-t').textContent=t;
   document.getElementById('dlg-b').innerHTML=b;document.getElementById('dlg').showModal();}
+async function loadUsage(){
+  const days=+document.getElementById('u-days').value||7;
+  const grp=document.getElementById('u-grp').value;
+  const r=await authFetch(`/v1/admin/usage/summary?days=${days}&group_by=${grp}`);
+  if(!r||!r.ok) return;
+  const d=await r.json();
+  document.getElementById('u-sum').textContent=`合计 ${d.total_calls} 次 / $${(+d.total_cost_usd).toFixed(6)}`;
+  const tb=document.querySelector('#utbl tbody'); tb.innerHTML='';
+  for(const g of d.groups||[]){
+    tb.insertAdjacentHTML('beforeend',`<tr><td>${esc(g.grp??'—')}</td><td>${g.calls}</td>
+    <td>${g.prompt_tokens}</td><td>${g.completion_tokens}</td>
+    <td>$${(+g.cost_usd).toFixed(6)}</td><td>${g.avg_latency_ms}</td></tr>`);
+  }
+  if(!tb.children.length) tb.innerHTML='<tr><td colspan=6 class="muted">暂无记录</td></tr>';
+}
 load();
+loadUsage();
 </script>
 </body></html>"""
 

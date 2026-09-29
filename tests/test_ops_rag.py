@@ -137,6 +137,23 @@ def test_rrf_fuse_duplicate_key_no_stuffing():
     ), "重复 key 只能计一次首现分（score round5）"
 
 
+# ── 候选池 key 去重（v1.3.0）───────────────────────────────
+def test_dedupe_hits_frees_slots():
+    """同 key N chunks 只占 1 slot（文件树 19-chunk 霸位护栏）"""
+    from app.services.ops_rag import _dedupe_hits
+
+    spam = [{"source": "a.md", "heading": "重复", "text": "t", "distance": 0.1}] * 19
+    others = [
+        {"source": f"b{i}.md", "heading": f"h{i}", "text": "t", "distance": 0.2}
+        for i in range(5)
+    ]
+    out = _dedupe_hits(spam + others, 12)
+    keys = [f"{h['source']}::{h['heading']}" for h in out]
+    assert len(keys) == len(set(keys)) == 6, "重复 key 只计一次，5 个多样文档全进候选"
+    assert out[0]["source"] == "a.md", "首现保序"
+    assert _dedupe_hits([], 5) == []
+
+
 # ── 服务层：降级链与混合开关（桩替网络）─────────────────────
 def _patch_service(monkeypatch, probe_8b: bool):
     svc = OpsRAGService()

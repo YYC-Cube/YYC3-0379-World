@@ -1,10 +1,10 @@
 # file: model_register_agent.py
-# description: 模型服务侧注册 Agent - 就绪探测/注册/置ready/心跳循环/优雅下线（规范 01 附录 A P2 落地）
+# description: 模型服务侧注册 Agent - 就绪探测/注册/置ready/心跳循环/优雅下线 + 契约端点（规范 01 附录 A P2 落地）
 # author: YanYuCloudCube Team <admin@0379.email>
-# version: v1.0.0
+# version: v1.1.0
 # created: 2026-09-28
 # status: active
-# tags: [registry],[agent],[heartbeat],[onboarding]
+# tags: [registry],[agent],[heartbeat],[onboarding],[contract]
 # spec: docs/模型接入与注册/01-接入现状规范-v2.3.md 附录 A / 02-Registry目标架构.md §4.4
 
 """
@@ -19,8 +19,13 @@
     零第三方依赖（stdlib urllib）——DGX/NAS/裸机 python3 直跑。
     用法：
       python3 model_register_agent.py --gateway http://yyc3-45:8000 \\
-          --meta model-meta.json --admin-key-env ADMIN_API_KEYS
+          --meta model-meta.json --admin-key-env ADMIN_API_KEYS \\
+          --contract-port 9101   # 可选：模型服务契约端点（规范 02 §2）
     认证：网关管理面密钥从环境变量（--admin-key-env 指定名，缺省 ADMIN_API_KEYS）读取。
+    v1.1.0 契约端点（11 报告 P2 / 16 报告 TOP3）：--contract-port 启动内嵌 HTTP 服务，
+      GET /v1/model/metadata     —— 注册元数据同源直出（契约优先，免网关探测推断）
+      GET /v1/model/capabilities —— 能力声明（capabilities > model_type 降级链）
+      GET /v1/model/health       —— 实时探测本地服务 /health（healthy/degraded）
 @author: YanYuCloudCube Team <admin@0379.email>
 @license: MIT
 @copyright Copyright (c) 2026 YanYuCloudCube Team
@@ -34,7 +39,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 DEFAULT_INTERVAL = 30  # 心跳周期（秒，规范 02 §4.4 同值）
 READY_TIMEOUT = 3600  # 就绪等待上限（秒）——TB 级权重冷加载余量
@@ -64,7 +69,11 @@ def service_health_url(base_url: str) -> str:
 
 
 def _http_json(
-    method: str, url: str, admin_key: str, body: Optional[dict] = None, timeout: float = 10.0
+    method: str,
+    url: str,
+    admin_key: str,
+    body: Optional[dict] = None,
+    timeout: float = 10.0,
 ) -> tuple:
     """极简 HTTP JSON 调用（stdlib）：返回 (status_code, parsed_json_or_none)。"""
     data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
@@ -120,6 +129,7 @@ class RegisterAgent:
         self._http = http or _http_json  # 测试桩替点
         self._sleep = sleep or time.sleep
         self._stopped = False
+        self.contract_server: Any = None  # --contract-port 启动后挂载（便于测试关闭）
 
     def stop(self, *_args) -> None:
         self._stopped = True
@@ -160,7 +170,9 @@ class RegisterAgent:
 
     def heartbeat_once(self) -> bool:
         """④ 单次心跳（runtime 指标尽力而为从服务 /health 抽取）。"""
-        _, health = self._http("GET", service_health_url(self.payload["base_url"]), "", timeout=5)
+        _, health = self._http(
+            "GET", service_health_url(self.payload["base_url"]), "", timeout=5
+        )
         body = {"status": "healthy", **extract_runtime_metrics(health)}
         status, _ = self._http(
             "POST",
@@ -193,22 +205,106 @@ class RegisterAgent:
         return 0
 
 
+# ── 契约端点（规范 02 §2：模型服务契约三端点，stdlib 内嵌实现）──
+
+CONTRACT_VERSION = "yyc3-model-contract/v1"
+
+
+def start_contract_server(agent: "RegisterAgent", port: int):
+    """在 agent 进程内起契约 HTTP 服务（daemon 线程；与注册元数据同源直出）。
+
+    :return: ThreadingHTTPServer（测试可 shutdown；port=0 由内核分配）
+    """
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class _Handler(BaseHTTPRequestHandler):
+        def _send(self, code: int, body: dict) -> None:
+            raw = json.dumps(body, ensure_ascii=False).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self):  # noqa: N802（http.server 约定名）
+            path = self.path.split("?")[0].rstrip("/") or "/"
+            payload = agent.payload
+            if path == "/v1/model/metadata":
+                self._send(200, {"contract": CONTRACT_VERSION, **payload})
+            elif path == "/v1/model/capabilities":
+                caps = payload.get("capabilities")
+                if not caps:
+                    caps = [payload["model_type"]] if payload.get("model_type") else []
+                self._send(
+                    200, {"model_id": payload.get("model_id"), "capabilities": caps}
+                )
+            elif path == "/v1/model/health":
+                status, health = agent._http(
+                    "GET", service_health_url(payload["base_url"]), "", timeout=5
+                )
+                self._send(
+                    200,
+                    {
+                        "model_id": payload.get("model_id"),
+                        "status": "healthy" if status == 200 else "degraded",
+                        "upstream_status": status,
+                        **extract_runtime_metrics(health),
+                    },
+                )
+            else:
+                self._send(
+                    404,
+                    {
+                        "error": "not_found",
+                        "endpoints": [
+                            "/v1/model/metadata",
+                            "/v1/model/capabilities",
+                            "/v1/model/health",
+                        ],
+                    },
+                )
+
+        def log_message(self, format=None, *args):  # 静默（心跳日志已足够）
+            pass
+
+    server: object = ThreadingHTTPServer(("0.0.0.0", port), _Handler)
+    import threading
+
+    threading.Thread(target=server.serve_forever, daemon=True, name="contract").start()
+    agent.contract_server = server  # type: ignore[assignment]
+    port_real = server.server_address[1]  # type: ignore[attr-defined]
+    print(f"📜 契约端点 :{port_real}/v1/model/{{metadata,capabilities,health}}")
+    return server
+
+
 def main(argv: Optional[list] = None) -> int:
-    parser = argparse.ArgumentParser(description="YYC³ Registry 注册 Agent（模型服务侧）")
-    parser.add_argument("--gateway", required=True, help="网关基址，如 http://yyc3-45:8000")
+    parser = argparse.ArgumentParser(
+        description="YYC³ Registry 注册 Agent（模型服务侧）"
+    )
+    parser.add_argument(
+        "--gateway", required=True, help="网关基址，如 http://yyc3-45:8000"
+    )
     parser.add_argument("--meta", required=True, help="model-meta.json 路径")
     parser.add_argument(
         "--admin-key-env",
         default="ADMIN_API_KEYS",
         help="管理面密钥环境变量名（缺省 ADMIN_API_KEYS）",
     )
-    parser.add_argument("--interval", type=int, default=DEFAULT_INTERVAL, help="心跳周期秒")
+    parser.add_argument(
+        "--interval", type=int, default=DEFAULT_INTERVAL, help="心跳周期秒"
+    )
     parser.add_argument(
         "--set",
         action="append",
         default=[],
         metavar="KEY=VALUE",
         help="元数据覆盖项（可多次；数字/bool/JSON 自动转换）",
+    )
+    parser.add_argument(
+        "--contract-port",
+        type=int,
+        default=0,
+        help="模型服务契约端点端口（规范 02 §2：/v1/model/{metadata,capabilities,health}；0=不启用）",
     )
     args = parser.parse_args(argv)
 
@@ -233,7 +329,10 @@ def main(argv: Optional[list] = None) -> int:
     if not admin_key:
         print(f"❌ 环境变量 {args.admin_key_env} 未配置", file=sys.stderr)
         return 2
-    return RegisterAgent(args.gateway, payload, admin_key, interval=args.interval).run()
+    agent = RegisterAgent(args.gateway, payload, admin_key, interval=args.interval)
+    if args.contract_port:
+        start_contract_server(agent, args.contract_port)
+    return agent.run()
 
 
 if __name__ == "__main__":

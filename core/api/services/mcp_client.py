@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """MCP客户端，用于调用本地MCP服务器"""
 
-    def __init__(self, mcp_config_path: str = None):
+    def __init__(self, mcp_config_path: Optional[str] = None):
         """
         初始化MCP客户端
 
