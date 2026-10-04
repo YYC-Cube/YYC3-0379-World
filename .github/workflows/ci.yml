@@ -52,7 +52,7 @@ jobs:
         run: python core/scripts/check_doc_links.py
 
       - name: pnpm 门禁（P2-3：e2e 测试包依赖完整性，正式门禁）
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
       - name: pnpm 安装与锁文件校验
