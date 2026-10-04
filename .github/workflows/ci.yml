@@ -112,6 +112,18 @@ jobs:
           # 测试工具链对齐本地已验证版本组合
           pip install "pytest==9.0.3" "pytest-cov==7.1.0" pytest-asyncio "respx==0.23.1"
 
+      - name: 初始化测试库表结构（integration 前置，Base.metadata.create_all）
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASSWORD: test_password
+          DB_NAME: yyc3_gpt_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          AUTH_ENABLED: "false"
+        run: python -c "import sys; sys.path.insert(0, 'core/api'); import asyncio; from db import init_db; asyncio.run(init_db())"
+
       - name: 运行测试（分层 P1-1）
         env:
           DB_HOST: localhost
