@@ -180,7 +180,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Docker Hub 登录
         if: env.HAS_DOCKER_HUB == 'true'
