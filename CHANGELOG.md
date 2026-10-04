@@ -30,6 +30,11 @@ language: zh-CN
 
 ## [Unreleased] - 待发布
 
+### 修复 (Fixed)
+
+- 🐛 CI 全红修复：dependabot 自动合并的 `numpy>=2.5.3` 需 Python≥3.12，与 CI/生产基础镜像 `python:3.11` 冲突（lint job 装依赖即失败，NAS 生产 rebuild 同因必挂）→ 回调兼容区间 `numpy>=1.26.4,<2.5`，py3.11/3.12 双端 dry-run 解析实证通过
+- 🐛 dependabot.yml 增加 numpy ignore 规则（`>=2.5`）：升级须与基础镜像升 3.12 作为同一显式变更执行，防自动合并复发
+
 ### 新增 (Added)
 
 - 🆕 pytest 分层体系（P1-1）：默认快速回归层 `-m "not integration"`（34 用例 ~1.6s）；`make test-fast` / `make test-integration` / `make test`（全量）三目标；CI 按事件分层分发（PR 快速层 / main 全量）

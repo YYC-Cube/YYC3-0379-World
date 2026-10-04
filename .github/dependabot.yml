@@ -10,6 +10,11 @@ updates:
     labels:
       - "dependencies"
       - "python"
+    ignore:
+      # numpy>=2.5 需 Python>=3.12，与运行时基线 python:3.11（Dockerfile/CI）不兼容；
+      # 升级须与基础镜像升 3.12 作为同一显式变更执行（2026-10-05 CI 全红事故复盘）
+      - dependency-name: "numpy"
+        versions: [">=2.5"]
 
   # E2E 测试前端依赖
   - package-ecosystem: "npm"
