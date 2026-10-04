@@ -1,0 +1,7 @@
+# YYC³ 0379-World — Python 工具链统一配置
+# isort 判定固化（2026-10-05 复盘）：`app` 包（core/api 运行时根，core/app -> core/api）
+# 在 macOS 本地被 isort 判 FIRSTPARTY、Linux CI 判 THIRDPARTY，导致空行分组规则分叉
+# 而 CI 误报。显式声明消除平台/环境差异，双端同源。
+[tool.isort]
+profile = "black"
+known_first_party = ["app"]
