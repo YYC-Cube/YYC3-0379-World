@@ -218,7 +218,7 @@ jobs:
 
       - name: 构建并推送镜像
         if: env.HAS_DOCKER_HUB == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -230,7 +230,7 @@ jobs:
 
       - name: 仅构建镜像（无推送）
         if: env.HAS_DOCKER_HUB != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
