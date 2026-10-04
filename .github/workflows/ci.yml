@@ -327,7 +327,7 @@ jobs:
           head -30 /tmp/release-notes.md
 
       - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: /tmp/release-notes.md
           generate_release_notes: false
