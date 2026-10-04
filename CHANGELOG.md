@@ -37,6 +37,8 @@ language: zh-CN
 - 🐛 CI integration 建表三段式重构：① 建表步骤经 tests/conftest.py 注册 app 包后调 `init_db()`（app 包系 importlib 手工映射，裸 sys.path 必挂 ModuleNotFoundError）；② ORM 基础 7 表 + 002–006 init SQL 幂等增量（补齐 virtual_keys/spend_logs/task_prices/model_aliases 与 model_registry 扩展列，对齐 NAS 生产「ORM 先建、SQL 增量」惯例）；③ PG service 镜像换 `pgvector/pgvector:pg15` + 目标库显式 `CREATE EXTENSION vector`（原 postgres:15-alpine 无 pgvector，`Vector(1536)` 列建表即挂）；④ 预建 yanyu 角色（002 GRANT 依赖）+ 002 种子 INSERT 包 DO 块防御（ORM 先建表场景 NOTICE 跳过，生产空库路径不变）
 - 🐛 CI test job 移除遗留 `AUTH_ENABLED="false"`（76e6690 起）：RBAC 用例（pricing_admin 403）依赖鉴权开启，用例自带正确 key header；本地 `-m integration` 全量 218 passed 实证（10.5min）
 - 🐛 CI test job 补装 `aiosqlite==0.22.1`：Registry 三测试文件的 sqlite 内存库 fixture 依赖（requirements.txt 不含，本地 .venv 历史安装掩盖）；上一 run 已 341 passed，53 errors 全为该缺位
+- 🔧 CI deploy 冒烟 401 主因修复：GitHub `PROD_API_KEY` secret 与生产失同步（疑 9-26 网关密钥轮换遗留）→ 以 NAS 网关 `.env` API_KEYS 为源公网验证 200 后同步（管道传入不落日志）；main 近 100 run 无 success 的历史遗留开始收敛
+- 🔒 main 分支保护生效（required checks：代码质量检查/单元测试/安全扫描/构建镜像）：dependabot 红 PR 自动落 main 的根源封死；admin 应急直推通道保留（enforce_admins=false）
 
 ### 新增 (Added)
 
