@@ -26,9 +26,7 @@ class SearchRequest(BaseModel):
     knowledge_base_ids: List[str] = Field(..., description="知识库ID列表")
     top_k: int = Field(default=5, ge=1, le=20, description="返回结果数量")
     threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="相似度阈值")
-    search_type: str = Field(
-        default="semantic", description="检索类型：semantic 或 hybrid"
-    )
+    search_type: str = Field(default="semantic", description="检索类型：semantic 或 hybrid")
 
 
 class SearchResult(BaseModel):
@@ -89,9 +87,7 @@ async def search(
             db=db,
         )
     else:
-        raise HTTPException(
-            status_code=400, detail=f"不支持的检索类型: {request.search_type}"
-        )
+        raise HTTPException(status_code=400, detail=f"不支持的检索类型: {request.search_type}")
 
     response_time_ms = int((time.time() - start_time) * 1000)
 
@@ -151,9 +147,7 @@ async def ask_with_context(
 
     context_parts = []
     for i, result in enumerate(results, 1):
-        context_parts.append(
-            f"[文档{i}] {result['document_title']}\n{result['content']}\n"
-        )
+        context_parts.append(f"[文档{i}] {result['document_title']}\n{result['content']}\n")
 
     context = "\n".join(context_parts)
 
@@ -182,9 +176,7 @@ async def ask_with_context(
     )
 
     # chat_completion 第二参数是 FastAPI Request，用于 metrics
-    fake_request = StarletteRequest(
-        scope={"type": "http", "method": "POST", "headers": []}
-    )
+    fake_request = StarletteRequest(scope={"type": "http", "method": "POST", "headers": []})
     response = await chat_completion(chat_request, fake_request)
 
     response_time_ms = int((time.time() - start_time) * 1000)
@@ -232,9 +224,7 @@ async def ask_with_context(
 class OpsSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="查询文本")
     top_k: int = Field(default=5, ge=1, le=20, description="返回结果数量")
-    library: str = Field(
-        default="main", description="库：main(默认)|premium|prompts|online"
-    )
+    library: str = Field(default="main", description="库：main(默认)|premium|prompts|online")
     hybrid: bool = Field(default=False, description="BM25+RRF 混合检索（仅 main 库）")
     rerank: bool = Field(
         default=False, description="候选经 Qwen3-Reranker 精排（失败自动降级原序）"

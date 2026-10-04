@@ -36,9 +36,7 @@ CONFIGS = [
 ]
 
 # 装饰字符（emoji/变体选择符）：语料标题常见「📂/🖥️/🎯 文档关联图」式前缀，语义与裸标题一致
-_EMOJI_RE = re.compile(
-    r"[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\ufe0f\u200d]+"
-)
+_EMOJI_RE = re.compile(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\ufe0f\u200d]+")
 
 
 def _norm_heading(h: str) -> str:
@@ -50,9 +48,7 @@ def is_hit(result: Dict[str, Any], item: Dict[str, str]) -> bool:
     前缀不构成语义差异；contains 而非 startswith 以兼容「九、xxx」「使用 xxx」）"""
     if not result.get("source", "").startswith(item["source_prefix"]):
         return False
-    return _norm_heading(item["heading_prefix"]) in _norm_heading(
-        result.get("heading", "")
-    )
+    return _norm_heading(item["heading_prefix"]) in _norm_heading(result.get("heading", ""))
 
 
 def call_ops(
@@ -92,9 +88,7 @@ def run_config(
         try:
             out = call_ops(endpoint, api_key, payload, timeout)
         except urllib.error.HTTPError as e:
-            print(
-                f"[ERR] q{item['id']} HTTP {e.code}: {e.read()[:120]}", file=sys.stderr
-            )
+            print(f"[ERR] q{item['id']} HTTP {e.code}: {e.read()[:120]}", file=sys.stderr)
             out = {"results": []}
         except Exception as e:  # noqa: BLE001 — 跑批不因单题中断
             print(f"[ERR] q{item['id']}: {e}", file=sys.stderr)
@@ -110,8 +104,7 @@ def run_config(
                     "query": item["query"],
                     "expect": f"{item['source_prefix']}::{item['heading_prefix']}",
                     "got": [
-                        f"{r.get('source','')[:30]}::{r.get('heading','')[:20]}"
-                        for r in top
+                        f"{r.get('source', '')[:30]}::{r.get('heading', '')[:20]}" for r in top
                     ],
                 }
             )
@@ -174,14 +167,10 @@ def main() -> int:
             args.verbose,
         )
         results.append(r)
-        note = (
-            "（rerank 降级原序）"
-            if cfg["rerank"] and any("降级" in str(x) for x in [r])
-            else ""
-        )
+        note = "（rerank 降级原序）" if cfg["rerank"] and any("降级" in str(x) for x in [r]) else ""
         print(
             f"{r['config']:<16} hit@{args.top_k} = {r['hits']}/{r['n']}"
-            f" ({r['hit_rate']*100:.1f}%)  avg {r['avg_ms']}ms  total {r['total_s']}s {note}"
+            f" ({r['hit_rate'] * 100:.1f}%)  avg {r['avg_ms']}ms  total {r['total_s']}s {note}"
         )
         if args.verbose and isinstance(r["misses"], list):
             for m in r["misses"][:6]:

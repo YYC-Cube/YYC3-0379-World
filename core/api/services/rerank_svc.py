@@ -32,9 +32,7 @@ _RERANK_PREFIX = (
     'the Query and the Instruct provided. Note that the answer can only be "yes" or "no".'
     "<|im_end|>\n<|im_start|>user\n"
 )
-_RERANK_INSTRUCT = (
-    "Given a web search query, retrieve relevant passages that answer the query"
-)
+_RERANK_INSTRUCT = "Given a web search query, retrieve relevant passages that answer the query"
 _RERANK_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
 _DOC_MAX_CHARS = 1500  # 重排输入截断（防超长 prompt；检索文本 400 chunk 上游已限）
@@ -121,7 +119,5 @@ async def rerank_scores(
             except Exception as e:
                 errors.append(f"{u.name}@{addr}: {e}")
                 logger.warning(f"[rerank] 上游失败 {u.name}@{addr}: {e}")
-        registry.release(
-            u, (time.time() - started) * 1000, False, errors[-1] if errors else ""
-        )
+        registry.release(u, (time.time() - started) * 1000, False, errors[-1] if errors else "")
     raise RuntimeError(f"[rerank] 上游降级链全部失败: {'; '.join(errors)}")

@@ -113,9 +113,7 @@ class BM25Okapi:
             self.doc_tf.append(tf)
             for t in set(toks):
                 df[t] = df.get(t, 0) + 1
-        self.idf = {
-            t: math.log(1 + (self.N - c + 0.5) / (c + 0.5)) for t, c in df.items()
-        }
+        self.idf = {t: math.log(1 + (self.N - c + 0.5) / (c + 0.5)) for t, c in df.items()}
 
     def score(self, query: str, index: int) -> float:
         s = 0.0
@@ -182,9 +180,7 @@ class OpsRAGService:
         return data[0]["embedding"]
 
     # ── chroma 向量检索 ─────────────────────────────────────
-    async def chroma_query(
-        self, library: str, vec: List[float], k: int
-    ) -> List[Dict[str, Any]]:
+    async def chroma_query(self, library: str, vec: List[float], k: int) -> List[Dict[str, Any]]:
         payload = {
             "query_embeddings": [vec],
             "n_results": min(k * 4, 40),
@@ -195,9 +191,7 @@ class OpsRAGService:
             r.raise_for_status()
         body = r.json()
         hits = []
-        for m, d, dist in zip(
-            body["metadatas"][0], body["documents"][0], body["distances"][0]
-        ):
+        for m, d, dist in zip(body["metadatas"][0], body["documents"][0], body["distances"][0]):
             if not _admitted(m.get("source", "")):  # 运行时准入：黑名单语料不出结果
                 continue
             hits.append(
@@ -219,11 +213,7 @@ class OpsRAGService:
         p = self._index_path()
         if not p.is_file():
             return False
-        if (
-            self._bm25 is not None
-            and not force
-            and time.time() - self._bm25_loaded_at < 3600
-        ):
+        if self._bm25 is not None and not force and time.time() - self._bm25_loaded_at < 3600:
             return True
         try:
             idx = json.loads(p.read_text(encoding="utf-8"))
@@ -249,9 +239,7 @@ class OpsRAGService:
                 "heading": m.get("heading", ""),
                 "text": d,
             }
-            for i, (m, d) in enumerate(
-                zip(body.get("metadatas", []), body.get("documents", []))
-            )
+            for i, (m, d) in enumerate(zip(body.get("metadatas", []), body.get("documents", [])))
             if _admitted(m.get("source", ""))  # 索引准入：黑名单语料不入 BM25
         ]
         self._bm25_docs = docs
@@ -349,9 +337,7 @@ class OpsRAGService:
             else:
                 # 索引缺失/损坏时显式留痕（v1.3.1：防静默降级——容器重建 data 非
                 # 持久卷，索引丢失曾致 hybrid 无提示退化纯向量，评测险误判）
-                notes.append(
-                    "BM25 索引不可用，降级纯向量（POST /v1/rag/ops/reindex 重建）"
-                )
+                notes.append("BM25 索引不可用，降级纯向量（POST /v1/rag/ops/reindex 重建）")
         else:
             if hybrid and library != "main":
                 notes.append("hybrid 仅支持 main 库")

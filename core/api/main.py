@@ -306,22 +306,16 @@ async def health_check():
 
     services = {
         "ollama": (
-            ollama_result
-            if not isinstance(ollama_result, BaseException)
-            else {"status": "error"}
+            ollama_result if not isinstance(ollama_result, BaseException) else {"status": "error"}
         ),
         "zhipu": {
             "status": "configured" if settings.zhipu_api_key else "not_configured",
         },
         "redis": (
-            redis_result
-            if not isinstance(redis_result, BaseException)
-            else {"status": "error"}
+            redis_result if not isinstance(redis_result, BaseException) else {"status": "error"}
         ),
         "postgresql": (
-            pg_result
-            if not isinstance(pg_result, BaseException)
-            else {"status": "error"}
+            pg_result if not isinstance(pg_result, BaseException) else {"status": "error"}
         ),
     }
 
@@ -463,14 +457,10 @@ async def get_model_type(model: str = Query(...)):
         return {"model": model, "backend_type": "openai", "backend_name": model}
     if any(model.startswith(p) for p in ["deepseek-", "deepseek:"]):
         return {"model": model, "backend_type": "deepseek", "backend_name": model}
-    if any(
-        model.startswith(p) for p in ["llama", "codegeex", "qwen", "local:", "ollama:"]
-    ):
+    if any(model.startswith(p) for p in ["llama", "codegeex", "qwen", "local:", "ollama:"]):
         return {"model": model, "backend_type": "local_cpu", "backend_name": model}
 
-    return JSONResponse(
-        status_code=404, content={"error": "Model not found", "model": model}
-    )
+    return JSONResponse(status_code=404, content={"error": "Model not found", "model": model})
 
 
 @app.get("/v1/versions")
@@ -783,12 +773,8 @@ async def admin_vk_create(req: VKCreateRequest):
             metadata=req.metadata,
         )
     except Exception as e:
-        error_response = await error_handler.handle(
-            e, context={"operation": "vk_create"}
-        )
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        error_response = await error_handler.handle(e, context={"operation": "vk_create"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
 
 @app.get("/v1/admin/virtual-keys")
@@ -800,9 +786,7 @@ async def admin_vk_list(owner: Optional[str] = None, active_only: bool = False):
         return {"keys": await vk_list(owner=owner, include_disabled=not active_only)}
     except Exception as e:
         error_response = await error_handler.handle(e, context={"operation": "vk_list"})
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
 
 class VKUpdateRequest(BaseModel):
@@ -846,12 +830,8 @@ async def admin_vk_update(key_id: str, req: VKUpdateRequest):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        error_response = await error_handler.handle(
-            e, context={"operation": "vk_update"}
-        )
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        error_response = await error_handler.handle(e, context={"operation": "vk_update"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
 
 @app.delete("/v1/admin/virtual-keys/{key_id}")
@@ -867,12 +847,8 @@ async def admin_vk_delete(key_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        error_response = await error_handler.handle(
-            e, context={"operation": "vk_delete"}
-        )
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        error_response = await error_handler.handle(e, context={"operation": "vk_delete"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
 
 @app.get("/v1/admin/virtual-keys/{key_id}/usage")
@@ -883,12 +859,8 @@ async def admin_vk_usage(key_id: str, days: int = 30):
     try:
         return await vk_usage(key_id, days=days)
     except Exception as e:
-        error_response = await error_handler.handle(
-            e, context={"operation": "vk_usage"}
-        )
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        error_response = await error_handler.handle(e, context={"operation": "vk_usage"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
 
 @app.get("/v1/admin/usage/summary")
@@ -906,12 +878,8 @@ async def admin_usage_summary(
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": str(e)})
     except Exception as e:
-        error_response = await error_handler.handle(
-            e, context={"operation": "usage_summary"}
-        )
-        raise HTTPException(
-            status_code=error_response["status_code"], detail=error_response
-        )
+        error_response = await error_handler.handle(e, context={"operation": "usage_summary"})
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response)
 
 
 # ── 协同事务价格表管理（A2A 成本直报运行时覆盖；内存态，对齐 MODEL_PRICES_JSON 语义）──
@@ -939,9 +907,7 @@ async def admin_pricing_task_type_upsert(task_type: str, req: TaskPriceRequest):
     from app.services import pricing as pricing_svc
 
     try:
-        persisted = await pricing_svc.upsert_task_price_persisted(
-            task_type, req.price_usd
-        )
+        persisted = await pricing_svc.upsert_task_price_persisted(task_type, req.price_usd)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {
@@ -983,9 +949,7 @@ async def start_probe_loop():
         from app.services import upstream_registry
 
         merged = await upstream_registry.merge_registry_upstreams()
-        logger.info(
-            "Registry 双通道已启用：合并 %d 个注册中心上游（env 通道保留兜底）", merged
-        )
+        logger.info("Registry 双通道已启用：合并 %d 个注册中心上游（env 通道保留兜底）", merged)
         await mrs.start_merge_consumer()  # Phase B：事件驱动增量合并（免重启入池）
         await mrs.start_heartbeat_watch()  # TOP3b：心跳指标导出 + 断流翻转告警
 

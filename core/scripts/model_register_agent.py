@@ -170,9 +170,7 @@ class RegisterAgent:
 
     def heartbeat_once(self) -> bool:
         """④ 单次心跳（runtime 指标尽力而为从服务 /health 抽取）。"""
-        _, health = self._http(
-            "GET", service_health_url(self.payload["base_url"]), "", timeout=5
-        )
+        _, health = self._http("GET", service_health_url(self.payload["base_url"]), "", timeout=5)
         body = {"status": "healthy", **extract_runtime_metrics(health)}
         status, _ = self._http(
             "POST",
@@ -235,9 +233,7 @@ def start_contract_server(agent: "RegisterAgent", port: int):
                 caps = payload.get("capabilities")
                 if not caps:
                     caps = [payload["model_type"]] if payload.get("model_type") else []
-                self._send(
-                    200, {"model_id": payload.get("model_id"), "capabilities": caps}
-                )
+                self._send(200, {"model_id": payload.get("model_id"), "capabilities": caps})
             elif path == "/v1/model/health":
                 status, health = agent._http(
                     "GET", service_health_url(payload["base_url"]), "", timeout=5
@@ -278,21 +274,15 @@ def start_contract_server(agent: "RegisterAgent", port: int):
 
 
 def main(argv: Optional[list] = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="YYC³ Registry 注册 Agent（模型服务侧）"
-    )
-    parser.add_argument(
-        "--gateway", required=True, help="网关基址，如 http://yyc3-45:8000"
-    )
+    parser = argparse.ArgumentParser(description="YYC³ Registry 注册 Agent（模型服务侧）")
+    parser.add_argument("--gateway", required=True, help="网关基址，如 http://yyc3-45:8000")
     parser.add_argument("--meta", required=True, help="model-meta.json 路径")
     parser.add_argument(
         "--admin-key-env",
         default="ADMIN_API_KEYS",
         help="管理面密钥环境变量名（缺省 ADMIN_API_KEYS）",
     )
-    parser.add_argument(
-        "--interval", type=int, default=DEFAULT_INTERVAL, help="心跳周期秒"
-    )
+    parser.add_argument("--interval", type=int, default=DEFAULT_INTERVAL, help="心跳周期秒")
     parser.add_argument(
         "--set",
         action="append",

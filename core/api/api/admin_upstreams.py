@@ -10,8 +10,9 @@ import json
 import logging
 import os
 from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -72,6 +73,7 @@ class UpstreamIn(BaseModel):
 
 def _reload_registry():
     from app.services.upstream_registry import registry
+
     registry.load_from_env()
 
 
@@ -82,6 +84,7 @@ async def upstreams_list():
     except Exception as e:
         logger.warning(f"热重载失败（返回 env 版本）: {e}")
     from app.services.upstream_registry import registry
+
     return {"upstreams": registry.snapshot(), "count": len(_read_pool())}
 
 

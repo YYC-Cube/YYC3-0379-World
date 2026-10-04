@@ -70,9 +70,7 @@ class ModelRegisterRequest(BaseModel):
     model_type: str = Field("chat", description="chat/embedding/rerank/asr/ocr")
     owner: Optional[str] = Field(None, max_length=200)
     tags: list = Field(default_factory=list)
-    manifest: Optional[dict] = Field(
-        None, description="版本清单（不可变，见规范 02 §2.2）"
-    )
+    manifest: Optional[dict] = Field(None, description="版本清单（不可变，见规范 02 §2.2）")
 
 
 class RollbackRequest(BaseModel):
@@ -95,9 +93,7 @@ class HeartbeatRequest(BaseModel):
 class AliasSetRequest(BaseModel):
     """别名切换（规范 03 §3.5：改别名指向，公网 API 不中断）"""
 
-    model_id: str = Field(
-        ..., max_length=100, description="别名新指向的模型 ID（须 ready）"
-    )
+    model_id: str = Field(..., max_length=100, description="别名新指向的模型 ID（须 ready）")
     reason: str = Field("", max_length=500, description="切换原因（审计）")
 
 
@@ -110,9 +106,7 @@ class DrainRequest(BaseModel):
 def _require_admin(request: Request) -> None:
     """写操作管理权限校验（AuthMiddleware 已注入 request.state.user）。"""
     user = getattr(request.state, "user", None)
-    if not isinstance(user, dict) or not (
-        user.get("admin") or user.get("role") == "admin"
-    ):
+    if not isinstance(user, dict) or not (user.get("admin") or user.get("role") == "admin"):
         raise HTTPException(
             status_code=403,
             detail={
@@ -140,9 +134,7 @@ def _require_registry_enabled() -> None:
 @router.get("/registry/v1/models", tags=["📦 模型注册中心"])
 async def list_models(
     enabled_only: bool = Query(False, description="仅 enabled=true"),
-    model_type: Optional[str] = Query(
-        None, description="按能力过滤 chat/embedding/..."
-    ),
+    model_type: Optional[str] = Query(None, description="按能力过滤 chat/embedding/..."),
 ):
     """R-01 模型列表（Pull 通道数据源；含 TTL 实时健康判定）。"""
     models = await svc.list_models(enabled_only=enabled_only, model_type=model_type)
@@ -276,9 +268,7 @@ async def set_alias(alias: str, req: AliasSetRequest, request: Request):
     _require_admin(request)
     _require_registry_enabled()
     try:
-        result = await svc.set_alias(
-            alias, req.model_id, actor=_actor(request), reason=req.reason
-        )
+        result = await svc.set_alias(alias, req.model_id, actor=_actor(request), reason=req.reason)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"error": str(exc)})
     return {"status": "switched", **result}
@@ -333,9 +323,7 @@ async def events_stream(
         deadline = asyncio.get_event_loop().time() + timeout_seconds
         try:
             while asyncio.get_event_loop().time() < deadline:
-                msg = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=5.0
-                )
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
                 if msg and msg.get("type") == "message":
                     data = msg["data"]
                     if isinstance(data, bytes):

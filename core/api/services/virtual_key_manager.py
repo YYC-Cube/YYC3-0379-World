@@ -129,9 +129,7 @@ class VirtualKeyManager:
         record["_expires"] = time.time() + VK_CACHE_TTL
         if len(self._mem_cache) > 1000:  # 防无限膨胀
             now = time.time()
-            self._mem_cache = {
-                k: v for k, v in self._mem_cache.items() if v["_expires"] > now
-            }
+            self._mem_cache = {k: v for k, v in self._mem_cache.items() if v["_expires"] > now}
         self._mem_cache[key_hash] = record
 
     # ── ② 预算闸门 ─────────────────────────────────────────
@@ -166,10 +164,7 @@ class VirtualKeyManager:
         limit = int(record.get("rate_limit_tpm") or 0)
         if limit <= 0:
             return True
-        key = (
-            f"{VirtualKeyManager.TPM_PREFIX}"
-            f"{record.get('id')}:{time.strftime('%Y%m%d%H%M')}"
-        )
+        key = f"{VirtualKeyManager.TPM_PREFIX}" f"{record.get('id')}:{time.strftime('%Y%m%d%H%M')}"
         try:
             count = await redis_client.incr(key)
             if count == 1:
@@ -298,9 +293,9 @@ class VirtualKeyManager:
                     if key_id:
                         for rec in self._mem_cache.values():
                             if str(rec.get("id")) == str(key_id):
-                                rec["spent_usd"] = float(
-                                    rec.get("spent_usd") or 0
-                                ) + float(b.get("cost_usd") or 0)
+                                rec["spent_usd"] = float(rec.get("spent_usd") or 0) + float(
+                                    b.get("cost_usd") or 0
+                                )
                 # DB 态预算增量同步（对齐 docstring 语义；否则重启后预算闸门从 PG 读旧值失守）
                 for b in batch:
                     key_id = b.get("key_id")
@@ -320,9 +315,7 @@ class VirtualKeyManager:
             logger.warning(f"spend 批量落库失败（回灌队首重试）: {e}")
             for b in reversed(batch):
                 try:
-                    await redis_client.lpush(
-                        SPEND_QUEUE_KEY, json.dumps(b, default=str)
-                    )
+                    await redis_client.lpush(SPEND_QUEUE_KEY, json.dumps(b, default=str))
                 except Exception:
                     break
 
@@ -404,9 +397,7 @@ async def vk_create(
     return {"key": plaintext, **rec}
 
 
-async def vk_list(
-    owner: Optional[str] = None, include_disabled: bool = True
-) -> List[Dict]:
+async def vk_list(owner: Optional[str] = None, include_disabled: bool = True) -> List[Dict]:
     """列虚拟密钥（脱敏：只露 hash 前 8 位）"""
     from sqlalchemy import text
 
@@ -533,9 +524,7 @@ async def vk_delete(key_id: str) -> bool:
         ).scalar()
         if not row:
             return False
-        await session.execute(
-            text("DELETE FROM virtual_keys WHERE id = :id"), {"id": key_id}
-        )
+        await session.execute(text("DELETE FROM virtual_keys WHERE id = :id"), {"id": key_id})
         await session.commit()
     vk_manager._mem_cache.pop(row, None)
     try:
@@ -594,9 +583,7 @@ async def usage_summary(
     （calls/tokens/cost + 总量；供 GET /v1/admin/usage/summary 看板/账单面）"""
     col = _USAGE_GROUP_COLS.get(group_by)
     if col is None:
-        raise ValueError(
-            f"invalid group_by '{group_by}'（可选：{'/'.join(_USAGE_GROUP_COLS)}）"
-        )
+        raise ValueError(f"invalid group_by '{group_by}'（可选：{'/'.join(_USAGE_GROUP_COLS)}）")
     from datetime import datetime, timedelta
 
     from sqlalchemy import text

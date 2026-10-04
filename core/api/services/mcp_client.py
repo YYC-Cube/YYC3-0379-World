@@ -63,9 +63,7 @@ class MCPClient:
         try:
             with open(self.mcp_config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
-                logger.info(
-                    f"Loaded MCP config with {len(config.get('mcpServers', {}))} servers"
-                )
+                logger.info(f"Loaded MCP config with {len(config.get('mcpServers', {}))} servers")
                 return config
         except Exception as e:
             logger.error(f"Failed to load MCP config: {e}")
@@ -134,9 +132,7 @@ class MCPClient:
 
         return cmd_parts, processed_env
 
-    async def execute_mcp_command(
-        self, command: List[str], env: Dict[str, str]
-    ) -> Dict[str, Any]:
+    async def execute_mcp_command(self, command: List[str], env: Dict[str, str]) -> Dict[str, Any]:
         """执行MCP命令"""
         try:
             # 创建子进程
@@ -149,9 +145,7 @@ class MCPClient:
 
             # 设置超时
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=30.0
-                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30.0)
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
@@ -180,9 +174,7 @@ class MCPClient:
             logger.error(f"Error executing MCP command: {e}")
             raise
 
-    async def call_tool(
-        self, tool_name: str, parameters: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def call_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """调用MCP工具
 
         Args:
@@ -385,9 +377,7 @@ class MCPClient:
                     status[server_name] = {
                         "status": "online" if result.get("success") else "offline",
                         "command": server_config.get("command", ""),
-                        "error": (
-                            result.get("error") if not result.get("success") else None
-                        ),
+                        "error": (result.get("error") if not result.get("success") else None),
                     }
                 else:
                     status[server_name] = {
@@ -412,9 +402,7 @@ class LocalMCPManager:
         """初始化本地MCP管理器"""
         self.client = MCPClient(mcp_config_path)
 
-    async def execute_tool(
-        self, tool_name: str, parameters: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """执行本地MCP工具"""
         return await self.client.call_tool(tool_name, parameters)
 
