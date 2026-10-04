@@ -34,6 +34,9 @@ language: zh-CN
 
 - 🐛 CI 全红修复：dependabot 自动合并的 `numpy>=2.5.3` 需 Python≥3.12，与 CI/生产基础镜像 `python:3.11` 冲突（lint job 装依赖即失败，NAS 生产 rebuild 同因必挂）→ 回调兼容区间 `numpy>=1.26.4,<2.5`，py3.11/3.12 双端 dry-run 解析实证通过
 - 🐛 dependabot.yml 增加 numpy ignore 规则（`>=2.5`）：升级须与基础镜像升 3.12 作为同一显式变更执行，防自动合并复发
+- 🐛 CI integration 建表三段式重构：① 建表步骤经 tests/conftest.py 注册 app 包后调 `init_db()`（app 包系 importlib 手工映射，裸 sys.path 必挂 ModuleNotFoundError）；② ORM 基础 7 表 + 002–006 init SQL 幂等增量（补齐 virtual_keys/spend_logs/task_prices/model_aliases 与 model_registry 扩展列，对齐 NAS 生产「ORM 先建、SQL 增量」惯例）；③ PG service 镜像换 `pgvector/pgvector:pg15` + 目标库显式 `CREATE EXTENSION vector`（原 postgres:15-alpine 无 pgvector，`Vector(1536)` 列建表即挂）；④ 预建 yanyu 角色（002 GRANT 依赖）+ 002 种子 INSERT 包 DO 块防御（ORM 先建表场景 NOTICE 跳过，生产空库路径不变）
+- 🐛 CI test job 移除遗留 `AUTH_ENABLED="false"`（76e6690 起）：RBAC 用例（pricing_admin 403）依赖鉴权开启，用例自带正确 key header；本地 `-m integration` 全量 218 passed 实证（10.5min）
+- 🐛 CI test job 补装 `aiosqlite==0.22.1`：Registry 三测试文件的 sqlite 内存库 fixture 依赖（requirements.txt 不含，本地 .venv 历史安装掩盖）；上一 run 已 341 passed，53 errors 全为该缺位
 
 ### 新增 (Added)
 
