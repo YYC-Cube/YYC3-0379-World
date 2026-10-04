@@ -29,7 +29,7 @@ sphinx-autodoc-typehints>=1.24.0
 # 开发工具
 ipython>=8.14.0
 ipdb>=0.13.13
-pre-commit>=3.3.0
+pre-commit>=4.6.2
 
 # 安全检查
 safety>=2.3.0
