@@ -74,7 +74,10 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        # pgvector 官方镜像：002 init SQL 有 CREATE EXTENSION vector + ivfflat 索引，
+        # ORM 也有 Vector(1536) 列——postgres:15-alpine 无 pgvector 扩展会直接建表失败
+        # （2026-10-05 L7 复盘）
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: test_password
@@ -112,7 +115,7 @@ jobs:
           # 测试工具链对齐本地已验证版本组合
           pip install "pytest==9.0.3" "pytest-cov==7.1.0" pytest-asyncio "respx==0.23.1"
 
-      - name: 初始化测试库表结构（integration 前置，Base.metadata.create_all）
+      - name: 初始化测试库表结构（ORM 基础表 → init SQL 增量，对齐 NAS 生产建表顺序）
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -121,8 +124,27 @@ jobs:
           DB_NAME: yyc3_gpt_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          AUTH_ENABLED: "false"
-        run: python -c "import sys; sys.path.insert(0, 'core/api'); import asyncio; from db import init_db; asyncio.run(init_db())"
+          PGPASSWORD: test_password
+          # 注意：不设 AUTH_ENABLED——保持默认 true。RBAC 用例（如 pricing_admin 403）
+          # 依赖鉴权开启；用例自带正确 API key header（2026-10-05 L8 复盘）
+        run: |
+          set -e
+          # ① 预建角色：002 init SQL 末尾 GRANT ... TO yanyu，CI 库无此角色会报错；
+          #    同步启用 pgvector 扩展——pgvector 镜像只预装扩展文件，目标库仍需显式
+          #    CREATE EXTENSION，且必须先于 ORM 建表（Vector(1536) 列依赖该类型，L7 复盘）
+          psql -h localhost -U postgres -d yyc3_gpt_test \
+            -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'yanyu') THEN CREATE ROLE yanyu NOLOGIN; END IF; END \$\$;" \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          # ② ORM 基础 7 表：app 包不在目录结构中（tests/conftest.py 用 importlib 手工注册，
+          #    对齐容器内映射），故先加载 conftest 再调 init_db——裸 sys.path 指向 core/api 会
+          #    ModuleNotFoundError（2026-10-05 L7 复盘）
+          python -c "import sys; sys.path.insert(0, 'tests'); import conftest; import asyncio; from app.db import init_db; asyncio.run(init_db())"
+          # ③ init SQL 增量（全幂等 DDL）：002 RAG 扩展列/触发器/种子 → 003 virtual_keys/spend_logs
+          #    → 004 task_prices → 005 model_registry ADD COLUMN 扩展 → 006 model_aliases
+          for f in core/database/init/*.sql; do
+            echo "── 执行 $f ──"
+            psql -h localhost -U postgres -d yyc3_gpt_test -v ON_ERROR_STOP=1 -f "$f"
+          done
 
       - name: 运行测试（分层 P1-1）
         env:
@@ -133,7 +155,8 @@ jobs:
           DB_NAME: yyc3_gpt_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          AUTH_ENABLED: "false"
+          # 注意：不设 AUTH_ENABLED——保持默认 true。RBAC 用例（如 pricing_admin 403）
+          # 依赖鉴权开启；用例自带正确 API key header（2026-10-05 L8 复盘）
         # 分层策略：PR 快速层（~0.3s 快速反馈）+ main 全量（含 TestClient 集成层 ~8min）
         # PR 上的快速层仍会执行全部非 integration 用例，防回归；集成层留 main 门禁
         run: |

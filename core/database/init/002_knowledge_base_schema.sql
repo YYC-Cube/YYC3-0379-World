@@ -127,11 +127,19 @@ CREATE TRIGGER update_qa_pairs_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- 插入示例知识库
-INSERT INTO knowledge_bases (name, description, embedding_model, icon, background, created_by)
-VALUES 
-    ('YYC³技术文档库', '包含所有技术文档和API说明', 'embedding-3', 'book', 'blue', 'system'),
-    ('YYC³项目文档库', '包含所有项目文档和设计说明', 'embedding-3', 'wrench', 'green', 'system');
+-- 插入示例知识库（DO 块防御，2026-10-05 L7 复盘）：目标表若由 ORM 先建（String 主键无
+-- id 默认值，如 CI 测试库），种子 INSERT 会因 id 为 null 失败并中断 init 链；生产空库
+-- 首初始化（SQL 版 UUID 列）成功路径行为不变，仅异常时 NOTICE 跳过
+DO $$
+BEGIN
+    INSERT INTO knowledge_bases (name, description, embedding_model, icon, background, created_by)
+    VALUES 
+        ('YYC³技术文档库', '包含所有技术文档和API说明', 'embedding-3', 'book', 'blue', 'system'),
+        ('YYC³项目文档库', '包含所有项目文档和设计说明', 'embedding-3', 'wrench', 'green', 'system');
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE '种子知识库跳过: %', SQLERRM;
+END
+$$;
 
 -- 授予权限
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO yanyu;
