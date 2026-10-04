@@ -192,7 +192,7 @@ jobs:
       - name: 提取镜像标签
         if: env.HAS_DOCKER_HUB == 'true'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ secrets.DOCKER_USERNAME }}/yyc3-api
           tags: |
