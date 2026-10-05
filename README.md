@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./public/Family-001.png" alt="YYC³ 0379-World" width="100%"/>
+<img src="./public/Family-001.png" alt="YYC³ 0379-World"/>
 
 # YYC³ 0379-World
 
