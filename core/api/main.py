@@ -263,15 +263,30 @@ async def health_check():
     from app.utils.metrics import metrics_manager
 
     async def _check_ollama():
+        # 修复（2026-10-05）：原硬编码 http://localhost:11434——NAS 网关容器内无本地 Ollama
+        # （现役 Ollama 在 N2，经 env 上游池 ollama-n2 服务），恒报 unreachable。
+        # 改为复用 services/ollama.py 的 _endpoints()（settings.ollama_host/port + 备机，
+        # 兼容 OLLAMA_HOST 纯 host / 完整 URL 两种格式），主备任一可达即 healthy
         try:
             import httpx
 
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get("http://localhost:11434/api/tags")
-                return {
-                    "status": "healthy" if resp.status_code == 200 else "unhealthy",
-                    "latency_ms": int(resp.elapsed.total_seconds() * 1000),
-                }
+            from app.services.ollama import _endpoints
+
+            last_err = "no endpoint"
+            for base in _endpoints():
+                try:
+                    async with httpx.AsyncClient(timeout=3.0) as client:
+                        resp = await client.get(f"{base}/api/tags")
+                        if resp.status_code == 200:
+                            return {
+                                "status": "healthy",
+                                "latency_ms": int(resp.elapsed.total_seconds() * 1000),
+                                "endpoint": base,
+                            }
+                        last_err = f"HTTP {resp.status_code}"
+                except Exception as exc:  # 单端点失败继续试备机
+                    last_err = str(exc)[:80]
+            return {"status": "unreachable", "detail": last_err}
         except Exception:
             return {"status": "unreachable"}
 
