@@ -51,8 +51,7 @@ class RAGService:
 
         embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
-        sql = text(
-            """
+        sql = text("""
             SELECT
                 dc.id,
                 dc.document_id,
@@ -70,8 +69,7 @@ class RAGService:
             AND 1 - (dc.embedding <=> CAST(:embedding AS vector)) >= :threshold
             ORDER BY dc.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
-        """
-        )
+        """)
 
         result = await db.execute(
             sql,
@@ -130,8 +128,7 @@ class RAGService:
         keywords = query.lower().split()
         keyword_results = []
 
-        keyword_sql = text(
-            """
+        keyword_sql = text("""
             SELECT
                 dc.id,
                 dc.document_id,
@@ -147,8 +144,7 @@ class RAGService:
             WHERE dc.knowledge_base_id = ANY(:kb_ids)
             AND dc.content ILIKE ANY(:keywords)
             LIMIT :limit
-        """
-        )
+        """)
 
         keyword_patterns = [f"%{kw}%" for kw in keywords]
         if db is None:
