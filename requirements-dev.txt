@@ -44,5 +44,5 @@ isort>=5.12.0
 autopep8>=2.3.2
 
 # 调试工具
-debugpy>=1.8.21
+debugpy>=1.8.22
 respx>=0.21.0
