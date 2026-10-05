@@ -11,6 +11,11 @@ alerting:
     - static_configs:
         - targets: ["alertmanager:9093"]
 
+# 规则文件（volume 平铺根目录；2026-10-05 修复：seed 覆盖曾丢失此段致规则卸载）
+rule_files:
+  - /etc/prometheus/hotswap-gate.rules.yml
+  - /etc/prometheus/registry-heartbeat.rules.yml
+
 scrape_configs:
   - job_name: yyc3-gateway
     metrics_path: /metrics

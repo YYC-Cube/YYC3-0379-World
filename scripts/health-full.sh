@@ -61,11 +61,13 @@ done
 
 log "── ⑤ P0 指标露出 ──"
 METRICS=$(curl -s -m 8 "$GW/metrics")
-for M in yyc3_backend_requests_total yyc3_backend_ttft_seconds_count yyc3_canary_weight; do
+for M in yyc3_backend_requests_total yyc3_backend_ttft_seconds_count; do
   echo "$METRICS" | grep -q "^$M" && ok "指标 $M" || bad "指标 $M 缺失"
 done
-# labelled Counter 未触发时无 series，属正常——判 HELP 注册行（初始化即有）
-echo "$METRICS" | grep -q "# HELP yyc3_registry_rollback_total" && ok "指标 yyc3_registry_rollback_total（注册）" || bad "指标 yyc3_registry_rollback_total 缺失"
+# labelled 指标未触发时无 series，属正常——统一判 HELP 注册行（初始化即有）
+for M in yyc3_canary_weight yyc3_registry_rollback_total; do
+  echo "$METRICS" | grep -q "# HELP $M" && ok "指标 ${M}（注册）" || bad "指标 ${M} 缺失"
+done
 
 [ "${1:-}" = "quick" ] && { log "═══ quick 汇总: PASS=$PASS FAIL=$FAIL ═══"; exit $((FAIL > 0)); }
 
