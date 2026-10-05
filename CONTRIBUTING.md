@@ -372,14 +372,17 @@ language: zh-CN
 ### 运行测试
 
 ```bash
-# 运行所有测试
+# 运行所有测试（全量层，含 integration）
 pytest
 
-# 运行特定测试文件
-pytest tests/test_user_service.py
+# 快速回归层（PR 推荐，秒级反馈；pytest.ini 已注册 fast/integration marker）
+pytest tests/ -m "not integration"
 
-# 运行特定测试函数
-pytest tests/test_user_service.py::test_get_user_by_id
+# 运行特定测试文件
+pytest tests/test_registry_api.py
+
+# 运行特定测试类/函数
+pytest tests/test_registry_api.py::TestCanaryEndpoints
 
 # 生成测试覆盖率报告
 pytest --cov=core --cov-report=html
