@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     ollama_host: str = "host.docker.internal"
     ollama_port: int = 11434
     ollama_backup_host: str = ""  # 第二台 Ollama（如 DGX N1），留空禁用
+    # 本地 Ollama 集群探测列表（/health 专用，逗号分隔 host[:port]）——语义=本地开发机
+    # （yyc3-22/66/77）；留空则 /health 退回探测 OLLAMA_HOST 主备（路由兜底同源）。
+    # 注意：被探测机 Ollama 需监听 0.0.0.0（macOS App: OLLAMA_HOST=0.0.0.0 后重启）
+    ollama_local_hosts: str = ""
     ollama_models: str = "/mnt/models"
 
     openai_api_key: str = ""
