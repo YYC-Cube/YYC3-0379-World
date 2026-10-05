@@ -6,10 +6,11 @@
 
 ### 全链路 AI 模型网关 · 智能协同平台
 
-> **🟢 09-14 生产实况**（详见 `docs/架构与部署/API全链路闭环文档.md` §十-ter）：
-> 生产域名 `https://api.0379.world`（ECS Traefik 边缘 → NAS 网关:8000 → DGX 双机推理池）；
+> **🟢 10-05 生产实况**（详见 `docs/架构与部署/API全链路闭环文档.md` §十二）：
+> 生产域名 `https://api.0379.world`（ECS Traefik v3 边缘 → NAS 网关:8000 → DGX 双机推理池）；
 > **公网三能力** chat(`deepseek-v4-flash` TP=2 双 GB10)/embeddings(1024维)/rerank 全绿，响应头 `X-YYC3-Upstream` 契约；
-> 上游池 env 化（`OPENAI_COMPATIBLE_UPSTREAMS`）+ 熔断降级 + 67 pytest（快速层 1.6s / 全量分层）+ CI 五段 + 四层冒烟保障；
+> **10-05 治理+终审增量**：Model Registry 全量纳管（心跳 Token 独立认证防伪造）+ **Canary/Shadow 半自动热切换闭环**（2min 失败≥5 次自动回退）+ P0 观测三件套（backend_requests/TTFT/rollback）+ 日志外送链（fluent-bit→Loki 30 天）+ Alertmanager 告警分发 + CI 安全门禁阻塞化（safety/bandit HIGH 拦截）+ `health-full.sh` 17 项一键自检；
+> 400 pytest（快速层秒级 / 全量分层）+ CI 六 job + 四层冒烟保障；
 > 8 Agent+治理中枢容器化运行于 N2（:25600-07/:25700）。
 
 > **_YanYuCloudCube_**
@@ -51,7 +52,7 @@
   <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
-  <img src="https://img.shields.io/badge/tests-67%20passing-brightgreen?style=flat-square" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-400%20passing-brightgreen?style=flat-square" alt="Tests"/>
 </a>
 <a href="https://github.com/YYC-Cube/YYC3-0379-World">
   <img src="https://img.shields.io/badge/CI-five--stage--pipeline-blue?style=flat-square" alt="CI"/>
@@ -240,20 +241,21 @@ Client Request
 | chat | DGX 双机 TP=2（N1:8001） | `deepseek-v4-flash` | ✅ 公网 |
 | embeddings | N1:8100 | `qwen3-embedding-0.6b`（1024 维） | ✅ 公网 |
 | rerank | N1:8101 | `qwen3-reranker-0.6b`（judge 生成式打分） | ✅ 公网 |
-| asr | N2:8004（09-21 迁自 N1，worker 0.72+asr 0.08 共存） | `qwen3-asr-1.7b`（whisper-1 别名自动改写） | ✅ 公网 |
+| asr | ~~N2:8004~~ | `qwen3-asr-1.7b` | ⏸ **10-05 方案 A 停用**（稳定性预案：旗舰 UMA 余量优先；一键回滚脚本在案 N2:~/asr_rollback.sh，重启时机按 runbook） |
 | ocr | N2:8005（09-24 W1 窗上线，worker 0.66+asr 0.08+ocr 0.10 共存；fuse_qkv 权重手术版） | `minicpm-v-4.6`（端点 VLM chat 适配） | ✅ 公网 |
 | video | Mac yyc3-22 runner（夜间窗口生产，互斥避让批量） | MiniMax-H3 异步任务 API **已上线**（POST/GET `/v1/video/tasks`，09-24 e2e 字节级验收；runner 管理面 LAN 直连，归档 NAS 卷直写） | ✅ 任务 API 公网 |
 
 上游池统一机制：**优先级分层选择 + 熔断（连续 3 败摘除 30s 半开）+ 降级链 + base_url/fallback_url 双地址**；响应头 `X-YYC3-Upstream` / `X-YYC3-Degraded` 披露实际服务者。配置示例见 `core/config/.env.example` 上游池段。
 
-**模型注册中心（`/registry/v1`，09-28 生产灰度已开闸）**——env 之上的动态注册通道（NAS 生产 `REGISTRY_ENABLED=true` 运行中，env 保留兜底；本地默认 false）：
+**模型注册中心（`/registry/v1`，09-28 生产灰度开闸，10-05 治理日全量纳管）**——env 之上的动态注册通道（NAS 生产 `REGISTRY_ENABLED=true` 运行中，env 保留兜底；本地默认 false）：
 
-- **生产实况（09-28）**：五生产上游已双写入中心（dsv4/embedding/rerank/asr/ocr，node_id 对齐 yyc3-101/102）——startup merge 合并 5 个 registry 上游与 7 个 env 上游同池共存（registry 条目 priority 5，env 优先级层不变，流量零切换零风险）
-- **12 端点**：模型 CRUD / 版本历史 / 回滚（目标版本必须在历史中）/ 心跳上报（TTL 三级阶梯 90s→degraded、180s→unreachable、300s→摘除）/ 实时健康 / 事件流 SSE / Manifest / 审计
-- **双通道**：Pull（R-01 列表轮询）+ Push（R-10 SSE 订阅 `yyc3:registry:events`，连接建立先回放在途事件防漏）；网关启动经 `merge_registry_upstreams()` 合并（`registry-{model_id}` 命名与 env 上游隔离，幂等保留熔断/EWMA 状态）。Phase A 边界：merge 为 startup 一次性，运行时增量合并（SSE 事件驱动）属 Phase B
-- **五表 Schema**（005 迁移）：主表增量列（存量 6 列全保留）+ model_versions（不可变版本历史）+ model_heartbeats + model_events + model_audit_log（365 天）
-- **接入工具链**：`core/scripts/model_asset_verify.py`（NAS 资产完整性三校验：分片对账/头部 magic/配置存在性，报告落 `model_checksum.report`）+ `model_sync_to_node.py`（NAS→节点 SSD 增量同步，rsync 断点续传 + 同步后分片对账门禁）
-- 规范文档：`docs/模型接入与注册/`（01 现状基线 / 02 Registry 目标架构 / 03 热切换 / 04 Agent 注册 / 05 Runbook）
+- **生产实况（10-05）**：心跳 TTL 三级阶梯权威路由（ready 池）；注册 Agent systemd 模板化运行于算力节点（stdlib 零依赖，30s 心跳/契约探活/优雅 offline）；**心跳独立认证 `X-YYC3-Registry-Token`**（`REGISTRY_HEARTBEAT_TOKEN`，未配置跳过/错值 401——防第三方伪造 ready 污染路由）
+- **16 端点**：模型 CRUD / 版本历史 / 回滚 / 心跳 / 实时健康 / 事件流 SSE / Manifest / 审计 / **alias 切流** / drain 排空 / **Canary 三端点**（PUT/GET/DELETE `/registry/v1/canary/{alias}`）
+- **Canary/Shadow 半自动热切换（10-05 落地）**：Redis hash `yyc3:canary:{alias}`（baseline/canary/weight/shadow），按 weight 概率分流（10s 内存缓存），**2min 滑动窗口失败≥5 次惰性自动回退 weight=0**（审计 `canary.auto_rollback` + 指标递增）；shadow=1 后台采样不影响主响应；管理工具 `scripts/canary-manage.sh` 六子命令（set/promote/rollback/finalize/status/delete）
+- **双通道**：Pull（列表轮询）+ Push（SSE 订阅 `yyc3:registry:events`）；网关启动 `merge_registry_upstreams()` 合并（`registry-{model_id}` 命名与 env 上游隔离，幂等保留熔断/EWMA 状态）
+- **五表 Schema**（005/006 迁移）：主表增量列 + model_versions（不可变历史）+ model_heartbeats + model_events + model_audit_log（365 天）+ model_aliases
+- **接入工具链**：`core/scripts/model_asset_verify.py`（资产三校验）+ `model_sync_to_node.py`（NAS→节点增量同步）+ `scripts/health-full.sh`（17 项全链只读自检）
+- 规范文档：`docs/模型接入与注册/`（01 现状基线 / 02 Registry 架构 / 03 热切换 / 04 Agent 注册 / 05 Runbook / 06 运维脚本工具箱 / 07 dsv4-recover 手册）
 
 ### 智能路由与负载均衡
 
@@ -385,27 +387,27 @@ YYC3-0379-World/
 │   │   ├── cache.py             # Redis 缓存管理
 │   │   └── main.py              # FastAPI 应用入口（52 端点）
 │   ├── config/                  # 配置文件
-│   │   ├── .env.example         # 环境变量模板（含上游池 OPENAI_COMPATIBLE_UPSTREAMS）
-│   │   ├── prometheus/          # Prometheus 配置与告警规则
-│   │   ├── grafana/             # Grafana 仪表盘 (api-gateway-overview, model-usage-stats)
-│   │   ├── nginx|haproxy|loki/  # 边缘/负载/日志栈配置
-│   │   └── postgresql|redis/    # 主从数据库与缓存配置
-│   ├── database/                # 数据库初始化 (knowledge_base_schema)
+│   │   ├── .env.example         # 环境变量模板（含上游池 OPENAI_COMPATIBLE_UPSTREAMS
+│   │   │                        #   与 REGISTRY_HEARTBEAT_TOKEN 心跳认证）
+│   │   ├── grafana/             # Grafana 仪表盘 (api-gateway-overview, dgx-container-logs)
+│   │   └── nginx|haproxy|loki/  # 边缘/负载/日志栈配置
+│   ├── database/                # 数据库初始化（init/ 002-006 幂等 SQL）
 │   ├── models/                  # 模型配置与 MCP 配置 (14 个 MCP 工具)
-│   └── scripts/                 # 运维脚本 (api_key_manager, health-check, 备份)
+│   └── scripts/                 # 运维脚本 (model_register_agent, yyc3_db_backup, api_key_manager)
 ├── deploy/                      # 部署配置
-│   ├── dgx/                     # DGX 双机 TP=2 (dsv4_head/worker, compose×4)
-│   ├── nas/                     # NAS 网关部署 (docker-compose.nas.yml + smoke-test)
-│   └── scripts/                 # 高可用部署脚本
-├── scripts/                     # 项目脚本 (deploy-nas-gateway, pg-failover, verify-full-link)
-├── tests/                       # 测试套件
-│   ├── e2e/                     # Cypress + Playwright E2E
+│   ├── dgx/                     # DGX 双机 TP=2 (dsv4_head/worker + dsv4-recover.sh 五模式剧本
+│   │                            #   + fluent-bit 日志外送链 cn.lua/container-map)
+│   └── nas/                     # NAS 网关+监控栈 (docker-compose.nas/monitoring + rebuild-gateway.sh
+│                                #   + loki/alertmanager 配置 + prometheus-rules 告警规则族)
+├── scripts/                     # 项目脚本 (health-full 17项自检, canary-manage 六子命令,
+│                                #   deploy-nas-gateway, verify-full-link)
+├── tests/                       # 测试套件（400 用例/30 文件）
+│   ├── e2e/                     # Playwright E2E（pnpm 9 锁定）
 │   ├── performance/             # k6 + Locust 性能测试
-│   ├── test_gateway_api.py      # 网关单元测试（24 用例）
-│   └── test_proxy_api.py        # 能力代理测试
+│   └── test_*.py                # 单元+集成分层（Registry/Canary/Token/A2A/云适配器等）
 ├── .github/                     # CI/CD
-│   ├── workflows/ci.yml         # 五段流水线 (lint→test+security→build→deploy→smoke)
-│   └── dependabot.yml           # 依赖漏洞扫描
+│   ├── workflows/ci.yml         # 六 job 流水线 (lint→test+security→build→deploy验证→release tag门禁)
+│   └── dependabot.yml           # 依赖漏洞扫描（pip/npm/github-actions）
 ├── docs/                        # 文档体系（索引见 docs/README.md）
 ├── public/                      # 静态资源
 ├── .env.example                 # 环境变量模板
@@ -420,13 +422,14 @@ YYC3-0379-World/
 
 ## 文档中心
 
-完整文档架构索引见 **[docs/README.md](./docs/README.md)**，五大分区：
+完整文档架构索引见 **[docs/README.md](./docs/README.md)**，六大分区：
 
 | 分区 | 内容 |
 | :---- | :----- |
-| 核心参考 | 系统上下文、项目结构、变量清单 |
+| 核心参考 | 系统上下文、项目结构、变量清单（v1.1） |
+| 模型接入与注册 | 接入规范 01-07：Registry 架构 / 热切换 Canary / Agent / Runbook / 工具箱 / dsv4-recover |
 | 操作指南 | API 认证、网关使用、配置管理、压测、CI-CD |
-| 架构与部署 | **[SSOT] API 全链路闭环文档**、DGX 双机、ASR 方案、网络拓扑 |
+| 架构与部署 | **[SSOT] API 全链路闭环文档**（§十二 10-05 快照）、DGX 双机、网络拓扑 |
 | 团队规范 | 标规五件套、验收系统 13 阶段、验收总结 |
 | 设计理念 | 五维九曲哲学、战略规划、Console 前端全维度设计 |
 
@@ -503,8 +506,10 @@ YYC3-0379-World/
 - **非 Root 运行**：Docker 容器使用 appuser 非特权用户
 - **CORS 控制**：生产环境建议配置具体域名（非 `*`）
 - **启动配置校验**：关键密钥缺失/默认值时拒绝启动（生产模式）
-- **依赖漏洞扫描**：Dependabot 持续监控（pip/npm/github-actions）+ OSV 脚本
-- **密钥文件保护**：WireGuard 私钥等通过 .gitignore 排除
+- **依赖漏洞扫描**：Dependabot 持续监控（pip/npm/github-actions）+ **CI 阻塞门禁**（safety 发现漏洞即红 + bandit HIGH 拦截，10-05 终审整改升级）
+- **密钥文件保护**：WireGuard 私钥等通过 .gitignore 排除；**NAS 工作树运行时数据目录**（postgres/redis/backups/logs）已 ignore——git clean 永久脱离数据触达面（10-05 事故根治防线）
+- **心跳独立认证**：`X-YYC3-Registry-Token` 防第三方伪造 ready 状态污染路由池（10-05 生产启用）
+- **凭据轮换机制**：API_KEYS 支持逗号分隔多 key 零中断过渡轮换；文档示例一律占位符（真实值禁入档）
 
 ### 安全建议
 
@@ -526,11 +531,19 @@ YYC3-0379-World/
 | `http_request_duration_seconds` | Histogram | 请求延迟分布 |
 | `active_requests` | Gauge | 当前活跃请求数 |
 | `cache_hit_rate` | Gauge | 缓存命中率 |
-| `model_backend_latency_ms` | Histogram | 后端模型延迟 |
+| `yyc3_backend_requests_total` | Counter | 后端请求计数（upstream×code，成功/失败/降级三态埋点，10-05 P0） |
+| `yyc3_backend_ttft_seconds` | Histogram | 流式首 token 延迟 TTFT（10-05 P0） |
+| `yyc3_registry_rollback_total` | Counter | Canary 自动回退计数（10-05 P0） |
+| `yyc3_canary_weight` / `yyc3_canary_failures_total` / `yyc3_shadow_requests_total` | Gauge/Counter | 灰度权重/失败/Shadow 采样（10-05） |
+
+> 告警：`deploy/nas/prometheus-rules/`（hotswap-gate 三规则 + registry-heartbeat 三规则）经 Alertmanager 分发（webhook 通道）。
 
 ### 健康检查
 
 ```bash
+# 一键全链自检（17 项：公网/网关/Registry/Token/推理链/日志链/告警规则/指标/看板）
+bash scripts/health-full.sh            # 全量；quick=核心六项
+
 # 完整健康检查（含服务状态 + 系统资源）
 curl http://localhost:8000/health
 
