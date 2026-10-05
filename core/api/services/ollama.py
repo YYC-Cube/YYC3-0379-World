@@ -20,6 +20,8 @@
 @tags: services,python,ollama,local,critical,public
 """
 
+import asyncio
+import ipaddress
 import json
 import time
 from typing import Any, Dict, List, Optional
@@ -47,6 +49,80 @@ def _endpoints() -> list:
     if settings.ollama_backup_host:
         eps.append(f"http://{_normalize_host(settings.ollama_backup_host)}:{settings.ollama_port}")
     return eps
+
+
+# ── 本地 Ollama 集群智能识别（2026-10-05：CIDR 网段自动扫描，替代静态设备表）──
+# 设计：无需既定设备清单——对 OLLAMA_DISCOVER_CIDR（如 192.168.3.0/24）并发探
+# :port/api/tags，在线 Ollama 自动入表；结果 TTL 缓存 + 过期后台刷新（/health 高频
+# 探活不重复扫网）。静态表 OLLAMA_LOCAL_HOSTS 保留为补充通道（CIDR 外的设备）。
+_DISC_TTL = 300.0  # 发现缓存有效期（秒）
+_DISC_CONNECT = 0.8  # 连接超时：在线主机毫秒级返回，离线快速跳过
+_DISC_CONCURRENCY = 96  # 扫描并发：/24≈254 目标约 2-3s 完成
+_DISC_MAX_NET = 1024  # 网段地址数上限（防误配大网段拖垮 /health）
+
+_disc_cache: Dict[str, Any] = {"ts": 0.0, "found": []}
+
+
+async def _disc_probe(ip: str, port: int, sem: asyncio.Semaphore) -> Optional[str]:
+    """单目标探测：可达返回 base_url，否则 None（供 gather 并发调用）"""
+    base = f"http://{ip}:{port}"
+    async with sem:
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(2.0, connect=_DISC_CONNECT)
+            ) as client:
+                resp = await client.get(f"{base}/api/tags")
+                return base if resp.status_code == 200 else None
+        except Exception:
+            return None
+
+
+async def discover_local_ollamas(cidr: str, port: int = 11434) -> List[str]:
+    """扫描 CIDR 网段自动识别在线 Ollama（返回 base_url 列表，按 IP 序）。
+
+    - /24 ≈254 目标 × 并发 96 × 0.8s 连接超时 → 全程约 2-3s
+    - 网段非法或地址数 > _DISC_MAX_NET（/22 以上）直接返回空（防误配）
+    """
+    try:
+        net = ipaddress.ip_network(cidr.strip(), strict=False)
+    except ValueError:
+        return []
+    if net.num_addresses > _DISC_MAX_NET:
+        return []
+    sem = asyncio.Semaphore(_DISC_CONCURRENCY)
+    results = await asyncio.gather(*[_disc_probe(str(ip), port, sem) for ip in net.hosts()])
+    return sorted(base for base in results if base)
+
+
+async def _disc_refresh(cidr: str) -> None:
+    """后台刷新发现结果（失败静默保留旧值，下轮再试）"""
+    try:
+        _disc_cache["found"] = await discover_local_ollamas(cidr)
+        _disc_cache["ts"] = time.monotonic()
+    except Exception:
+        pass
+
+
+async def local_cluster_targets(static_hosts: str, cidr: str, port: int) -> List[str]:
+    """本地集群探测目标 = 静态表 ∪ 自动发现（去重）。
+
+    缓存策略：进程首次调用内联首扫（≈2s，仅一次）；此后命中缓存，过期由后台任务
+    刷新（/health 即时返回旧值，不阻塞）。cidr 为空时仅静态表。
+    """
+    targets: List[str] = []
+    for item in static_hosts.split(","):
+        item = item.strip()
+        if item:
+            host, _, p = item.partition(":")
+            targets.append(f"http://{host}:{p or port}")
+    if cidr.strip():
+        if _disc_cache["ts"] == 0.0:
+            _disc_cache["found"] = await discover_local_ollamas(cidr)
+            _disc_cache["ts"] = time.monotonic()
+        elif time.monotonic() - _disc_cache["ts"] > _DISC_TTL:
+            asyncio.create_task(_disc_refresh(cidr))
+        targets += [b for b in _disc_cache["found"] if b not in targets]
+    return targets
 
 
 _TIMEOUT = httpx.Timeout(120.0, read=120.0)

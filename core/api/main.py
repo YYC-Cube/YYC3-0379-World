@@ -263,28 +263,23 @@ async def health_check():
     from app.utils.metrics import metrics_manager
 
     async def _check_ollama():
-        # 探测目标语义（2026-10-05 二次修正）：
-        # ① OLLAMA_LOCAL_HOSTS 配置时 → 本地 Ollama 集群（yyc3-22/66/77 开发机）逐台探测，
-        #    每台独立状态透出（endpoints{}），任一可达即整体 healthy（partial 场景可见细节）
-        # ② 未配置 → 探测 OLLAMA_HOST 主备（_endpoints()，与路由兜底同源）
+        # 本地 Ollama 智能识别（2026-10-05 三次演进：静态表 → CIDR 网段自动发现）：
+        # 目标 = OLLAMA_LOCAL_HOSTS(静态补充) ∪ OLLAMA_DISCOVER_CIDR(自动扫描，
+        # TTL 5min 缓存+后台刷新，无需既定设备表)；两者皆未配置 → 探测 OLLAMA_HOST
+        # 主备（_endpoints()，与路由兜底同源）。逐台探测，任一可达即 healthy。
         import httpx
 
-        def _targets() -> list:
-            if settings.ollama_local_hosts.strip():
-                out = []
-                for item in settings.ollama_local_hosts.split(","):
-                    item = item.strip()
-                    if item:
-                        host, _, port = item.partition(":")
-                        out.append(f"http://{host}:{port or settings.ollama_port}")
-                return out
-            from app.services.ollama import _endpoints
+        from app.services.ollama import _endpoints, local_cluster_targets
 
-            return _endpoints()
+        static_cfg = settings.ollama_local_hosts.strip()
+        cidr_cfg = settings.ollama_discover_cidr.strip()
+        targets = await local_cluster_targets(static_cfg, cidr_cfg, settings.ollama_port)
+        if not (static_cfg or cidr_cfg):  # 本地识别未启用 → 兜底同源探测
+            targets = _endpoints()
 
         last_err = "no endpoint"
         detail: dict = {}
-        for base in _targets():
+        for base in targets:
             key = base.split("//", 1)[1]
             try:
                 async with httpx.AsyncClient(timeout=3.0) as client:
@@ -301,8 +296,13 @@ async def health_check():
                 detail[key] = {"status": "unreachable", "detail": str(exc)[:60]}
                 last_err = f"{key}: {str(exc)[:60]}"
         if any(v["status"] == "healthy" for v in detail.values()):
-            return {"status": "healthy", "endpoints": detail}
-        return {"status": "unreachable", "endpoints": detail, "detail": last_err}
+            return {"status": "healthy", "discovered": len(detail), "endpoints": detail}
+        return {
+            "status": "unreachable",
+            "discovered": len(detail),
+            "endpoints": detail,
+            "detail": last_err,
+        }
 
     async def _check_redis():
         try:

@@ -30,9 +30,13 @@ class Settings(BaseSettings):
     ollama_host: str = "host.docker.internal"
     ollama_port: int = 11434
     ollama_backup_host: str = ""  # 第二台 Ollama（如 DGX N1），留空禁用
-    # 本地 Ollama 集群探测列表（/health 专用，逗号分隔 host[:port]）——语义=本地开发机
-    # （yyc3-22/66/77）；留空则 /health 退回探测 OLLAMA_HOST 主备（路由兜底同源）。
-    # 注意：被探测机 Ollama 需监听 0.0.0.0（macOS App: OLLAMA_HOST=0.0.0.0 后重启）
+    # 本地 Ollama 智能识别（/health 专用）：
+    # - OLLAMA_DISCOVER_CIDR：网段自动扫描（如 192.168.3.0/24），无需既定设备表——
+    #   在线 Ollama 自动入表（TTL 5min 缓存+后台刷新）；留空禁用扫描
+    # - OLLAMA_LOCAL_HOSTS：静态补充表（逗号分隔 host[:port]，CIDR 之外的设备）
+    # 两者皆未配置 → /health 退回探测 OLLAMA_HOST 主备（与路由兜底同源）
+    # 注意：被识别机的 Ollama 需监听 0.0.0.0（macOS: OLLAMA_HOST=0.0.0.0 后重启）
+    ollama_discover_cidr: str = ""
     ollama_local_hosts: str = ""
     ollama_models: str = "/mnt/models"
 
