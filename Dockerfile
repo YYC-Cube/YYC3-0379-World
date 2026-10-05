@@ -57,10 +57,12 @@ RUN pip install --user -i $PIP_INDEX_URL -r requirements.txt
 FROM base AS production
 
 # 从构建阶段复制依赖
-COPY --from=builder /root/.local /root/.local
+# 2026-10-06 修复：builder 以 pip --user 安装落在 /root/.local，USER appuser 后无权读
+# root 家目录（Permission denied 崩溃环）——拷贝至 appuser 家目录并改属主（uid 1000）
+COPY --from=builder --chown=1000:1000 /root/.local /home/appuser/.local
 
 # 更新 PATH
-ENV PATH=/root/.local/bin:$PATH
+ENV PATH=/home/appuser/.local/bin:$PATH
 
 # 复制应用代码（core/api 映射为 app 包，与生产运行布局一致）
 COPY core/api/ /app/app/
