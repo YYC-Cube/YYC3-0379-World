@@ -1,0 +1,46 @@
+# YYC³ NAS Loki 单机配置（2026-10-05 日志外送 §2.4：30 天保留 + compactor 清理）
+# 基于 grafana/loki:2.9.2 镜像内置单机默认配置扩展；数据卷 yyc3-33_loki-data 挂 /tmp/loki 不变
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /tmp/loki/tsdb-index
+    cache_location: /tmp/loki/tsdb-cache
+
+limits_config:
+  retention_period: 744h # 31 天：05 Runbook §2.4 保留策略
+  reject_old_samples: false
+
+compactor:
+  working_directory: /tmp/loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+ruler:
+  alertmanager_url: ""

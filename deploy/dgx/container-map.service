@@ -1,0 +1,6 @@
+[Unit]
+Description=YYC3 container map refresh (cn.lua v2 data source)
+
+[Service]
+Type=oneshot
+ExecStart=/home/yyc3/logging/container-map.sh

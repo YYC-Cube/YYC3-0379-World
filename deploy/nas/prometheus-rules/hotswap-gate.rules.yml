@@ -1,0 +1,36 @@
+# YYC³ 热切换门禁告警（03 §9 指标先行 P0 → §7 回滚硬条件 · 告警先行人工回滚）
+# 2026-10-05 随 P0 埋点（yyc3_backend_requests_total / yyc3_backend_ttft_seconds / yyc3_registry_rollback_total）启用
+groups:
+  - name: yyc3-hotswap-gate
+    rules:
+      - alert: RegistryRollbackTriggered
+        expr: increase(yyc3_registry_rollback_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Registry 回滚已执行：{{ $labels.model_id }} → {{ $labels.target_version }}"
+          description: "rollback_triggered >0（5m 窗口）——P0 事故级：立即人工介入核实切换健康度"
+          runbook: docs/模型接入与注册/05-监控告警与Runbook.md §5 SOP-03
+
+      - alert: BackendErrorRateHigh
+        expr: |
+          sum by (upstream) (rate(yyc3_backend_requests_total{code="error"}[5m]))
+          /
+          sum by (upstream) (rate(yyc3_backend_requests_total[5m])) > 0.10
+        for: 3m
+        labels:
+          severity: P0
+        annotations:
+          summary: "上游 {{ $labels.upstream }} 错误率 >10%（5m）"
+          description: "03 §7 自动回滚硬条件阈值——告警先行：人工执行 SOP-03 回滚（自动回滚状态机待 Canary 落地）"
+
+      - alert: BackendTTFTP95High
+        expr: |
+          histogram_quantile(0.95, sum by (upstream, le) (rate(yyc3_backend_ttft_seconds_bucket[5m]))) > 3
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "上游 {{ $labels.upstream }} SSE TTFT p95 >3s（5m 持续）"
+          description: "Canary ttft_p95 硬条件阈值——灰度期触发应暂停扩量"

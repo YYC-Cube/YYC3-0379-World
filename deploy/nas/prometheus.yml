@@ -1,9 +1,15 @@
 # file: prometheus.yml
 # description: YYC³ 观测栈抓取配置——NAS 网关 /metrics（compose 网络 service 名直连）
-# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-09-24
+# author: YanYuCloudCube Team | version: v1.1.0 | created: 2026-09-24 | updated: 2026-10-05
 global:
   scrape_interval: 15s
   evaluation_interval: 30s
+
+# O-1 整改（2026-10-05 终审）：告警经 Alertmanager 分发（webhook 通道，配置见 alertmanager.yml）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: yyc3-gateway

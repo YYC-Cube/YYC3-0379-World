@@ -1,0 +1,28 @@
+# file: alertmanager.yml
+# description: O-1 整改（2026-10-05 终审）——告警通知通道：Prometheus → Alertmanager → IM webhook
+# author: YanYuCloudCube Team | version: v1.0.0 | created: 2026-10-05
+# 部署：bash deploy/nas/seed-monitoring.sh（播种到 named volume 后重启生效）
+# ⚠️ 启用通知：把下方 url 替换为真实 IM 机器人中转地址（飞书/钉钉/Slack），
+#    再执行 seed-monitoring.sh + docker restart yyc3-alertmanager；占位 URL 合法可启动但不触达
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: yyc3-webhook
+  group_by: [alertname, alias, upstream]
+  group_wait: 30s        # 首次通知前聚合窗口（防告警风暴）
+  group_interval: 5m     # 同组新告警最小间隔
+  repeat_interval: 4h    # 未恢复告警重复提醒
+  routes:
+    - matchers: [severity="critical"]
+      receiver: yyc3-webhook
+      repeat_interval: 1h  # critical 级加密提醒
+      continue: false
+
+receivers:
+  - name: yyc3-webhook
+    webhook_configs:
+      # TODO(O-1): 替换为真实 webhook（如飞书自定义机器人中转服务地址）
+      - url: http://127.0.0.1:5001/yyc3-alerts
+        send_resolved: true
+        max_alerts: 20

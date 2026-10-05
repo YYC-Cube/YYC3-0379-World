@@ -15,6 +15,13 @@ $D run --rm --user root \
   --entrypoint sh docker.m.daocloud.io/prom/prometheus:v2.53.0 \
   -c "cp /src/prometheus.yml /dst/ && chmod 644 /dst/prometheus.yml"
 
+echo "[seed] 复制 alertmanager.yml → ${P}_alertmanager-conf（O-1 整改 2026-10-05）"
+$D run --rm --user root \
+  -v ${P}_alertmanager-conf:/dst \
+  -v ${ROOT}/deploy/nas:/src:ro \
+  --entrypoint sh docker.m.daocloud.io/prom/alertmanager:v0.27.0 \
+  -c "cp /src/alertmanager.yml /dst/ && chmod 644 /dst/alertmanager.yml"
+
 echo "[seed] 复制 grafana provisioning → ${P}_grafana-provisioning"
 $D run --rm --user root \
   -v ${P}_grafana-provisioning:/dst \
@@ -36,5 +43,5 @@ $D run --rm --user root \
   -c "chown -R 472:472 /dst"
 
 echo "[seed] 重启生效"
-$D restart yyc3-prometheus yyc3-grafana
+$D restart yyc3-prometheus yyc3-grafana yyc3-alertmanager
 echo "[seed] ✅ 完成"

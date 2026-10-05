@@ -1,0 +1,52 @@
+{
+  "title": "YYC³ DGX 容器日志（Loki · dgx-containers）",
+  "uid": "yyc3-dgx-logs",
+  "tags": ["yyc3", "loki", "dgx"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "host", "stream": "", "type": 1 },
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "容器日志流（job=dgx-containers）",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "{job=\"dgx-containers\",host=~\"$host\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "崩溃关键字（died unexpectedly / Traceback / cancelled）",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "{job=\"dgx-containers\",host=~\"$host\"} |~ \"died unexpectedly|Traceback|RuntimeError\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

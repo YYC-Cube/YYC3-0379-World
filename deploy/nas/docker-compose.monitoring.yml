@@ -46,15 +46,38 @@ services:
     depends_on:
       - prometheus
 
-  # A2A 审计流 Loki（Phase 5 灰度）：镜像内置默认单机配置，named volume 持久
+  # A2A 审计流 Loki（Phase 5 灰度）：named volume 持久
   # 网关 A2A_AUDIT_LOKI_ENABLED=true → LOKI_URL=http://yyc3-loki:3100 推送
+  # 2026-10-05 日志外送（05 Runbook §2.4）：Tailscale 端口收 DGX fluent-bit 推流；
+  # 自定义 config（30 天保留 + compactor 清理）见同目录 loki-config.yaml
   loki:
     image: docker.m.daocloud.io/grafana/loki:2.9.2
     container_name: yyc3-loki
     restart: unless-stopped
-    command: -config.file=/etc/loki/local-config.yaml
+    user: "0" # NAS ACL 拒绝 UID10001 读 bind-mount 配置；单机灰度栈 + 仅 Tailscale 暴露，root 运行权衡可接受
+    command: -config.file=/etc/loki/loki-config.yaml
     volumes:
       - loki-data:/tmp/loki
+      - ./loki-config.yaml:/etc/loki/loki-config.yaml:ro
+    ports:
+      # 仅绑 Tailscale IP（与 grafana 同安全模式，公网不可直连）
+      - "100.65.172.88:3100:3100"
+    networks:
+      - yyc3-network
+
+  # O-1 整改（2026-10-05 终审）：告警通知通道。Prometheus alerting 段指向 alertmanager:9093；
+  # 配置经 seed-monitoring.sh 播种进 named volume（同 prometheus 模式，绕 TOS ACL）
+  alertmanager:
+    image: docker.m.daocloud.io/prom/alertmanager:v0.27.0
+    container_name: yyc3-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=:9093
+    volumes:
+      - alertmanager-conf:/etc/alertmanager
+      - alertmanager-data:/alertmanager
     networks:
       - yyc3-network
 
@@ -65,6 +88,8 @@ volumes:
   grafana-dashboards:
   grafana-data:
   loki-data:
+  alertmanager-conf:
+  alertmanager-data:
 
 networks:
   yyc3-network:
