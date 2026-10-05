@@ -20,7 +20,16 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# APT_MIRROR 可构建时注入（2026-10-06：NAS 直连 deb.debian.org 卡死致全量重建挂起，
+# 默认切清华 debian 源；恢复官方源传 --build-arg APT_MIRROR=）
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+            /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+            /etc/apt/sources.list; \
+    fi \
+    && apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libpq-dev \
@@ -84,8 +93,8 @@ FROM base AS development
 COPY requirements.txt .
 RUN pip install -i ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} -r requirements.txt
 
-# 安装开发工具
-RUN pip install \
+# 安装开发工具（2026-10-06：补清华源——裸连 pypi 18kB/s 致 NAS 全量重建卡死 20min+）
+RUN pip install -i ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} \
     pytest \
     pytest-cov \
     black \
