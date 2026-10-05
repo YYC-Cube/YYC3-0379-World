@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# ⚠️ RETIRED 2026-10-05：目标架构已退役——ECS yyc3-33 现仅运行 Traefik 公网边缘（无 PG/LB 容器），
+# 现役数据面 = NAS yyc3-45 compose 栈内建 PG15/Redis（deploy/nas/docker-compose.nas.yml）。
+# 本脚本保留作历史参考；确认要执行已退役流程时显式放行：YYC3_ALLOW_RETIRED=1 $0
+if [ "${YYC3_ALLOW_RETIRED:-0}" != "1" ]; then
+    echo "❌ [RETIRED] 本脚本面向已退役的 yyc3-33 PG/LB 架构；现役 DB 备份: core/scripts/yyc3_db_backup.sh" >&2
+    exit 1
+fi
+
+
 set -e
 
 echo "========================================="

@@ -192,22 +192,28 @@ jobs:
       - name: 安装安全工具
         run: |
           python -m pip install --upgrade pip
-          pip install safety bandit
+          pip install "safety>=3.0" bandit
           pip install -r requirements.txt
 
-      - name: Safety 依赖漏洞扫描
-        run: safety check --file requirements.txt --json
-        continue-on-error: true
+      - name: Safety 依赖漏洞扫描（S-2 整改：high 及以上阻塞门禁，low/medium 仅报告）
+        # safety 3.x --fail-on：empty=全级别/all/low/medium/high；报告与门禁分两跑
+        run: |
+          safety check --file requirements.txt --json --save-json safety-report.json || true
+          safety check --file requirements.txt --fail-on high
 
-      - name: Bandit 代码安全扫描
-        run: bandit -r core/ -f json -o bandit-report.json || true
+      - name: Bandit 代码安全扫描（S-2 整改：HIGH 级别阻塞门禁，MEDIUM 及以下仅报告）
+        run: |
+          bandit -r core/ -f json -o bandit-report.json || true
+          bandit -r core/ -lll -q   # -lll = 仅 HIGH；非零退出码阻塞流水线
 
       - name: 上传安全报告
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: security-reports
-          path: bandit-report.json
+          path: |
+            bandit-report.json
+            safety-report.json
 
   # ==================== 构建镜像（仅 main 分支，Docker Hub 可选） ====================
   build:

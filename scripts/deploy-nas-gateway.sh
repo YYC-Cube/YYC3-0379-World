@@ -69,8 +69,11 @@ ok "环境变量文件就绪"
 
 # ---------- 步骤 3: 确保 compose 为 .env 变量化版本 ----------
 log "步骤 3/5: 检查 docker-compose.yml"
-if grep -qE 'My151001|redis_0379|sk-yyc3-prod|58b7aa8756' "$NAS_DEPLOY_DIR/docker-compose.yml" 2>/dev/null; then
-    warn "检测到硬编码凭据，替换为 .env 变量化模板"
+# S-1 整改（2026-10-05 终审）：原实现 grep 历史真实凭据明文指纹（自身构成二次泄露面），
+# 改为「通用硬编码凭据模式」检测——命中任何一类即判定硬编码，替换为变量化模板
+LEAK_PATTERNS='sk-[A-Za-z0-9_-]{16,}|(password|secret|api_key|apikey)[\"'"'"' ]*[:=][\"'"'"' ]?[A-Za-z0-9+/=_-]{20,}'
+if grep -qE "$LEAK_PATTERNS" "$NAS_DEPLOY_DIR/docker-compose.yml" 2>/dev/null; then
+    warn "检测到硬编码凭据特征（通用模式），替换为 .env 变量化模板"
     cp "$COMPOSE_TEMPLATE" "$NAS_DEPLOY_DIR/docker-compose.yml"
     ok "docker-compose.yml 已替换为 .env 变量化版本"
 elif ! grep -q '\${POSTGRES_PASSWORD}' "$NAS_DEPLOY_DIR/docker-compose.yml" 2>/dev/null; then
