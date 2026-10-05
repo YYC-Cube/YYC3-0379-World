@@ -40,6 +40,7 @@ language: zh-CN
 - 🔧 CI deploy 冒烟 401 主因修复：GitHub `PROD_API_KEY` secret 与生产失同步（疑 9-26 网关密钥轮换遗留）→ 以 NAS 网关 `.env` API_KEYS 为源公网验证 200 后同步（管道传入不落日志）；main 近 100 run 无 success 的历史遗留开始收敛
 - 🔒 main 分支保护生效（required checks：代码质量检查/单元测试/安全扫描/构建镜像）：dependabot 红 PR 自动落 main 的根源封死；admin 应急直推通道保留（enforce_admins=false）
 - 🚀 旗舰 DeepSeek-V4-Flash 恢复（停摆 5 天 → 四绿）：A 预案执行——8B rerank 退役 + 双机 TP=2 重建 + 孤儿清障（emb8b/0.6B reranker 三重实证零引用后停用）；启动参数 `--enforce-eager`（NVRM CUDA graphics context OOM 实锤）+ `--max-model-len 65536→32768`（UMA profiling 峰值减半），双备份可回滚；终验 health 200 / 契约 healthy / 公网对话 `x-yyc3-upstream: flagship-dsv4`
+- 🔧 方案 a 破稳定性循环：旗舰交付后 ~40min 复燃（N2 就绪态仅余 8G、崩溃周期实测 ~20min）→ 停用 `yyc3-asr`（8.6G，禁自启，一键回滚脚本 N2:/home/yyc3/asr_rollback.sh）→ 稳态余量 17G，DeepGEMM warmup 首次 100%，health/推理/公网复验全绿
 
 ### 新增 (Added)
 
