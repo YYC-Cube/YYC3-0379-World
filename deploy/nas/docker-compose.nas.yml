@@ -43,7 +43,9 @@ services:
       retries: 5
 
   gateway:
-    build: .
+    build:
+      context: .
+      target: production
     container_name: 0379-world-gateway-1
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -122,7 +124,9 @@ services:
   # ── A2A 业务 Agent Worker（5 编队独立进程；与网关同镜像不同入口）──
   # 容器语义：SIGTERM 即退，在途消息留 PEL 由 XAUTOCLAIM 回收（无丢失）
   agent-worker:
-    build: .
+    build:
+      context: .
+      target: production
     container_name: 0379-world-worker-1
     command: ["python", "-m", "app.worker_entry"]
     environment:
@@ -150,7 +154,9 @@ services:
   # 启用：docker compose --profile orchestrator up -d orchestrator
   # 独立形态：网关侧 A2A_RESULT_CONSUMER_ENABLED=false；混合形态双开安全（组分摊）
   orchestrator:
-    build: .
+    build:
+      context: .
+      target: production
     container_name: 0379-world-orchestrator-1
     command: ["python", "-m", "app.orchestrator_entry"]
     environment:

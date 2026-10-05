@@ -58,7 +58,10 @@ services:
     command: -config.file=/etc/loki/loki-config.yaml
     volumes:
       - loki-data:/tmp/loki
-      - ./loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      # 2026-10-06 修复：原相对路径 ./loki-config.yaml 在 --project-directory 指工作树根时
+      # 解析错位（源不存在 → Docker 自动建同名目录挂载 → "config is a directory" 崩溃环）；
+      # NAS 专用栈锚定绝对路径（与 rebuild-gateway/seed 等脚本同惯例）
+      - /Volume2/yyc3-33/deploy/nas/loki-config.yaml:/etc/loki/loki-config.yaml:ro
     ports:
       # 仅绑 Tailscale IP（与 grafana 同安全模式，公网不可直连）
       - "100.65.172.88:3100:3100"
@@ -94,4 +97,4 @@ volumes:
 networks:
   yyc3-network:
     external: true
-    name: yyc3-33_yyc3-network   # NAS compose 项目前缀实名（docker network ls 实勘）
+    name: yyc3-33_yyc3-network # NAS compose 项目前缀实名（docker network ls 实勘）
