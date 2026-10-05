@@ -32,7 +32,7 @@
 | `SLACK_WEBHOOK` | `https://hooks.slack.com/...` | 可选：部署通知 |
 | `ZHIPU_API_KEY` | — | ⚠️ 当前已过期，需重新申请 |
 | `JWT_SECRET_KEY` | — | 生产环境必填 |
-| `API_KEYS` | `sk-yyc3-prod-key-001` | 生产环境必填 |
+| `API_KEYS` | `<your-api-key>`（真实值见 NAS `/Volume2/yyc3-33/.env`，S-1 整改后禁入档） | 生产环境必填 |
 
 ### 1.2 SSH 密钥分发（一次性）
 
@@ -546,9 +546,9 @@ OLLAMA_HOST=0.0.0.0
 OLLAMA_PORT=11434
 OLLAMA_MODELS=/mnt/models
 
-# API Key（生成多个以便轮换）
+# API Key（生成多个以便轮换；S-1 整改 2026-10-05：示例一律占位符，真实值禁入档）
 JWT_SECRET_KEY=<生成: openssl rand -base64 64>
-API_KEYS=sk-yyc3-prod-key-001,sk-yyc3-prod-key-002
+API_KEYS=<生成: openssl rand -hex 24>,<生成: openssl rand -hex 24>  # 建议带 sk- 前缀
 
 # CORS（生产环境限定来源）
 ALLOWED_ORIGINS=https://api.0379.world,https://yyc3-admin.0379.world

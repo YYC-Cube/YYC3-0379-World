@@ -2,9 +2,9 @@
 file: README.md
 description: 模型接入与注册文档体系索引 - 现状基线与目标架构分层总览
 author: YanYuCloudCube Team <admin@0379.email>
-version: v1.0.0
+version: v1.4.0
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-05
 status: active
 tags: [index],[model-registry],[onboarding]
 category: spec
@@ -24,6 +24,8 @@ category: spec
 | [03-热切换与版本管理.md](03-热切换与版本管理.md) | 📋 目标架构：Shadow/Canary/蓝绿四模式 / 版本门禁 / 回滚决策树 | 平台架构师 · 质量 |
 | [04-Agent注册规范.md](04-Agent注册规范.md) | ✅+📋 混合：A2A 生产契约为基线，MCP 工具声明为演进层 | Agent 开发者 · 编排 |
 | [05-监控告警与Runbook.md](05-监控告警与Runbook.md) | ✅+📋 混合：现有指标与规划告警 / 三个 SOP / 故障排查 | SRE · 观测 |
+| [06-运维脚本工具箱.md](06-运维脚本工具箱.md) | ✅ 六大场景脚本闭环（自检/灰度/恢复/看板/规则/扩容）+ 教训沉淀 | SRE · 全员 |
+| [07-dsv4-recover使用手册.md](07-dsv4-recover使用手册.md) | ✅ 旗舰五模式剧本完整手册（诊断/恢复/取证/守护 + 健康判定语义 + 场景剧本） | SRE · 值班 |
 
 ## 实现状态总览（核心价值表）
 
@@ -54,6 +56,14 @@ category: spec
 | NAS → 节点增量同步脚本 `model_sync_to_node.py` | ✅ 已落地（09-28，plan/dry-run/续传检测） | `core/scripts/model_sync_to_node.py` |
 | 注册 Agent `model_register_agent.py`（模型服务侧自动注册+心跳） | ✅ 已落地（09-28 TOP2，stdlib 零依赖：就绪探测/注册/ready/30s 心跳/优雅 offline） | `core/scripts/model_register_agent.py` |
 | 模型上线冒烟脚本 `model_smoke_test.py` | ✅ 已落地（09-28，九用例能力面感知） | `core/scripts/model_smoke_test.py` |
+| **容器日志外送**（DGX 双节点 fluent-bit docker input → NAS Loki，30 天保留 + 崩溃关键字看板） | ✅ 已落地（10-05，05 §2.4） | `deploy/dgx/fluent-bit.conf` + `deploy/nas/loki-config.yaml` |
+| 心跳独立认证 `X-YYC3-Registry-Token`（REGISTRY_HEARTBEAT_TOKEN 灰度兼容） | ✅ **生产已启用**（10-05：三态验证 401/401/200，五 agent 全带 token 心跳 ready=5） | `model_registry.py::_check_heartbeat_token` + Agent `--registry-token-env` |
+| 归档模型上线触发卡（SOP-04：SOP-01 五命令压缩 + alias 可选接管） | ✅ 已落地（10-05） | 05 §3.5 |
+| Grafana DGX 日志看板 + Loki 数据源（崩溃关键字 panel） | ✅ 已落地（10-05，uid=yyc3-dgx-logs） | `core/config/grafana/dashboards/dgx-container-logs.json` |
+| **03 §9 指标先行 P0 三件套**（backend counter / TTFT histogram / rollback counter）+ 热切换告警三规则 | ✅ 已上线（10-05 晚，生产样本实证 + Prometheus 已载 hotswap-gate） | [metrics.py](../../core/api/utils/metrics.py) + [hotswap-gate.rules.yml](../../deploy/nas/prometheus-rules/hotswap-gate.rules.yml) |
+| 容器日志 container_id/容器名标签（tail+Path_Key+lua+映射表 timer） | ✅ 已落地（10-05 两阶段：短 ID→真名，`yyc3-embedding` 等实证） | [cn.lua](../../deploy/dgx/cn.lua) + [container-map.timer](../../deploy/dgx/container-map.timer) |
+| n2 注册 Agent systemd 化（裸进程收编 + contract-port override） | ✅ 已落地（10-05 晚） | `/etc/systemd/system/yyc3-registry-agent@.service`（yyc3-102） |
+| Shadow / Canary 半自动最小闭环（三端点 + weight 分流 + 惰性自动回退 + Shadow 采样 + canary gauge） | ✅ 已上线（10-05，生产实证 gauge 露出；比对集/步进门禁留后续） | 03 §1/§4/§5/§9 + svc.canary_* |
 
 ## 整合时统一的关键决策
 
@@ -82,3 +92,5 @@ category: spec
 | v1.0.0 | 2026-09-27 | 两规范整合拆分为五文档 + 索引；统一命名/心跳/元数据载体/状态机口径；幽灵脚本标注规划 |
 | v1.1.0 | 2026-09-28 | 实施推进落地：Registry Phase A MVP（五表/12端点/心跳TTL/双通道合并）、Agent 演进层三端点、资产校验与增量同步双脚本——状态总览表 8 项 📋→✅ |
 | v1.2.0 | 2026-09-28 | Phase C 热切换落地：别名 alias（006 迁移 + 3 端点 + 网关解析）+ draining 排空（R-15 + 观测）；冒烟脚本状态修正；规范 03 §3 转已实施 |
+| v1.3.0 | 2026-10-05 | 审核刷新日（01 v3.1 / 02 v1.2 / 03 v1.2 / 04 v1.1 / 05 v1.4）：状态标注全面对齐代码；当日新增落地——容器日志外送（05 §2.4 双节点）、Registry-Token 心跳认证代码（待启用）、SOP-04 归档上线触发卡（§3.5）、03 §9 指标先行清单；状态表补四行 |
+| v1.4.0 | 2026-10-05 | 新增 [06-运维脚本工具箱](06-运维脚本工具箱.md)：全链脚本闭环清单 + 四新脚本（health-full/canary-manage/dsv4-recover/load-prom-rule）实测记录 + 十条运维教训沉淀；README 清单表 +1 |

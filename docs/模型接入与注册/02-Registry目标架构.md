@@ -2,17 +2,17 @@
 file: 02-Registry目标架构.md
 description: Model Registry 目标架构规范 - 注册中心 DB Schema / API / 双通道发现 / 演进路径（规划稿）
 author: YanYuCloudCube Team <admin@0379.email>
-version: v1.0.0
+version: v1.2.0
 created: 2026-09-27
-updated: 2026-09-27
-status: draft
+updated: 2026-10-05
+status: active
 tags: [spec],[registry],[target-architecture],[planning]
 category: spec
 ---
 
-# Model Registry 目标架构规范（📋 规划稿）
+# Model Registry 目标架构规范（✅ Phase A/C 已落地 + 📋 演进规划）
 
-> **状态警示**：本文档为**未实现的目标架构**（原 YYC3-MRS-2026-v1.0.0 收敛）。所有 `/registry/v1/*` 端点、契约端点、心跳机制均未落地。现状接入通道见 [01](01-接入现状规范-v2.3.md)。
+> **状态（v1.1.0 刷新）**：Phase A MVP 与 Phase C 已于 09-28 落地生产代码——五表迁移（005 + 006 别名表）、`/registry/v1/*` 16 端点、心跳 TTL 三级阶梯、双通道合并（Pull 全量对账 + Push 事件消费者免重启）、别名热切换与 draining 排空。锚点：[model_registry.py](../../core/api/api/model_registry.py) + [model_registry_svc.py](../../core/api/services/model_registry_svc.py)。`REGISTRY_ENABLED` 灰度开关默认关闭，生产 NAS 已开闸（09-28，五生产上游双写入中心）。**仍为规划**：Shadow/Canary/蓝绿（[03](03-热切换与版本管理.md) §4-§6）、独立部署、`X-YYC3-Registry-Token` 心跳独立认证、env 通道退役。现状基线见 [01](01-接入现状规范-v2.3.md)。
 
 ## 1. 设计目标与原则
 
@@ -49,6 +49,8 @@ category: spec
 | 10 | `/v1/model/capabilities` | GET | ✅ | **YYC³ 新增**：能力声明 |
 | 11 | `/v1/model/manifest` | GET | ✅ | **YYC³ 新增**：版本清单 |
 | 12 | `/metrics` | GET | ✅ | Prometheus 指标 |
+
+> ✅ 落地注：端点 9/10/11（YYC³ 新增契约）已由注册 Agent v1.1.0 `--contract-port` 提供 stdlib 内嵌实现（[model_register_agent.py](../../core/scripts/model_register_agent.py) `start_contract_server`；drop-in 模板 [deploy/nodes/yyc3-registry-agent.contract.conf](../../deploy/nodes/yyc3-registry-agent.contract.conf)），生产五服务已接入（102×2 + 101×3）。
 
 ### 2.1 元数据 Schema（端点 9 响应）
 
@@ -139,7 +141,7 @@ interface ModelManifest {
     网关:8000 自动发现   上游池(vLLM/NIM)  运维工具(CLI/UI)
 ```
 
-### 3.1 PostgreSQL Schema（规划迁移 005）
+### 3.1 PostgreSQL Schema（✅ 已落地：[005_model_registry.sql](../../core/database/init/005_model_registry.sql) 主表增量扩展 + 四新表；Phase C 增 [006_model_aliases.sql](../../core/database/init/006_model_aliases.sql)）
 
 五张表（完整 DDL 见归档件 §4.2，此处摘要）：
 
@@ -153,7 +155,7 @@ interface ModelManifest {
 
 > 落地注意：现有 `model_registry` 表已有生产数据（NAS 网关栈在用），扩展列走增量迁移，禁止 DROP 重建。
 
-### 3.2 Registry API（12 模型端点）
+### 3.2 Registry API（✅ 已落地 16 端点：12 模型端点 + Phase C 别名 3 + drain 1）
 
 ```
 GET    /registry/v1/models                      列出（只读）
@@ -168,22 +170,27 @@ GET    /registry/v1/models/{id}/health          实时健康（只读）
 GET    /registry/v1/events                      事件流 SSE（只读）
 GET    /registry/v1/manifests/{hash}            获取 Manifest（只读）
 GET    /registry/v1/audit                       审计日志（只读）
+POST   /registry/v1/models/{id}/drain           排空置位（Phase C，admin，幂等，返回排空观测）
+GET    /registry/v1/aliases                     别名列表（Phase C）
+PUT    /registry/v1/aliases/{alias}             别名切换（Phase C，目标须 ready，防呆）
+DELETE /registry/v1/aliases/{alias}             别名删除（Phase C）
 ```
 
-> 认证：模型服务心跳用 `X-YYC3-Registry-Token`；管理端点用 `X-API-Key`（admin 面，对齐现有 AuthMiddleware ADMIN_API_KEYS）。
+> 认证（实际实现，v1.1.0 对齐代码）：写端点（POST/PATCH/DELETE/rollback/drain/别名写）经 AuthMiddleware + `_require_admin`（ADMIN_API_KEYS 管理键，403 语义），写操作另有 `REGISTRY_ENABLED=false → 503` 灰度闸门。
+> ✅ v1.2.0：`X-YYC3-Registry-Token` 心跳独立认证**代码已实现**（[model_registry.py `_check_heartbeat_token`](../../core/api/api/model_registry.py#L226)：`REGISTRY_HEARTBEAT_TOKEN` 未配置则跳过（灰度兼容），配置后心跳必须携带匹配头否则 401；注册 Agent 已支持 `--registry-token-env` 自动附带）。
+> ✅ **2026-10-05 生产已启用**：NAS `.env` 配 48-hex token + gateway 镜像重建生效；三态验证 无 token→401 / 错 token→401 / 对 token→200；n1 systemd 三实例 + n2 裸进程两实例全部带 token 心跳，ready=5 持续。运维注：gateway 镜像重建用 `rebuild-gateway.sh`（含六项冒烟）；手工 compose **必须** `--project-directory /Volume2/yyc3-33`（OPS-RECOVERY 既有教训）。
 
 ## 4. 动态注册与发现
 
 ### 4.1 演进三阶段
 
 ```
-Phase A（当前 → 3 个月）：双通道
-  REGISTRY_ENABLED=true + REGISTRY_FALLBACK_TO_ENV=true
-  Registry 优先，env fallback；所有新模型只走 Registry
-
+Phase A（当前 → 3 个月）：双通道 ✅ 通道机制已实现（09-28）
+  REGISTRY_ENABLED=true 时 Registry 上游经 merge_registry_upstreams 并入 env 同池
+  （Pull 全量对账 + Push 事件驱动免重启入池/摘除）；REGISTRY_FALLBACK_TO_ENV 独立
+  开关未实现，实际语义 = env 池恒为兜底；生产 NAS 已开闸（五生产上游双写入中心）
 Phase B（3 → 6 个月）：Registry 主导
   env 仅保留 1-2 个紧急 fallback；监控面板标注 env 通道使用率
-
 Phase C（6 个月后）：纯 Registry 唯一真源，移除 env 通道
 ```
 
@@ -206,7 +213,7 @@ Phase C（6 个月后）：纯 Registry 唯一真源，移除 env 通道
 
 ### 4.4 心跳与 TTL（统一口径）
 
-> 整合决策：采用三级 TTL 阶梯（弃原 A 规范 5s/30s 单级——现状无心跳，本节全为规划）。
+> ✅ 已实现（09-28）：[model_registry_svc.py](../../core/api/services/model_registry_svc.py) L53-55 `TTL_DEGRADED=90 / TTL_UNREACHABLE=180 / TTL_REMOVED=300`；恢复心跳自愈走 `state=offline → ready` 回升（draining 排空态例外，不被心跳覆盖）。加固项：断流翻转告警阈值 120s（4 个心跳周期，早于 300s 摘除），规则文件 [registry-heartbeat.rules.yml](../../deploy/nas/prometheus-rules/registry-heartbeat.rules.yml)；节点侧 30s 上报由注册 Agent `DEFAULT_INTERVAL=30` 保证。
 
 ```
 心跳上报周期：30s（模型服务 → POST /registry/v1/models/{id}/heartbeat）
@@ -230,8 +237,8 @@ Phase C（6 个月后）：纯 Registry 唯一真源，移除 env 通道
 
 | 阶段 | 交付 | 依赖 |
 | --- | --- | --- |
-| 短期（1 个月） | Registry 后端（§3 Schema+API）/ 网关集成双通道 / 现有 4 生产服务纳入 | 迁移 005；model_register_agent.py |
-| 中期（3 个月） | 热切换（→[03](03-热切换与版本管理.md)）/ 自动同步 / 监控告警（→[05](05-监控告警与Runbook.md)） | Registry 稳定运行 |
+| 短期（1 个月） | ✅ 已完成（09-28）：Registry 后端（§3 Schema+API）/ 网关集成双通道 / 五生产上游纳入（会话 06-08 报告） | 迁移 005 ✅；model_register_agent.py ✅ |
+| 中期（3 个月） | 🔶 部分完成：别名热切换 + draining 已落地（Phase C，09-28）；Shadow/Canary/蓝绿与自动同步仍规划；监控告警见 [05](05-监控告警与Runbook.md)（心跳告警已落地） | Registry 稳定运行 |
 | 长期（6 个月） | Agent 注册演进层（→[04](04-Agent注册规范.md) §4）/ 审计合规 / env 通道退役 | 全链路回归 |
 
 ## 变更记录
@@ -239,3 +246,5 @@ Phase C（6 个月后）：纯 Registry 唯一真源，移除 env 通道
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v1.0.0 | 2026-09-27 | 自原 MRS-2026 §3-§7 收敛为目标架构稿；心跳统一三级 TTL；元数据载体统一端点契约；Agent 注册移至 04 |
+| v1.1.0 | 2026-10-05 | 状态刷新对齐 09-28 落地实况：Phase A MVP / Phase C 标注已落地（16 端点 / 005+006 迁移 / TTL 常量 / 双通道锚点，状态 draft→active）；契约端点 9/10/11 落地注（注册 Agent `--contract-port`）；认证说明改实际实现（`_require_admin` + 灰度闸门，`X-YYC3-Registry-Token` 标 📋 未实现）；`REGISTRY_FALLBACK_TO_ENV` 标注未实现（env 恒兜底语义）；路线表短期完成、中期部分 |
+| v1.2.0 | 2026-10-05 | §3.2 认证：`X-YYC3-Registry-Token` 心跳独立认证代码已实现（`REGISTRY_HEARTBEAT_TOKEN` 灰度兼容 + Agent `--registry-token-env`，含双测试），待下次网关重启窗口生产启用 |

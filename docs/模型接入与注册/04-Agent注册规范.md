@@ -2,9 +2,9 @@
 file: 04-Agent注册规范.md
 description: Agent 注册规范 - A2A 生产契约为基线，MCP 工具声明为演进层
 author: YanYuCloudCube Team <admin@0379.email>
-version: v1.0.0
+version: v1.1.0
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-05
 status: active
 tags: [spec],[agent],[a2a],[mcp],[registry]
 category: spec
@@ -12,7 +12,7 @@ category: spec
 
 # Agent 注册规范（✅ A2A 生产基线 + 📋 MCP 演进层）
 
-> **定位警示**：原 MRS-2026 §10 设计的 `/registry/v1/agents` 10 端点**未实现且与已生产验证的 A2A 体系双轨冲突**。本文档以现有 A2A 生产契约为唯一基线，MCP 工具声明收敛为演进层，禁止平行建设第二套注册体系。
+> **定位（v1.1.0 刷新）**：原 MRS-2026 §10 设计的 `/registry/v1/agents` 10 端点**未实现且与已生产验证的 A2A 体系双轨冲突**。本文档以现有 A2A 生产契约为唯一基线；§4 演进层中 **GET 列表（含离线）/ PATCH 扩展元数据 / DELETE 注销三端点已于 09-28 落地**（[a2a.py L186-223](../../core/api/api/a2a.py#L186-L223) 演进层区），MCP tools 字段随 Card PATCH 白名单维护（[a2a_protocol.py `_registry_update_card`](../../core/api/services/a2a_protocol.py#L228)）；仅 `/v1/a2a/agents/{id}/tools` 只读端点仍为 📋。禁止平行建设第二套注册体系。
 
 ## 1. 现状基线：A2A 注册体系（✅ 生产）
 
@@ -102,14 +102,14 @@ interface ToolDeclaration {
 
 **演进路径**：MCP 工具 Agent 接入时，注册为 Agent Card（capabilities 含 `tool_use`）+ tools 声明；任务投递仍走统一信封流，由具备 MCP 桥接能力的 Worker 消费转译。**不新建** `/registry/v1/agents/{id}/tools/*` 调用面——工具调用统一经 `/v1/agent/a2a/tasks`（task_type=tool_invoke，payload 携带工具名与参数），复用 vk 计费门控与审计链。
 
-## 4. 演进层注册端点规划（📋）
+## 4. 演进层注册端点（✅ 前三项已落地 09-28；tools 只读端点 📋）
 
-| 规划端点 | 方法 | 说明 | 实现载体 |
+| 端点 | 方法 | 说明 | 状态 / 实现锚点 |
 | --- | --- | --- | --- |
-| `/v1/admin/a2a/agents` | GET | 列出全部（含离线）Agent 及扩展元数据 | 扩展现有 register 路由 |
-| `/v1/admin/a2a/agents/{id}` | PATCH | 更新扩展元数据（tools/限流/超时） | 新增 |
-| `/v1/admin/a2a/agents/{id}` | DELETE | 注销 Agent | 新增 |
-| `/v1/a2a/agents/{id}/tools` | GET | 列出声明的工具（能力发现增强） | 新增（只读） |
+| `/v1/admin/a2a/agents` | GET | 列出全部（含离线）Agent 及扩展元数据 | ✅ [a2a.py `admin_list_agents`](../../core/api/api/a2a.py#L186) |
+| `/v1/admin/a2a/agents/{id}` | PATCH | 更新扩展元数据（tools/限流/超时，白名单字段合并） | ✅ [a2a.py `admin_update_agent`](../../core/api/api/a2a.py#L201) |
+| `/v1/admin/a2a/agents/{id}` | DELETE | 注销 Agent（内置编队由 30s 心跳循环自愈重注册） | ✅ [a2a.py `admin_unregister_agent`](../../core/api/api/a2a.py#L221) |
+| `/v1/a2a/agents/{id}/tools` | GET | 列出声明的工具（能力发现增强） | 📋 规划（tools 字段已可经 GET 列表随卡片返回） |
 
 > 认证：统一走现有 AuthMiddleware（admin 面管理键），不引入独立 Registry Token。
 
@@ -124,3 +124,4 @@ interface ToolDeclaration {
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v1.0.0 | 2026-09-27 | 自原 MRS §10 重构：消除与 A2A 双轨冲突——现有 5 端点为基线，MCP 工具声明为演进扩展，工具调用统一走任务信封复用 vk 计费；补 Phase 7 生产首验锚点 |
+| v1.1.0 | 2026-10-05 | 状态刷新：§4 演进层 GET/PATCH/DELETE 三端点标已落地（a2a.py 演进层区锚点），tools 随 Card PATCH 白名单可维护，仅 `/tools` 只读端点仍 📋 |
