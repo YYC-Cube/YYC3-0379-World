@@ -39,6 +39,7 @@ language: zh-CN
 - 🐛 CI test job 补装 `aiosqlite==0.22.1`：Registry 三测试文件的 sqlite 内存库 fixture 依赖（requirements.txt 不含，本地 .venv 历史安装掩盖）；上一 run 已 341 passed，53 errors 全为该缺位
 - 🔧 CI deploy 冒烟 401 主因修复：GitHub `PROD_API_KEY` secret 与生产失同步（疑 9-26 网关密钥轮换遗留）→ 以 NAS 网关 `.env` API_KEYS 为源公网验证 200 后同步（管道传入不落日志）；main 近 100 run 无 success 的历史遗留开始收敛
 - 🔒 main 分支保护生效（required checks：代码质量检查/单元测试/安全扫描/构建镜像）：dependabot 红 PR 自动落 main 的根源封死；admin 应急直推通道保留（enforce_admins=false）
+- 🚀 旗舰 DeepSeek-V4-Flash 恢复（停摆 5 天 → 四绿）：A 预案执行——8B rerank 退役 + 双机 TP=2 重建 + 孤儿清障（emb8b/0.6B reranker 三重实证零引用后停用）；启动参数 `--enforce-eager`（NVRM CUDA graphics context OOM 实锤）+ `--max-model-len 65536→32768`（UMA profiling 峰值减半），双备份可回滚；终验 health 200 / 契约 healthy / 公网对话 `x-yyc3-upstream: flagship-dsv4`
 
 ### 新增 (Added)
 
