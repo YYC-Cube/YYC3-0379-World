@@ -70,6 +70,7 @@ services:
       - OPENAI_COMPATIBLE_UPSTREAMS=${OPENAI_COMPATIBLE_UPSTREAMS:-[]}
       - OLLAMA_HOST=${OLLAMA_HOST:-host.docker.internal}
       - OLLAMA_BACKUP_HOST=${OLLAMA_BACKUP_HOST:-}
+      - OLLAMA_LOCAL_HOSTS=${OLLAMA_LOCAL_HOSTS:-}
       - ZHIPU_BASE_URL=${ZHIPU_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
