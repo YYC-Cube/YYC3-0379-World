@@ -22,6 +22,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -29,6 +30,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.services import model_registry_svc as svc
+from app.utils import metrics_manager
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +215,7 @@ async def rollback_model(model_id: str, req: RollbackRequest, request: Request):
         raise HTTPException(status_code=422, detail={"error": str(exc)})
     if updated is None:
         raise HTTPException(status_code=404, detail={"error": "model_not_found"})
+    metrics_manager.record_rollback(model_id, req.target_version)
     return {
         "status": "rolled_back",
         "target_version": req.target_version,
@@ -220,12 +223,73 @@ async def rollback_model(model_id: str, req: RollbackRequest, request: Request):
     }
 
 
+# ── Canary / Shadow（规范 03 §4-§5 半自动最小闭环，2026-10-05）──────────
+
+
+class CanarySetRequest(BaseModel):
+    """灰度配置（幂等覆盖；weight 0-100，0=暂停灰度仅保留 shadow 采样）"""
+
+    baseline: str = Field(..., max_length=100, description="基线（当前公网别名指向的 model_id）")
+    canary: str = Field(..., max_length=100, description="金丝雀 model_id（须 ready）")
+    weight: int = Field(0, ge=0, le=100, description="灰度分流百分比")
+    shadow: Optional[str] = Field(None, max_length=100, description="影子采样 model_id（可选）")
+
+
+@router.put("/registry/v1/canary/{alias}", tags=["📦 模型注册中心"])
+async def canary_set(alias: str, req: CanarySetRequest, request: Request):
+    """创建/更新灰度配置（03 §5 stages 建议步进 5→10→30→50→100）。"""
+    _require_admin(request)
+    _require_registry_enabled()
+    data = await svc.canary_set(
+        alias, req.baseline, req.canary, req.weight, req.shadow, actor="admin-api"
+    )
+    return {"status": "canary_set", "alias": alias, **data}
+
+
+@router.get("/registry/v1/canary/{alias}", tags=["📦 模型注册中心"])
+async def canary_get(alias: str, request: Request):
+    """读灰度配置（含当前生效 weight，自动回退已反映）。"""
+    data = await svc.canary_get(alias)
+    if not data:
+        raise HTTPException(status_code=404, detail={"error": "canary_not_found"})
+    return {"alias": alias, **data}
+
+
+@router.delete("/registry/v1/canary/{alias}", tags=["📦 模型注册中心"])
+async def canary_delete(alias: str, request: Request):
+    """删除灰度配置（全量回 baseline）。"""
+    _require_admin(request)
+    _require_registry_enabled()
+    existed = await svc.canary_delete(alias, actor="admin-api")
+    if not existed:
+        raise HTTPException(status_code=404, detail={"error": "canary_not_found"})
+    return {"status": "canary_deleted", "alias": alias}
+
+
 # ── R-08/R-09 心跳与健康 ─────────────────────────────────────────
 
 
+def _check_heartbeat_token(request: "Request") -> None:
+    """心跳独立认证（02 §3.2：X-YYC3-Registry-Token）。
+
+    REGISTRY_HEARTBEAT_TOKEN 未配置 → 跳过校验（灰度兼容，现状行为不变）；
+    已配置 → 模型服务心跳必须携带匹配头，否则 401（防伪造心跳注入上游池）。
+    """
+    expected = os.getenv("REGISTRY_HEARTBEAT_TOKEN", "").strip()
+    if not expected:
+        return
+    provided = request.headers.get("X-YYC3-Registry-Token", "")
+    if provided != expected:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "registry_token_mismatch", "message": "X-YYC3-Registry-Token 不匹配"},
+        )
+
+
 @router.post("/registry/v1/models/{model_id}/heartbeat", tags=["📦 模型注册中心"])
-async def heartbeat(model_id: str, req: HeartbeatRequest):
+async def heartbeat(model_id: str, req: HeartbeatRequest, request: Request):
     """R-08 心跳上报（模型服务身份；30s 周期，TTL 三级阶梯见规范 02 §4.4）。"""
+    _check_heartbeat_token(request)
     ok = await svc.heartbeat(
         model_id,
         status=req.status,

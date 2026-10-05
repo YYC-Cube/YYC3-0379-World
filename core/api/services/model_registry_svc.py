@@ -40,6 +40,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import time
 from typing import Any, Dict, List, Optional
 
@@ -1179,3 +1180,160 @@ async def list_audit_logs(model_id: Optional[str], limit: int) -> List[Dict[str,
                     pass
         logs.append(rec)
     return logs
+
+
+# ── Canary / Shadow（03 §4-§5 半自动最小闭环 · 2026-10-05）──────────────────
+# 存储：Redis hash yyc3:canary:{alias}（baseline/canary/weight/shadow/started_at）
+# 实时性：网关内存缓存 10s 惰性刷新（免事件订阅）；失败自动回退：2 分钟内失败
+# ≥5 次惰性判定置 weight=0（下一请求起全量回 baseline），人工经 PUT 恢复。
+
+_CANARY_CACHE_TTL = 10
+_CANARY_FAIL_LIMIT = 5
+_canary_cache: Dict[str, tuple] = {}
+
+
+def _canary_key(alias: str) -> str:
+    return f"yyc3:canary:{alias}"
+
+
+def _decode_hash(raw) -> Optional[Dict[str, str]]:
+    if not raw:
+        return None
+    out = {}
+    for k, v in raw.items():
+        kk = k.decode() if isinstance(k, bytes) else k
+        vv = v.decode() if isinstance(v, bytes) else v
+        out[kk] = vv
+    return out
+
+
+async def canary_set(
+    alias: str,
+    baseline: str,
+    canary: str,
+    weight: int,
+    shadow: Optional[str] = None,
+    actor: str = "registry-api",
+) -> dict:
+    """创建/更新灰度配置（幂等覆盖）。weight 0-100。"""
+    weight = max(0, min(100, int(weight)))
+    data = {
+        "baseline": baseline,
+        "canary": canary,
+        "weight": str(weight),
+        "shadow": shadow or "",
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    await redis_client.hset(_canary_key(alias), mapping=data)
+    await redis_client.delete(f"yyc3:canary:fail:{alias}")
+    _canary_cache.pop(alias, None)
+    await _audit(actor, "canary.updated", alias, None, data)
+    return data
+
+
+async def canary_get(alias: str) -> Optional[dict]:
+    """读灰度配置（网关热路径；内存缓存 + 失败自动回退惰性判定）。"""
+    now = time.time()
+    hit = _canary_cache.get(alias)
+    if hit and now - hit[1] < _CANARY_CACHE_TTL:
+        return hit[0]
+    data = _decode_hash(await redis_client.hgetall(_canary_key(alias)))
+    if data:
+        try:
+            fails = int(data.get("fails") or 0)
+        except ValueError:
+            fails = 0
+        if fails >= _CANARY_FAIL_LIMIT and int(data.get("weight") or 0) > 0:
+            data["weight"] = "0"
+            await redis_client.hset(_canary_key(alias), "weight", "0")
+            logger.error(
+                "[canary] %s 连续失败 %d 次（≤%ds 窗口）→ 自动回退 weight=0（P0）",
+                alias,
+                fails,
+                120,
+            )
+            await _audit("canary-auto", "canary.auto_rollback", alias, None, {"weight": 0})
+            _canary_cache.pop(alias, None)
+            return data
+        _canary_cache[alias] = (data, now)
+    return data
+
+
+async def canary_delete(alias: str, actor: str = "registry-api") -> bool:
+    existed = bool(await redis_client.delete(_canary_key(alias)))
+    _canary_cache.pop(alias, None)
+    if existed:
+        await _audit(actor, "canary.deleted", alias, None, None)
+    return existed
+
+
+async def canary_route(model: str) -> Optional[dict]:
+    """网关路由决策（chat 主流程调用）：返回 None=无灰度；
+    命中返回 {"pick": canary_id | None, "shadow": shadow_id | None, "alias": alias}。
+    baseline 不匹配（配置漂移）视为无效；weight>0 按概率.pick canary；
+    weight=0 仍可提供 shadow 采样。同时维护 yyc3_canary_weight gauge。"""
+    data = await canary_get(model)
+    if not data or data.get("baseline") != model:
+        return None
+    try:
+        weight = int(data.get("weight") or 0)
+    except ValueError:
+        weight = 0
+    from app.utils import metrics_manager
+
+    metrics_manager.set_canary_weight(model, weight)
+    pick = None
+    if weight > 0 and random.randint(1, 100) <= weight:
+        pick = data.get("canary")
+    return {
+        "pick": pick,
+        "shadow": data.get("shadow") or None,
+        "alias": model,
+        "is_canary": pick is not None,
+    }
+
+
+async def canary_report_failure(alias: str) -> None:
+    """canary 请求失败信号（chat 捕获后调用）；2 分钟滑窗计数，惰性回退依据。"""
+    key = f"yyc3:canary:fail:{alias}"
+    n = await redis_client.incr(key)
+    await redis_client.expire(key, 120)
+    from app.utils import metrics_manager
+
+    metrics_manager.record_canary_failure(alias)
+    if n >= _CANARY_FAIL_LIMIT:
+        logger.error(
+            "[canary] %s 失败信号 #%d（阈值 %d，触发惰性回退）", alias, n, _CANARY_FAIL_LIMIT
+        )
+
+
+async def shadow_fire(shadow_model: str, body: dict) -> None:
+    """Shadow 最小采样（03 §4）：复制请求发 shadow 上游，fire-and-forget，
+    结果丢弃仅记指标（比对集 output_hash 等留后续）。"""
+    import httpx
+
+    from app.services import upstream_registry
+
+    upstreams = upstream_registry.select(shadow_model)
+    if not upstreams:
+        return
+    u = upstreams[0]
+    addr = u.base_url.rstrip("/")
+    if not addr.endswith("/v1"):
+        addr += "/v1"
+    from app.utils import metrics_manager
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{addr}/chat/completions",
+                json={
+                    **body,
+                    "model": shadow_model,
+                    "max_tokens": min(int(body.get("max_tokens") or 256), 256),
+                },
+                headers={"Authorization": f"Bearer {u.api_key}"} if u.api_key else {},
+            )
+            metrics_manager.record_shadow_request(shadow_model, str(resp.status_code))
+    except Exception:
+        metrics_manager.record_shadow_request(shadow_model, "error")

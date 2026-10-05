@@ -74,6 +74,7 @@ def _http_json(
     admin_key: str,
     body: Optional[dict] = None,
     timeout: float = 10.0,
+    registry_token: str = "",
 ) -> tuple:
     """极简 HTTP JSON 调用（stdlib）：返回 (status_code, parsed_json_or_none)。"""
     data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
@@ -81,6 +82,8 @@ def _http_json(
     req.add_header("Content-Type", "application/json")
     if admin_key:
         req.add_header("X-API-Key", admin_key)
+    if registry_token:
+        req.add_header("X-YYC3-Registry-Token", registry_token)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", "replace")
@@ -121,6 +124,7 @@ class RegisterAgent:
         interval: int = DEFAULT_INTERVAL,
         http: Optional[Callable] = None,
         sleep: Optional[Callable] = None,
+        registry_token: str = "",
     ):
         self.gateway = gateway.rstrip("/")
         self.payload = payload
@@ -129,6 +133,7 @@ class RegisterAgent:
         self._http = http or _http_json  # 测试桩替点
         self._sleep = sleep or time.sleep
         self._stopped = False
+        self.registry_token = registry_token  # X-YYC3-Registry-Token（网关配置校验后必带）
         self.contract_server: Any = None  # --contract-port 启动后挂载（便于测试关闭）
 
     def stop(self, *_args) -> None:
@@ -177,6 +182,7 @@ class RegisterAgent:
             f"{self.gateway}/registry/v1/models/{self.payload['model_id']}/heartbeat",
             self.admin_key,
             body,
+            registry_token=self.registry_token,
         )
         return status == 200
 
@@ -296,6 +302,11 @@ def main(argv: Optional[list] = None) -> int:
         default=0,
         help="模型服务契约端点端口（规范 02 §2：/v1/model/{metadata,capabilities,health}；0=不启用）",
     )
+    parser.add_argument(
+        "--registry-token-env",
+        default="REGISTRY_HEARTBEAT_TOKEN",
+        help="心跳独立 Token 环境变量名（网关配置校验后必带 X-YYC3-Registry-Token；env 未设置则不发送）",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -319,7 +330,10 @@ def main(argv: Optional[list] = None) -> int:
     if not admin_key:
         print(f"❌ 环境变量 {args.admin_key_env} 未配置", file=sys.stderr)
         return 2
-    agent = RegisterAgent(args.gateway, payload, admin_key, interval=args.interval)
+    registry_token = os.getenv(args.registry_token_env, "").strip()
+    agent = RegisterAgent(
+        args.gateway, payload, admin_key, interval=args.interval, registry_token=registry_token
+    )
     if args.contract_port:
         start_contract_server(agent, args.contract_port)
     return agent.run()

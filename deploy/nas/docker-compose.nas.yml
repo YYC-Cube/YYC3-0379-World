@@ -82,6 +82,8 @@ services:
       - LOKI_URL=${LOKI_URL:-http://yyc3-loki:3100}
       # ── 模型注册中心 Phase A（2026-09-28 灰度开闸）：.env REGISTRY_ENABLED=true 时启用写面+双通道合并 ──
       - REGISTRY_ENABLED=${REGISTRY_ENABLED:-false}
+      # ── 心跳独立认证（02 §3.2，2026-10-05 生产启用）：.env REGISTRY_HEARTBEAT_TOKEN 配置后心跳须携带 X-YYC3-Registry-Token ──
+      - REGISTRY_HEARTBEAT_TOKEN=${REGISTRY_HEARTBEAT_TOKEN:-}
     ports:
       # 2026-09-26 安全收紧：仅绑 LAN + Tailscale IP（ECS 反代可达），公网不可直连
       # 2026-09-27 补回环：auto-deploy 健康轮询/smoke-test/TOS 探活走 127.0.0.1（收紧时误伤，loopback 无公网暴露）

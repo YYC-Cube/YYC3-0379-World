@@ -152,12 +152,15 @@ async def _forward(
                     )
                 resp.raise_for_status()
                 registry.release(u, (time.time() - started) * 1000, True)
+                metrics_manager.record_backend_request(u.name, "200")
                 return resp.json(), u, degraded_from
             except Exception as e:
                 errors.append(f"{u.name}@{addr}: {e}")
+                metrics_manager.record_backend_request(u.name, "error")
                 logger.warning(f"[{capability}] 上游失败 {u.name}@{addr}: {e}")
         degraded_from.append(u.name)
         registry.release(u, (time.time() - started) * 1000, False, errors[-1] if errors else "")
+        metrics_manager.record_backend_request(u.name, "error")
     raise RuntimeError(f"[{capability}] 上游降级链全部失败: {'; '.join(errors)}")
 
 

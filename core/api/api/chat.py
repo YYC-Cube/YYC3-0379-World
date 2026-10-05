@@ -20,6 +20,7 @@
 @tags: api,python,chat,critical,public
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -187,6 +188,9 @@ class _UpstreamBackend:
                         break  # 非 429 或无 Key 可换 → 下一地址
                     upstream_registry.release(u, (time.time() - started) * 1000, True)
                     self.served_by = u
+                    # 03 §9 指标先行 P0：流式首字节 TTFT + 上游请求结果
+                    metrics_manager.observe_ttft(u.name, time.time() - started)
+                    metrics_manager.record_backend_request(u.name, "200")
                     yield {**first, "_yyc3_upstream": u.name}
                     async for chunk in agen:
                         yield chunk
@@ -307,8 +311,12 @@ async def chat_completion(req: CompletionRequest, request: Request):
     sovereign = request.headers.get("X-YYC3-Sovereign", "").strip().lower() == "required"
 
     # ── 选择后端 ──────────────────────────────────────────
+    # ── Canary/Shadow 路由决策（03 §4-§5 半自动最小闭环，2026-10-05）──
+    canary_route = await model_registry_svc.canary_route(req.model)
+    route_model = (canary_route or {}).get("pick") or req.model
+
     try:
-        backend, backend_name, backend_type = _select_backend(req.model, sovereign=sovereign)
+        backend, backend_name, backend_type = _select_backend(route_model, sovereign=sovereign)
     except SovereignUnavailableError as e:
         metrics_manager.decrement_active_requests()
         raise HTTPException(
@@ -322,11 +330,29 @@ async def chat_completion(req: CompletionRequest, request: Request):
             },
         )
     except Exception as e:
+        if canary_route and canary_route.get("is_canary"):
+            await model_registry_svc.canary_report_failure(canary_route["alias"])
         error_response = await error_handler.handle(
             e, context={"model": req.model, "operation": "backend_selection"}
         )
         metrics_manager.decrement_active_requests()
         raise HTTPException(status_code=error_response["status_code"], detail=error_response)
+
+    # Shadow 采样（03 §4 最小）：baseline 命中且有 shadow 配置 → fire-and-forget 复制
+    if canary_route and canary_route.get("shadow") and not canary_route.get("is_canary"):
+        try:
+            asyncio.create_task(
+                model_registry_svc.shadow_fire(
+                    canary_route["shadow"],
+                    {
+                        "messages": [m.model_dump(exclude_none=True) for m in req.messages],
+                        "max_tokens": req.max_tokens,
+                        "temperature": req.temperature,
+                    },
+                )
+            )
+        except Exception:
+            pass  # 采样失败不影响主请求
 
     # ── P0-1 虚拟密钥治理：白名单 + 预算闸门（402 语义）──
     user_ctx = getattr(request.state, "user", None)
@@ -581,6 +607,8 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=
             if backend.sovereign_only:
                 headers["X-YYC3-Sovereign"] = "satisfied"
             upstream_name = backend.served_by.name if backend.served_by else backend.primary.name
+            # 03 §9 指标先行 P0：非流式上游请求结果
+            metrics_manager.record_backend_request(upstream_name, "200")
             cost = _record_spend(
                 vk,
                 filtered_response,

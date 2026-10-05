@@ -153,12 +153,79 @@ class TestWriteGuardrails:
         assert audit.status_code == 200
         assert audit.json()["count"] >= 1  # register 已入审计
 
+    def test_heartbeat_token_not_configured_passes(self, sqlite_db, monkeypatch):
+        """REGISTRY_HEARTBEAT_TOKEN 未配置 → 灰度兼容，无头心跳照常通过（02 §3.2）。"""
+        monkeypatch.delenv("REGISTRY_HEARTBEAT_TOKEN", raising=False)
+        sqlite_db.post("/registry/v1/models", json=_BODY, headers=_admin())
+        hb = sqlite_db.post(
+            "/registry/v1/models/glm-5.3-flash/heartbeat",
+            json={"status": "healthy"},
+            headers=_normal(),
+        )
+        assert hb.status_code == 200
+
+    def test_heartbeat_token_mismatch_401(self, sqlite_db, monkeypatch):
+        """REGISTRY_HEARTBEAT_TOKEN 已配置 → 无头/错头 401（防伪造心跳注入上游池）。"""
+        monkeypatch.setenv("REGISTRY_HEARTBEAT_TOKEN", "tok-secret")
+        sqlite_db.post("/registry/v1/models", json=_BODY, headers=_admin())
+        missing = sqlite_db.post(
+            "/registry/v1/models/glm-5.3-flash/heartbeat",
+            json={"status": "healthy"},
+            headers=_normal(),
+        )
+        wrong = sqlite_db.post(
+            "/registry/v1/models/glm-5.3-flash/heartbeat",
+            json={"status": "healthy"},
+            headers={**_normal(), "X-YYC3-Registry-Token": "tok-wrong"},
+        )
+        assert missing.status_code == 401
+        assert wrong.status_code == 401
+        ok = sqlite_db.post(
+            "/registry/v1/models/glm-5.3-flash/heartbeat",
+            json={"status": "healthy"},
+            headers={**_normal(), "X-YYC3-Registry-Token": "tok-secret"},
+        )
+        assert ok.status_code == 200
+
     def test_manifest_by_hash(self, sqlite_db):
         created = sqlite_db.post("/registry/v1/models", json=_BODY, headers=_admin()).json()
         m_hash = created["manifest_hash"]
         resp = sqlite_db.get(f"/registry/v1/manifests/{m_hash}", headers=_normal())
         assert resp.status_code == 200
         assert resp.json()["model_id"] == "glm-5.3-flash"
+
+
+class TestCanaryEndpoints:
+    """Canary/Shadow 三端点（规范 03 §4-§5 半自动最小闭环）。"""
+
+    def test_canary_set_requires_admin(self, sqlite_db):
+        resp = sqlite_db.put(
+            "/registry/v1/canary/chat",
+            json={"baseline": "deepseek-v4-flash", "canary": "deepseek-v4-pro", "weight": 5},
+            headers=_normal(),
+        )
+        assert resp.status_code == 403
+
+    def test_canary_set_disabled_when_registry_off(self, sqlite_db, monkeypatch):
+        monkeypatch.setenv("REGISTRY_ENABLED", "false")
+        resp = sqlite_db.put(
+            "/registry/v1/canary/chat",
+            json={"baseline": "deepseek-v4-flash", "canary": "deepseek-v4-pro", "weight": 5},
+            headers=_admin(),
+        )
+        assert resp.status_code == 503
+
+    def test_canary_validation_error(self, sqlite_db):
+        resp = sqlite_db.put(
+            "/registry/v1/canary/chat",
+            json={"baseline": "deepseek-v4-flash", "canary": "deepseek-v4-pro", "weight": 150},
+            headers=_admin(),
+        )
+        assert resp.status_code == 422
+
+    def test_canary_get_missing_404(self, sqlite_db):
+        resp = sqlite_db.get("/registry/v1/canary/no-such-alias", headers=_normal())
+        assert resp.status_code == 404
 
 
 class TestAliasAndDrainEndpoints:

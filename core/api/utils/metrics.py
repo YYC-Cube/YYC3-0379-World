@@ -82,6 +82,39 @@ class MetricsManager:
             "concurrency_limit_rejections_total", "Total concurrency limit rejections"
         )
 
+        # ── 03 §9 指标先行 P0 三件套（2026-10-05：Shadow/Canary/自动回滚的数据底座）──
+        self.backend_requests = Counter(
+            "yyc3_backend_requests_total",
+            "Backend upstream requests by upstream and outcome",
+            ["upstream", "code"],
+        )
+        self.backend_ttft = Histogram(
+            "yyc3_backend_ttft_seconds",
+            "SSE time-to-first-chunk per upstream",
+            ["upstream"],
+            buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0),
+        )
+        self.registry_rollbacks = Counter(
+            "yyc3_registry_rollback_total",
+            "Registry rollback executions",
+            ["model_id", "target_version"],
+        )
+        self.canary_weight = Gauge(
+            "yyc3_canary_weight",
+            "Current canary weight per alias (03 §5)",
+            ["alias"],
+        )
+        self.shadow_requests = Counter(
+            "yyc3_shadow_requests_total",
+            "Shadow sampled requests by shadow model and outcome (03 §4)",
+            ["shadow", "code"],
+        )
+        self.canary_failures = Counter(
+            "yyc3_canary_failures_total",
+            "Canary request failure signals (auto-rollback basis)",
+            ["alias"],
+        )
+
         self.logger.info("Metrics manager initialized")
 
     def record_request(
@@ -138,6 +171,30 @@ class MetricsManager:
     def record_backend_latency(self, backend_type: str, model: str, duration: float):
         """记录后端延迟"""
         self.backend_latency.labels(backend_type=backend_type, model=model).observe(duration)
+
+    def record_backend_request(self, upstream: str, code: str = "200"):
+        """记录上游后端请求结果（03 §9：Canary error_rate / 回滚硬条件数据源）"""
+        self.backend_requests.labels(upstream=upstream, code=code).inc()
+
+    def observe_ttft(self, upstream: str, seconds: float):
+        """记录流式首字节延迟（03 §9：ttft 硬条件 >3s 数据源）"""
+        self.backend_ttft.labels(upstream=upstream).observe(seconds)
+
+    def record_rollback(self, model_id: str, target_version: str):
+        """记录回滚执行（03 §9：P0 告警数据源）"""
+        self.registry_rollbacks.labels(model_id=model_id, target_version=target_version).inc()
+
+    def set_canary_weight(self, alias: str, weight: int):
+        """维护当前灰度权重（03 §9 P1 指标 yyc3_canary_weight）"""
+        self.canary_weight.labels(alias=alias).set(weight)
+
+    def record_shadow_request(self, shadow: str, code: str):
+        """记录 Shadow 采样结果（03 §4 最小采样）"""
+        self.shadow_requests.labels(shadow=shadow, code=code).inc()
+
+    def record_canary_failure(self, alias: str):
+        """记录 canary 失败信号（自动回退依据）"""
+        self.canary_failures.labels(alias=alias).inc()
 
     def record_rate_limit_rejection(self, client_type: str):
         """记录限流拒绝"""
