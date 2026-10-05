@@ -19,7 +19,7 @@ pylint>=2.17.0
 
 # 类型检查
 types-requests>=2.33.0.20260712
-types-redis>=4.6.0
+types-redis>=4.6.0.20241004
 
 # 文档生成
 sphinx>=7.2.0
