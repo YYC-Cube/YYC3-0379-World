@@ -15,6 +15,21 @@
 *.env
 !.env.example
 
+# ⚠️ NAS 工作树运行时数据目录（2026-10-05 事故根治防线）：
+# /Volume2/yyc3-33 部署工作树内含 PG/Redis 容器 bind-mount 数据，历史上未忽略，
+# git clean -fd 曾连带删除 postgres/pgdata（靠 TOS 快照恢复）——数据目录一律忽略，
+# 禁止任何 git clean 触达；备份/产物同理
+postgres/
+redis/
+backups/
+*.log
+auto-deploy.log
+.env.bak-*
+rebuild-gateway.sh
+docker-compose.yml
+!deploy/nas/docker-compose.nas.yml
+!deploy/nas/docker-compose.monitoring.yml
+
 # Python
 __pycache__/
 *.py[cod]

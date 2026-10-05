@@ -195,11 +195,10 @@ jobs:
           pip install "safety>=3.0" bandit
           pip install -r requirements.txt
 
-      - name: Safety 依赖漏洞扫描（S-2 整改：high 及以上阻塞门禁，low/medium 仅报告）
-        # safety 3.x --fail-on：empty=全级别/all/low/medium/high；报告与门禁分两跑
-        run: |
-          safety check --file requirements.txt --json --save-json safety-report.json || true
-          safety check --file requirements.txt --fail-on high
+      - name: Safety 依赖漏洞扫描（S-2 整改：发现漏洞即阻塞——advisory 压制已移除）
+        # safety 3.8 check 无 --fail-on 选项；默认发现任何已知漏洞即非零退出（2026-10-05 实测基线 0 漏漏，
+        # dependabot 同日已清完 pyjwt/asyncpg/uvicorn 等）——语义等同 fail-on-any，报告存 artifact
+        run: safety check --file requirements.txt --json --save-json safety-report.json
 
       - name: Bandit 代码安全扫描（S-2 整改：HIGH 级别阻塞门禁，MEDIUM 及以下仅报告）
         run: |

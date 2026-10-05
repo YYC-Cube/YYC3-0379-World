@@ -30,6 +30,27 @@ language: zh-CN
 
 ## [Unreleased] - 待发布
 
+### 安全 (Security) — 2026-10-05 生产交付终审整改轮
+
+- 🔒 S-1a 文档凭据净化：3 处生产 API Key 明文（部署运行手册 ×2 / API 全链路文档 ×1）改占位符
+- 🔒 S-1b `deploy-nas-gateway.sh` 历史真实凭据明文指纹检测改为通用硬编码模式（`sk-` 前缀 / password|secret|api_key 长串），消除检测逻辑自身的二次泄露面
+- 🔒 S-1c 凭据轮换（生产）：API_KEYS 双 key 零中断过渡（新增 `sk-d632e9***`，旧 key 待 GitHub PROD_API_KEY 同步后移除）；**POSTGRES_PASSWORD 轮换**（实勘发现现役值=git 历史泄露指纹 `My151001`，hash 比对坐实）
+- 🔒 S-2 CI 安全门禁升级：Safety 去除 `continue-on-error` 压制（发现漏洞即阻塞，2026-10-05 基线 0 漏洞）；Bandit 升 `-lll`（HIGH 阻塞 / MEDIUM 以下仅报告）
+- 🔒 S-3 gitbucket remote 凭据出 URL → macOS keychain（双条目：LAN/Tailscale；remote URL 顺带迁 Tailscale 地址消除 LAN 依赖）
+
+### 修复 (Fixed) — 2026-10-05
+
+- 🐛 Q-1 `canary-manage.sh` 六分支参数防护（`set -u` 兼容：缺参打印用法 exit 2，禁 unbound 裸奔）
+- 🐛 CI 测试 mock 漂移修复：`_FakeHTTP.__call__` 加 `**kwargs`（兼容 Agent 新增 `registry_token` 形参）；`_NoopRedis` 补 `hgetall`（Canary hash 读取路径）
+- 🐛 style(lint) rag_service.py 对齐 black 26.5.1（本地 25.11 与 CI 26.5 单文件风格分歧）
+- 🐛 **NAS PG 数据灾难恢复**（12:14-12:33 中断 19min）：`git clean -fd` 误删工作树内 bind-mount 的 `postgres/pgdata`（根因：数据目录未入 .gitignore + 远端 sed 参数错位写空 PG 密码致重启环）→ 从 TOS 09-25 快照恢复 pgdata + 005/006 幂等迁移重放 + redis healthcheck（TOS exec cwd 异常，重启即愈）+ gateway 恢复；**根治防线：.gitignore/NAS exclude 补 `postgres/ redis/ backups/ *.log .env.bak-* rebuild-gateway.sh docker-compose.yml`，数据目录永久脱离 git 触达面**
+- 🐛 Registry Agent 重注册链修复：快照库缺 005/006 扩展列（注册 500→心跳 404 静默环）→ 迁移重放 + `sudo systemctl restart` 全量 Agent（注意：SSH 用户非 root，restart 需 sudo，裸 systemctl 会 polkit 静默拒绝）
+
+### 新增 (Added) — 2026-10-05
+
+- 🆕 Alertmanager v0.27 通知通道（O-1）：`deploy/nas/alertmanager.yml`（webhook 占位+分级路由：critical 1h 重复/其余 4h）+ compose 服务 + prometheus alerting 段 + seed 播种；填入 IM webhook 地址即通
+- 🆕 治理日全量落地（详见 docs/模型接入与注册/01-07 + API 全链路文档 v1.2）：Canary/Shadow 闭环、心跳 Token、P0 三件套指标、日志外送链（fluent-bit→Loki 30 天）、dsv4-recover 五模式剧本、health-full 17 项自检
+
 ### 修复 (Fixed)
 
 - 🐛 CI 全红修复：dependabot 自动合并的 `numpy>=2.5.3` 需 Python≥3.12，与 CI/生产基础镜像 `python:3.11` 冲突（lint job 装依赖即失败，NAS 生产 rebuild 同因必挂）→ 回调兼容区间 `numpy>=1.26.4,<2.5`，py3.11/3.12 双端 dry-run 解析实证通过

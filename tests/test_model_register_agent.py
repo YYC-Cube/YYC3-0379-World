@@ -41,7 +41,8 @@ class _FakeHTTP:
         self.calls = []
         self.routes = routes or {}
 
-    def __call__(self, method, url, key, body=None, timeout=10):
+    def __call__(self, method, url, key, body=None, timeout=10, **kwargs):
+        # **kwargs 兼容治理日后新增调用形参（如 registry_token），mock 不随签名演进漂移
         self.calls.append((method, url, body))
         for suffix, (status, resp) in self.routes.items():
             if url.endswith(suffix):

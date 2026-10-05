@@ -43,6 +43,10 @@ class _NoopRedis:
     async def publish(self, *a, **k):
         return 0
 
+    async def hgetall(self, *a, **k):
+        # Canary 读取 yyc3:canary:{alias} 用 hgetall；无灰度配置返回空 dict（→ canary_not_found 路径）
+        return {}
+
 
 @pytest.fixture()
 def sqlite_db(tmp_path, monkeypatch):
