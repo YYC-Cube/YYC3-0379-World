@@ -18,7 +18,6 @@
     "rootDir": ".",
     "types": [
       "node",
-      "cypress",
       "@playwright/test"
     ],
     "paths": {

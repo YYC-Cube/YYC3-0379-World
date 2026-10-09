@@ -108,9 +108,11 @@ docs/团队规范/标规文档/YYC3-闭环验收提示词.md
 *.temp
 .DS_Store
 
-# Cypress/Playwright 测试产物
-tests/e2e/cypress/screenshots/
-tests/e2e/cypress/videos/
+# Mimosa 会话运行态（security-policy.json 与 finding-ledger 保留入库）
+**/.mimosa/hook-state/
+**/.mimosa/hook-status/
+
+# Playwright 测试产物
 tests/e2e/reports/
 tests/e2e/playwright-report/
 tests/e2e/test-results/

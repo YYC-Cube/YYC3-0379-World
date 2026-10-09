@@ -1,35 +1,25 @@
 {
   "name": "yyc3-e2e-tests",
   "version": "1.0.0",
-  "description": "YYC³ E2E 测试套件",
+  "description": "YYC³ E2E 测试套件（Playwright 单框架）",
   "scripts": {
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "test:playwright:headed": "playwright test --headed",
     "test:playwright:debug": "playwright test --debug",
     "test:playwright:report": "playwright show-report",
-    "test:cypress": "cypress run",
-    "test:cypress:open": "cypress open",
-    "test:cypress:headless": "cypress run --headless",
-    "test:all": "npm run test:playwright && npm run test:cypress",
+    "test": "playwright test",
     "test:smoke": "playwright test tests/smoke",
     "test:regression": "playwright test tests/regression",
     "test:e2e": "playwright test tests/e2e"
   },
   "devDependencies": {
-    "@cypress/code-coverage": "^4.0.3",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.2",
-    "cypress": "^15.21.1",
     "typescript": "^7.0.2"
   },
-  "allowScripts": {
-    "cypress@15.21.1": true
-  },
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "cypress"
-    ],
+    "onlyBuiltDependencies": [],
     "overrides": {
       "form-data": "^4.0.4",
       "tmp": "^0.2.3",

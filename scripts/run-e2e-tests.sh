@@ -3,7 +3,7 @@
 set -e
 
 echo "========================================="
-echo "YYC³ E2E 测试执行脚本"
+echo "YYC³ E2E 测试执行脚本（Playwright 单框架）"
 echo "========================================="
 
 BASE_URL=${1:-"https://api.0379.world"}
@@ -20,13 +20,12 @@ echo "  测试类型: ${TEST_TYPE}"
 echo "  报告目录: ${REPORTS_DIR}"
 echo ""
 
-echo "📋 步骤 1/5: 准备测试环境..."
+echo "📋 步骤 1/4: 准备测试环境..."
 mkdir -p ${REPORTS_DIR}/playwright
-mkdir -p ${REPORTS_DIR}/cypress
 echo "✅ 测试环境准备完成"
 
 echo ""
-echo "📋 步骤 2/5: 检查依赖..."
+echo "📋 步骤 2/4: 检查依赖..."
 cd ${TESTS_DIR}
 
 if [ ! -d "node_modules" ]; then
@@ -41,7 +40,7 @@ fi
 echo "✅ 依赖检查完成"
 
 echo ""
-echo "📋 步骤 3/5: 执行 Playwright 测试..."
+echo "📋 步骤 3/4: 执行 Playwright 测试..."
 echo "----------------------------------------"
 
 export BASE_URL=${BASE_URL}
@@ -74,22 +73,9 @@ esac
 echo "✅ Playwright 测试完成"
 
 echo ""
-echo "📋 步骤 4/5: 执行 Cypress 测试..."
+echo "📋 步骤 4/4: 生成测试报告..."
 echo "----------------------------------------"
 
-npx cypress run \
-    --config baseUrl=${BASE_URL} \
-    --env API_KEY=${API_KEY} \
-    --reporter mochawesome \
-    --reporter-options reportDir=${REPORTS_DIR}/cypress,overwrite=false,html=true,json=true
-
-echo "✅ Cypress 测试完成"
-
-echo ""
-echo "📋 步骤 5/5: 生成测试报告..."
-echo "----------------------------------------"
-
-# 合并测试结果
 cat << EOF > ${REPORTS_DIR}/test-summary.md
 # YYC³ E2E 测试报告
 
@@ -103,10 +89,6 @@ cat << EOF > ${REPORTS_DIR}/test-summary.md
 - HTML 报告: ${REPORTS_DIR}/playwright/index.html
 - JSON 结果: ${REPORTS_DIR}/playwright/results.json
 - JUnit XML: ${REPORTS_DIR}/playwright/junit.xml
-
-### Cypress 测试结果
-- HTML 报告: ${REPORTS_DIR}/cypress/mochawesome.html
-- JSON 结果: ${REPORTS_DIR}/cypress/mochawesome.json
 
 ## 下一步
 
@@ -126,10 +108,8 @@ echo "========================================="
 echo ""
 echo "测试结果:"
 echo "  Playwright 报告: ${REPORTS_DIR}/playwright/index.html"
-echo "  Cypress 报告: ${REPORTS_DIR}/cypress/mochawesome.html"
 echo "  测试摘要: ${REPORTS_DIR}/test-summary.md"
 echo ""
 echo "查看报告:"
 echo "  open ${REPORTS_DIR}/playwright/index.html"
-echo "  open ${REPORTS_DIR}/cypress/mochawesome.html"
 echo ""

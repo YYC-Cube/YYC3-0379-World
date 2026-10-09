@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "threatModel": {
+    "inherit": true,
+    "assets": [],
+    "attackerControlledInputs": [],
+    "trustBoundaries": [],
+    "securityInvariants": [],
+    "exclusions": [
+      "tests/**",
+      "docs/**",
+      "htmlcov/**",
+      "scripts/**",
+      "core/scripts/**",
+      "tests/e2e/reports/**",
+      "tests/e2e/test-results/**"
+    ]
+  },
+  "network": {
+    "allowedProtocols": [
+      "https:"
+    ],
+    "allowedHosts": [],
+    "blockPrivateNetworks": true,
+    "maxRedirects": 0
+  },
+  "command": {
+    "forbidShell": true,
+    "allowedBinaries": []
+  },
+  "path": {
+    "allowedWriteRoots": [],
+    "requireBasename": true
+  },
+  "data": {
+    "allowedSortFields": [],
+    "requireOwnerScope": true
+  }
+}

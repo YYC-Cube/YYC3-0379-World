@@ -130,10 +130,10 @@ docker-restart: ## 重启 Docker 服务
 	$(DOCKER_COMPOSE) -f $(DOCKER_FILE) restart
 	@echo "$(GREEN)✅ Docker 服务已重启$(RESET)"
 
-# 数据库迁移
-db-migrate: ## 数据库迁移
-	@echo "$(GREEN)运行数据库迁移...$(RESET)"
-	@echo "$(RED)⚠️  数据库迁移功能待实现$(RESET)"
+# 数据库迁移（幂等 create_all，与 app 启动时 init_db 同源；部署机增量迁移用 scripts/db-migrate.sh）
+db-migrate: ## 数据库迁移（同步表结构到配置的 DB）
+	@echo "$(GREEN)运行数据库迁移（create_all 幂等同步）...$(RESET)"
+	@$(PYTHON) core/scripts/db_migrate.py
 
 # 数据库备份
 db-backup: ## 数据库备份

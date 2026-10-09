@@ -13,6 +13,34 @@ if [ -n "$CHANGED" ] && [ -z "$(printf "%s\n" "$CHANGED" | grep -vE "^(docs/|\.g
   echo "$(date '+%F %T') SKIP_DOCS_ONLY $C files=$(printf "%s\n" "$CHANGED" | wc -l | tr -d ' ')" >> "$LOG"
   exit 0
 fi
+
+# ── 部署前上游预检（P3-2：失败仅告警不阻断；python3 缺失或非 JSON 池则静默跳过）──
+# 对上游池逐个探 base_url+health_path（与 upstream_registry.probe_all 同一 URL 语义），
+# 任一不可达记 PREFLIGHT_WARN——提前暴露「网关起来了但上游指错」的配置漂移（RB-10 类）
+UPS=$(grep "^OPENAI_COMPATIBLE_UPSTREAMS=" /Volume2/yyc3-33/.env 2>/dev/null | cut -d= -f2-)
+if [ -n "$UPS" ] && command -v python3 >/dev/null 2>&1; then
+  BAD=$(python3 -c '
+import json, sys, urllib.request
+try:
+    pool = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+if not isinstance(pool, list):
+    sys.exit(0)
+for u in pool:
+    base = str(u.get("base_url", "")).rstrip("/")
+    if not base:
+        continue
+    url = base + str(u.get("health_path", "/health"))
+    try:
+        urllib.request.urlopen(url, timeout=4)
+    except Exception:
+        print(u.get("name", "?"))
+' "$UPS" 2>/dev/null)
+  if [ -n "$BAD" ]; then
+    echo "$(date '+%F %T') PREFLIGHT_WARN 上游不可达: $(echo "$BAD" | tr "\n" " ")" >> "$LOG"
+  fi
+fi
 if $D compose --project-directory . -f deploy/nas/docker-compose.nas.yml up -d --build gateway >> "$LOG" 2>&1; then
   sleep 20
   curl -sf --max-time 8 http://localhost:8000/healthz >/dev/null     && echo "$(date '+%F %T') DEPLOY_OK $C" >> "$LOG"     || echo "$(date '+%F %T') HEALTH_FAIL $C" >> "$LOG"
