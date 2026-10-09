@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261008T160642918Z-40338-974183e28097",
+  "runId": "20261008T160642918Z-40338-974183e28097",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "76533d602bb69f4aab3622882410696450b93829",
+  "diffHash": "1082689995a2998879325170becc86ac2d43a94ebc37b5b3ed470b65d7671170",
+  "rulesVersion": "unavailable",
+  "sessionHash": "2103fe2f9ff703b83fb01467b56f1824817284aa0f14ad72715bbf8533dbe19d",
+  "reportRef": ".mimosa/reports/task-review-sess_2cee2b58-ac2c-40cc-83a8-a4a4e50c61de-20261008T160642918Z-40338-974183e28097.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "deploy/nas/rebuild-gateway.sh",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-08T16:06:43.241Z"
+}

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261008T152638508Z-12104-bf3ef524ed71",
+  "runId": "20261008T152638508Z-12104-bf3ef524ed71",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "76533d602bb69f4aab3622882410696450b93829",
+  "diffHash": "3e3a1672507abca797f7344a2ed86017f6f45531ff4e3ee89c76b68c4776490f",
+  "rulesVersion": "unavailable",
+  "sessionHash": "2103fe2f9ff703b83fb01467b56f1824817284aa0f14ad72715bbf8533dbe19d",
+  "reportRef": ".mimosa/reports/task-review-sess_2cee2b58-ac2c-40cc-83a8-a4a4e50c61de-20261008T152638508Z-12104-bf3ef524ed71.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "scripts/run-e2e-tests.sh",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "core/scripts/db_migrate.py",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-08T15:26:39.067Z"
+}

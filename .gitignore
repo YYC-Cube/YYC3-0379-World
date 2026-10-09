@@ -111,6 +111,8 @@ docs/团队规范/标规文档/YYC3-闭环验收提示词.md
 # Mimosa 会话运行态（security-policy.json 与 finding-ledger 保留入库）
 **/.mimosa/hook-state/
 **/.mimosa/hook-status/
+**/.mimosa/history/
+**/.mimosa/reports/
 
 # Playwright 测试产物
 tests/e2e/reports/
