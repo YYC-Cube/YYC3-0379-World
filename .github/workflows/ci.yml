@@ -67,10 +67,16 @@ jobs:
 
   # ==================== 单元测试 ====================
   test:
-    name: 单元测试
+    name: 单元测试 (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: lint
     timeout-minutes: 25
+    # 双版本矩阵（2026-10-11 审计修复）：消除「本机 3.12 / CI 3.11」双轨漂移
+    #（本机 .venv 即 3.12.8，曾出现本机绿 CI 红互相无法复现的问题）
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
 
     services:
       postgres:
@@ -104,7 +110,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
           cache-dependency-path: requirements.txt
 
@@ -114,7 +120,8 @@ jobs:
           pip install -r requirements.txt
           # 测试工具链对齐本地已验证版本组合（aiosqlite：Registry 三测试文件的
           # sqlite 内存库 fixture 依赖，requirements.txt 不含——仅测试需要，L9 复盘）
-          pip install "pytest==9.0.3" "pytest-cov==7.1.0" pytest-asyncio "respx==0.23.1" "aiosqlite==0.22.1"
+          # fakeredis：2026-10-11 密闭化夹具依赖；CI=true 环境夹具自动让位真 Redis
+          pip install "pytest==9.0.3" "pytest-cov==7.1.0" pytest-asyncio "respx==0.23.1" "aiosqlite==0.22.1" "fakeredis>=2.20.0"
 
       - name: 初始化测试库表结构（ORM 基础表 → init SQL 增量，对齐 NAS 生产建表顺序）
         env:
@@ -158,7 +165,8 @@ jobs:
           REDIS_PORT: 6379
           # 注意：不设 AUTH_ENABLED——保持默认 true。RBAC 用例（如 pricing_admin 403）
           # 依赖鉴权开启；用例自带正确 API key header（2026-10-05 L8 复盘）
-        # 分层策略：PR 快速层（~0.3s 快速反馈）+ main 全量（含 TestClient 集成层 ~8min）
+        # 分层策略：PR 快速层（~5s 快速反馈，fakeredis 密闭后实测口径）+ main 全量
+        # （含 TestClient 集成层；CI 真 Redis 环境历史口径 ~8min）
         # PR 上的快速层仍会执行全部非 integration 用例，防回归；集成层留 main 门禁
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" != "main" ]; then
@@ -171,7 +179,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          # 矩阵双版本：artifact 名带 Python 版本防互相覆盖
+          name: coverage-report-py${{ matrix.python-version }}
           path: coverage.xml
 
   # ==================== 安全检查 ====================

@@ -44,12 +44,15 @@ WORKDIR /app
 FROM base AS builder
 
 # 复制依赖文件
-COPY requirements.txt .
+COPY requirements.txt requirements.lock ./
 
 # 安装 Python 依赖
+# P2 依赖治理（2026-10-11 审计修复）：生产构建改用 requirements.lock（全 pin 可复现），
+# 消除 requirements.txt 宽松 pin 的漂移面；lock 按 python:3.11 目标解析
+#（uv pip compile --python-version 3.11，已实测完整安装通过）。
 # PIP_INDEX_URL 可在构建时注入（NAS/ECS 国内环境走清华源）
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-RUN pip install --user -i $PIP_INDEX_URL -r requirements.txt
+RUN pip install --user -i $PIP_INDEX_URL -r requirements.lock
 
 # ============================================
 # 阶段 3: 生产镜像
