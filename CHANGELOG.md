@@ -30,6 +30,66 @@ language: zh-CN
 
 ## [Unreleased] - 待发布
 
+### 修复 (Fixed) — 2026-10-11 深度审计实况闭环轮（报告：docs/0379-world-执行记录/21-深度审核与实况测试报告.md）
+
+- 🐛 **P0** `canary_get` Redis 裸调无容错：Redis 不可达时聊天主路径全量 500 → 失败回退「无灰度直连 baseline」+ 5s 负缓存防重试风暴；`canary_report_failure` 信号路径故障容忍（不再二次抛异常掩盖原始错误）
+- 🐛 **P0 附带活捉** `shadow_fire` 双 bug（误 import 模块而非 registry 单例 + select() 单对象按下标取 [0]）：shadow 采样此前从未真正发出，修复后真实发出并记指标
+- 🐛 **P1** Redis 客户端零超时治理：connect 2s / 命令 5s / 健康检查 30s / 1 次轻量重试（此前单调用最坏挂数十秒，实测集成层单请求被拖 9-30s）
+- 🐛 **P1** 限流中间件降级闩锁：Redis 故障永久滞留内存模式 → 10s 冷却到期自动重探测、恢复即回切分布式模式（docstring 与实现对齐）
+- 🐛 **P1** uvicorn 多 worker 验活惊群：探针循环首轮前加 0~interval 随机抖动；其余 5 个 startup 循环经清点判定（RPOP 竞争消费 / pub-sub 幂等 upsert / lease 互斥）多实例安全
+- ✅ 回归：新增 11 用例（canary 容错 8 + 限流回切状态机 3）；本机无 Redis 环境 12 个环境性失败用例全部转绿（gateway_api 15/15 耗时 236s→68s，admin_rbac 9/9 耗时 298s→34s）；快速层 187 全过；black/flake8/isort/架构契约复跑全绿
+
+### 测试 (Tests) — 2026-10-11 覆盖率盲区攻坚轮
+
+- 📈 `services/model_router.py`（EWMA 智能路由核心，197 语句）**0% → 覆盖**：新增 26 纯单元用例——选路候选过滤（UNHEALTHY 排除/DEGRADED 保留）、四策略正确性、加权随机两端确定性、EWMA 数学（alpha=0.3 平滑）、DEGRADED 升降级阈值（15%/7.5%）、5min 窗口过滤、反馈循环懒重算、健康检查三态、负载释放与管理接口
+- 📈 `utils/crypto.py`（45 语句）**0% → 覆盖**：新增 6 纯单元用例——显式密钥/环境密钥/缺省生成三路径、加解密往返、字段级加解密（空值跳过/坏值容错/入参不可变）
+- 🐛 附带修复：`cryptography` 依赖漏声明——`utils/crypto.py` 在全新环境 import 即 ModuleNotFoundError（模块事实不可导入），已补入 requirements.txt
+- 🔒 覆盖率门禁 `--cov-fail-under 0 → 44`（快速层实测 45.29%，留 ~1.3% 余量吸收 CI/本机环境差；下阶段补 document_processor/orchestrator_entry 后提至 50）
+- ✅ 快速层 219 全过（+32），black/flake8/isort/架构契约 3/3 复跑全绿
+
+### 修复 (Fixed) — 2026-10-11 覆盖攻坚附带活捉（第二轮）
+
+- 🐛 **P0** `document_processor.chunk_text` 尾段死循环：end 触顶后 start 恒为 len-overlap 永不满足退出条件 → 任何超 chunk_size 文档切片无限挂起，上传处理永卡 processing（实证 2400 token 文本 3s 不返回）。修复：end 触顶即退出 + overlap≥chunk_size 显式 ValueError
+- 🐛 **P3** `utils/cache.cached` 装饰器误声明 `async def`：作为装饰器调用返回 coroutine，`@cached(...)` 必 TypeError——该工具事实不可用；改回同步 `def`
+- 📈 `document_processor.py` 0%→99%（+14 用例：切片数学/四类解析分支/处理流程三分支）；`orchestrator_entry.py` 0%→88%、`worker_entry.py` 0%→80%（+8 用例：任务编排组合/main 启动-收敛闭环/--consumer 透传）
+- 📈 `core/api/cache.py` 21%→82%、`utils/cache.py` 22%→85%（+15 用例：内存 FakeRedis 走通 LRU 索引维护/标签失效/淘汰数学/统计口径/装饰器命中）
+- 🔒 覆盖率门禁 `44 → 47`（快速层实测 48.62%；剩余盲区为 chat/proxy/agent/mcp 等集成重模块，由 integration 层 --cov-append 覆盖，待测试密闭化后合并口径再上调）
+- ✅ 快速层 256 全过（本轮 +37），black/flake8/isort/架构契约 3/3 复跑全绿
+
+### 测试 (Tests) — 2026-10-11 fakeredis 测试密闭化（P2-1 闭环）
+
+- 🔧 conftest 新增 `_hermetic_redis` 全量夹具：fakeredis 进程内实例统一替换 8 个模块绑定的 `redis_client` 引用（cache/rate_limit/video_tasks/agent/model_registry/a2a_protocol/virtual_key_manager/model_registry_svc），集成层脱离 Docker Redis 可在任何环境运行；`CI=true` 环境保留真 Redis，维持「对真实 Redis 集成验证」覆盖面
+- ⚡ 实测提速：快速层 35s→**4.3s**；集成层 224 用例 28+ 分钟→**32s 全过**（此前本机 12 环境性失败一并消除）；两层全量 480 用例 ~40s
+- 📦 fakeredis 补入 requirements-dev.txt（含 CI=true 分流注释）
+- 🔧 pytest.ini 分层口径注释修正为实测值（快速层 ~5s / 集成层本机 ~32s）
+- ✅ 快速层 256 全过（覆盖率门禁 47 达标，48.61%）；集成层 224/224 全过；black/flake8/架构契约 3/3 复跑全绿
+
+### 构建与 CI (Build/CI) — 2026-10-11 中期项落地
+
+- 🔒 **Dockerfile 生产层切 requirements.lock**：全 pin 可复现构建，消除 requirements.txt 宽松 pin 漂移面。前置修复：旧 lock 系 Python 3.12 环境生成（numpy==2.5.2 与 3.11 生产镜像冲突且缺 cryptography/greenlet 等），已用 `uv pip compile --python-version 3.11` 重生成（numpy 2.4.6 / cryptography 50.0.2 / greenlet 3.5.6 / pyjwt 2.15.1），并在真实 Python 3.11 环境实测完整安装通过
+- 🧪 **CI 测试 job 双版本矩阵**（3.11 + 3.12，fail-fast: false）：消除「本机 3.12 / CI 3.11」双轨漂移；覆盖率 artifact 按版本命名防矩阵互覆；测试依赖补 fakeredis；「~0.3s 快速层」陈旧口径注释修正为实测 ~5s
+
+### 生产首跑 (Production) — 2026-10-12 Redis 故障演练首跑（实录：docs/0379-world-执行记录/23）
+
+- 🐛 **首跑前排除五个真 bug**：①chaos-redis.sh 远端命令未经 `bash -lc`（非交互 SSH 无 docker PATH，静默落空误报「Redis 未运行」）；②同通道字面双引号提前闭合远端引用（改八进制 `tr -d '\042'`）；③load-prom-rule.sh `>> EOF` 追加规则——repo 版 prometheus.yml 尾段已是 scrape_configs，规则路径被追加成**非法 YAML**，reload 静默失败且脚本误报成功（组名正则吃不掉点号巧合过验）——改为插在最后既有 rules 条目后 + 正则放宽 + 无 `verified:` 即判失败；④能力探测误复用 `code()`（签名 URL TIMEOUT）致 curl 参数错位全假 FAIL；⑤安全网 trap 时序（信号落在 sleep 内被延迟处理，kill 实测 Redis 未自动拉起）——`pause()`=`sleep & wait` + TERM/INT 显式 trap
+- ✅ **简报三步走全部执行**：规则装载（全量替换修复后的 prometheus.yml，三规则组生效）；网关 rebuild（7 代码文件 + 148 行 lock + Dockerfile 直 scp 部署树；新镜像 `yyc3_redis_up` 上线）；首跑演练——**RedisDown 注入后约 120s firing、限流四 worker 全部自动回切、存活探针/故障识别/恢复回切全过**（embeddings 全程 200）
+- ⚠️ **范围外发现（与 Redis 无关）**：chat 502 系旗舰 dsv4 停机 27h（N1 Exited(0) + N2 worker SIGKILL；N2 正被 GLM/emb8b 实验占用不宜重启）；rerank 502 系上游池无 rerank 能力上游。待上游恢复后重跑补齐三能力口径
+- ⚠️ **部署树领先 git 提交**（直 scp 所致），下次 auto-deploy 可能回退本次修复——需尽快按简报白名单拣选提交（load-prom-rule.sh 修复建议同批）
+
+### 新增 (Added) — 2026-10-11 Redis 宕机故障演练制度化（§四中期项闭环）
+
+- 🆕 **`scripts/chaos-redis.sh` 故障演练脚本**（注入-观测-恢复三段，管理机执行）：注入 `docker stop 0379-world-redis-1` → 验收 ①/healthz 全程 200（存活探针不受 Redis 污染）②/health redis=unreachable（故障识别）③chat/embeddings/rerank 三能力全程 200（fail-open 降级有定义）④Prometheus RedisDown firing（告警有触发）⑤恢复后 /health 转 healthy + 限流日志「Redis 限流后端已恢复」（自动回切）。trap 双保险任何退出路径自动拉起 Redis；`CHAOS_HOLD=300` 为发布门禁档（宕机 5 分钟）
+- 🆕 **`yyc3_redis_up` 指标 + RedisDown/RedisMetricsGap 告警规则**：`app.cache.probe_redis()` 统一探针，探活轮询（60s）+ /health 事件驱动双路维护 gauge（0 持续 1m 触发 critical 告警，瞬断不告警与限流 10s 回切语义对齐）；规则落 `deploy/nas/prometheus-rules/redis-down.rules.yml` 并登记 prometheus.yml rule_files（seed 全量推送口径）
+- ✅ 新增 `tests/test_redis_probe_unit.py` 3 用例（健康置 1 / 宕机置 0 / 瞬断恢复）；快速层 259 全过（+3），覆盖率 48.65% 门禁达标；脚本 `bash -n` 与规则 YAML 校验通过
+- ⚠️ 部署动作：规则需在生产装载一次 `bash deploy/nas/load-prom-rule.sh`（装载后 chaos-redis.sh 的告警验收项方有数据源）；网关镜像需携带本变更 rebuild 后指标才存在
+
+### 修复 (Fixed) — 2026-10-11 Canary 自动回退落地 + 自动恢复探测（§四中期项收官，活捉 P0）
+
+- 🐛 **P0 活捉：canary 自动回退从未真正发生**——`canary_report_failure` 达阈值仅打印「触发惰性回退」日志，weight=0 从不落库；`canary_get` 惰性回退依赖的 hash `fails` 字段**全库无任何写入方**（死分支）。即此前灰度模型被打爆时流量永远滞留 canary，无自动回退。修复：达阈值由 `_auto_rollback` 原子落库（weight→0 + `prev_weight` 快照 + 审计），信号路径保持故障容忍不二次抛错
+- 🆕 **自动恢复探测策略**：回退后 alias 纳入观察集，后台循环 `canary_recovery_loop`（10s tick，启动抖动防多 worker 惊群）按指数退避（30s 起 ×2 封顶 300s）经上游池对 canary 发最小 chat 请求，**连续 2 次成功**自动恢复 weight=prev_weight 并清失败计数；启动时 SCAN 重建观察集（重启不丢回退态，计数键按段过滤）；人工 `canary_set`/`canary_delete` 接管优先摘出观察集；`prev_weight` 异常时安全默认不恢复
+- 🔧 `canary_get` 摘除死 `fails` 分支（无人写入的判定逻辑，保留即误导）；main.py 启动/关停生命周期对齐既有后台循环
+- ✅ 新增 `tests/test_canary_recovery_unit.py` 15 用例（回退落地/幂等/阈值下不动/连续成功恢复/失败退避×2/失败清零连胜/未到不探/人工接管/删除摘除/prev_weight 异常保护/配置消失摘除/启动重建计数键过滤/探测同路径 200 判活/选路失败判不活）；快速层 274 全过（+15，49.35% 门禁达标）、集成层 224/224 无回归
+
 ### 安全 (Security) — 2026-10-05 生产交付终审整改轮
 
 - 🔒 S-1a 文档凭据净化：3 处生产 API Key 明文（部署运行手册 ×2 / API 全链路文档 ×1）改占位符
