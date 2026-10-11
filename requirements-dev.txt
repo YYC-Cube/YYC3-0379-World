@@ -7,6 +7,9 @@ pytest-cov>=7.1.0
 pytest-asyncio>=0.21.0
 pytest-mock>=3.11.0
 pytest-timeout>=2.1.0
+# 2026-10-11 测试密闭化（P2-1 闭环）：进程内 FakeRedis，集成层脱离 Docker 可跑
+#（CI=true 环境仍用真 Redis，维持真实集成验证面）
+fakeredis>=2.20.0
 
 # 代码质量
 black>=23.7.0

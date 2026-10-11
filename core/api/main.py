@@ -290,7 +290,10 @@ async def health_check():
                             "latency_ms": int(resp.elapsed.total_seconds() * 1000),
                         }
                         continue
-                    detail[key] = {"status": "unhealthy", "detail": f"HTTP {resp.status_code}"}
+                    detail[key] = {
+                        "status": "unhealthy",
+                        "detail": f"HTTP {resp.status_code}",
+                    }
                     last_err = f"{key}: HTTP {resp.status_code}"
             except Exception as exc:  # 单台失败继续探其余
                 detail[key] = {"status": "unreachable", "detail": str(exc)[:60]}
@@ -305,13 +308,12 @@ async def health_check():
         }
 
     async def _check_redis():
-        try:
-            from app.cache import redis_client
+        # 复用 probe_redis：探测结果同步维护 yyc3_redis_up 指标（RedisDown 告警数据源）
+        from app.cache import probe_redis
 
-            await redis_client.ping()
+        if await probe_redis():
             return {"status": "healthy"}
-        except Exception:
-            return {"status": "unreachable"}
+        return {"status": "unreachable"}
 
     async def _check_postgresql():
         try:
@@ -740,14 +742,29 @@ async def get_summary():
 # ── P0-2: 上游池主动验活（学 one-api 渠道自愈）────────────────
 
 _probe_task: Optional[asyncio.Task] = None
+_canary_recovery_task: Optional[asyncio.Task] = None
 
 
 async def _probe_loop():
-    """周期探活：probe_interval_seconds 一轮；连续 2 败 degraded 权重减半，恢复复原"""
+    """周期探活：probe_interval_seconds 一轮；连续 2 败 degraded 权重减半，恢复复原
+
+    P1-4 加固（2026-10-11 审计）：uvicorn --workers N 时每 worker 各起一份本循环，
+    启动时 N 路探针会同刻打到上游形成惊群。首轮前加随机抖动（0~interval 均匀），
+    使多 worker 探针在时间上摊匀。"""
+    import random
+
+    await asyncio.sleep(random.uniform(0, settings.probe_interval_seconds))
     from app.services.upstream_registry import registry as upstream_registry
 
     while True:
         await asyncio.sleep(settings.probe_interval_seconds)
+        # Redis 连通性探测：维护 yyc3_redis_up 指标（RedisDown 告警数据源，与 /health 事件驱动互补）
+        try:
+            from app.cache import probe_redis
+
+            await probe_redis()
+        except Exception as e:
+            logger.warning(f"Redis 探活异常（下轮继续）: {e}")
         try:
             results = await upstream_registry.probe_all()
             degraded = [r["name"] for r in results if r["probe_degraded"]]
@@ -969,6 +986,12 @@ async def start_probe_loop():
     await vk_manager.ensure_tables()  # sqlite 本地模式自建表（PG 跳过，由 003 SQL 迁移管）
     await vk_manager.start_ledger()
 
+    # ── Canary 自动恢复探测（2026-10-11 中期项闭环）：回退后指数退避重探测、达标自动恢复 ──
+    from app.services import model_registry_svc as _mrs_for_recovery
+
+    global _canary_recovery_task
+    _canary_recovery_task = asyncio.create_task(_mrs_for_recovery.canary_recovery_loop())
+
     # ── 模型注册中心（Phase A 双通道 + Phase B 增量合并）：sqlite 自建五表 ──
     from app.services import model_registry_svc as mrs
 
@@ -985,10 +1008,13 @@ async def start_probe_loop():
 
 @app.on_event("shutdown")
 async def stop_probe_loop():
-    global _probe_task
+    global _probe_task, _canary_recovery_task
     if _probe_task is not None:
         _probe_task.cancel()
         _probe_task = None
+    if _canary_recovery_task is not None:
+        _canary_recovery_task.cancel()
+        _canary_recovery_task = None
     from app.services.virtual_key_manager import vk_manager
 
     await vk_manager.stop_ledger()

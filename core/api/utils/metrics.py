@@ -114,6 +114,9 @@ class MetricsManager:
             "Canary request failure signals (auto-rollback basis)",
             ["alias"],
         )
+        # RedisDown 告警数据源（2026-10-11 故障演练制度化）：探活轮询 + /health 事件驱动双路更新，
+        # 0 持续 1m 触发 RedisDown（规则见 deploy/nas/prometheus-rules/redis-down.rules.yml）
+        self.redis_up = Gauge("yyc3_redis_up", "Redis connectivity (1=healthy, 0=unreachable)")
 
         self.logger.info("Metrics manager initialized")
 

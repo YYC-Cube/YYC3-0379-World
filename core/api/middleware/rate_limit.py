@@ -80,20 +80,31 @@ class RateLimiter:
 
         self._local_requests: Dict[str, list] = {}
         self._redis_available: Optional[bool] = None
+        # P1-3 故障回切（2026-10-11 深度审计修复）：此前 _redis_available 一旦置 False
+        # 便进程级永久闩锁（docstring 宣称「缓存 10 秒」与实现不符），Redis 恢复后
+        # 限流永远滞留内存模式、多副本限流失准。现改为失败冷却 10s 后自动重探测，
+        # 恢复即回切 Redis 分布式模式。
+        self._redis_next_probe: float = 0.0
         self.logger = logging.getLogger(__name__)
 
     async def _check_redis(self) -> bool:
-        """检查 Redis 是否可用，结果缓存 10 秒"""
+        """探测 Redis 可用性：结果缓存 10s；故障冷却期内不重复探测，到期自动重探测回切"""
         if self._redis_available is False:
-            return False
+            if time.time() < self._redis_next_probe:
+                return False
+            # 冷却到期：落回未知态，走下方 ping 重探测（恢复后自动回切 Redis 模式）
+            self._redis_available = None
         try:
             await redis_client.ping()
+            if self._redis_available is not True:
+                self.logger.info("Redis 限流后端已恢复（回切分布式模式）")
             self._redis_available = True
             return True
         except Exception:
             if self._redis_available is not False:
                 self.logger.warning("Redis 不可用，限流降级为内存模式")
-                self._redis_available = False
+            self._redis_available = False
+            self._redis_next_probe = time.time() + 10
             return False
 
     def _get_redis_key(self, raw_key: str) -> str:

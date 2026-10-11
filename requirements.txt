@@ -16,6 +16,9 @@ python-multipart>=0.0.6
 pydantic-settings>=2.1.0
 PyJWT>=2.15.1
 passlib[bcrypt]>=1.7.4
+# 2026-10-11 审计修复：crypto.py（API Key 加密）的 cryptography 依赖此前漏声明，
+# 全新环境 import app.utils.crypto 即 ModuleNotFoundError（模块事实不可导入）
+cryptography>=42.0.0
 python-dateutil>=2.8.2
 email-validator>=2.1.0
 requests>=2.31.0

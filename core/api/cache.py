@@ -26,17 +26,29 @@ import time
 from typing import Any, Dict, List
 
 from redis.asyncio import Redis
+from redis.backoff import ExponentialWithJitterBackoff
+from redis.retry import Retry
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# P1-2 超时/重试治理（2026-10-11 深度审计修复）：此前裸构造（全默认值），
+# Redis 不可达时单调用最坏挂数十秒（实测集成层单请求被拖 9-30s，冷启动首探针 39s）。
+# 治理口径：connect 2s 快速失败、命令 5s 上限、1 次轻量重试（瞬断自愈，最坏 ≈5s）。
+# 全库 Redis 调用均为非阻塞命令（记账管道用 RPOP 轮询，无 BLPOP 长阻塞），
+# socket_timeout=5 不会打断消费循环。调用侧已有 fail-open/负缓存兜底
+# （canary_get 负缓存、TPM 放行、限流内存降级），fail-fast 语义安全。
 redis_client = Redis(
     host=settings.redis_host,
     port=settings.redis_port,
     db=settings.redis_db,
     password=settings.redis_password,
     decode_responses=True,
+    socket_connect_timeout=2,
+    socket_timeout=5,
+    health_check_interval=30,
+    retry=Retry(ExponentialWithJitterBackoff(base=1, cap=4), retries=1),
 )
 
 # ── 缓存配置 ──────────────────────────────────────────────
@@ -48,6 +60,24 @@ CACHE_SIZE_KEY = "llm_cache:size"  # 当前缓存条目计数
 
 async def get_redis():
     return redis_client
+
+
+async def probe_redis() -> bool:
+    """探测 Redis 连通性并维护 yyc3_redis_up 指标（RedisDown 告警数据源）
+
+    2026-10-11 故障演练制度化：探活轮询（main._probe_loop）与 /health 事件驱动双路调用，
+    ping 结果落到 metrics_manager.redis_up，供 Prometheus RedisDown 规则消费。
+    探测本身带超时/重试上限（见上方客户端构造），Redis 宕机时快速失败返回 False。
+    """
+    from app.utils.metrics import metrics_manager
+
+    try:
+        await redis_client.ping()
+        metrics_manager.redis_up.set(1)
+        return True
+    except Exception:
+        metrics_manager.redis_up.set(0)
+        return False
 
 
 # ── 基础缓存操作 ──────────────────────────────────────────

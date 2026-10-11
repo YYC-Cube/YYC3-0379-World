@@ -52,6 +52,14 @@ class DocumentProcessor:
         tokens = self.encoding.encode(text)
         chunks = []
 
+        # P0 修复（2026-10-11 深度审计活捉）：原实现「start = end - overlap」后仅
+        # 以 start >= len(tokens) 判停——end 触顶后 start 恒为 len-overlap < len，
+        # 永不满足退出条件 → 任何超 chunk_size 的文档死循环，上传处理永卡
+        # processing（chunk_text 0% 覆盖盲区，实证：2400 token 文本 3s 不返回）。
+        # 现改为 end 触顶即正常退出；overlap ≥ chunk_size 显式拒绝（会倒退死循环）。
+        if chunk_overlap >= chunk_size:
+            raise ValueError(f"chunk_overlap({chunk_overlap}) 必须小于 chunk_size({chunk_size})")
+
         start = 0
         chunk_index = 0
 
@@ -62,10 +70,9 @@ class DocumentProcessor:
             chunks.append((chunk_index, chunk_text))
 
             chunk_index += 1
-            start = end - chunk_overlap
-
-            if start >= len(tokens):
+            if end >= len(tokens):
                 break
+            start = end - chunk_overlap
 
         return chunks
 

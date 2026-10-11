@@ -150,12 +150,16 @@ class CacheManager:
 cache_manager = CacheManager(default_ttl=300)
 
 
-async def cached(
+def cached(
     key_prefix: str,
     ttl: int = 300,
     tags: Optional[List[str]] = None,
 ):
-    """缓存装饰器"""
+    """缓存装饰器
+
+    P3 修复（2026-10-11 审计活捉）：原误声明为 async def——作为装饰器调用时
+    返回 coroutine 而非 decorator，@cached(...) 直接 TypeError，该工具事实不可用。
+    """
 
     def decorator(func):
         async def wrapper(*args, **kwargs):

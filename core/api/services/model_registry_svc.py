@@ -1183,13 +1183,37 @@ async def list_audit_logs(model_id: Optional[str], limit: int) -> List[Dict[str,
 
 
 # ── Canary / Shadow（03 §4-§5 半自动最小闭环 · 2026-10-05）──────────────────
-# 存储：Redis hash yyc3:canary:{alias}（baseline/canary/weight/shadow/started_at）
+# 存储：Redis hash yyc3:canary:{alias}（baseline/canary/weight/shadow/started_at/prev_weight）
 # 实时性：网关内存缓存 10s 惰性刷新（免事件订阅）；失败自动回退：2 分钟内失败
-# ≥5 次惰性判定置 weight=0（下一请求起全量回 baseline），人工经 PUT 恢复。
+# ≥5 次 → weight=0（下一请求起全量回 baseline），回退时记录 prev_weight。
+# 自动恢复（2026-10-11 中期项闭环）：回退后进入观察集，后台循环按指数退避
+# （30s 起 ×2 封顶 300s）探测 canary 模型最小请求，连续 2 次成功自动恢复 weight。
 
 _CANARY_CACHE_TTL = 10
 _CANARY_FAIL_LIMIT = 5
+# Redis 故障负缓存 TTL（P0-1 闭环，2026-10-11 审计修复）：hgetall 抛异常时
+# 以 None（语义=无灰度）回填本缓存，防止 Redis 宕机期间每个聊天请求都
+# 同步重试连接、拖垮网关 P99。
+_CANARY_FAIL_TTL = 5.0
 _canary_cache: Dict[str, tuple] = {}
+
+# ── 自动恢复探测参数 ──
+_CANARY_RECOVERY_TICK_SECONDS = 10.0  # 后台循环 tick
+_CANARY_RECOVERY_INITIAL_BACKOFF = 30.0  # 回退后首次探测等待（给上游喘息）
+_CANARY_RECOVERY_MAX_BACKOFF = 300.0  # 退避封顶（5min）
+_CANARY_RECOVERY_BACKOFF_FACTOR = 2.0
+_CANARY_RECOVERY_SUCCESS_LIMIT = 2  # 连续成功次数（防单次侥幸恢复误导流）
+# alias → {"next": 下次探测时刻, "backoff": 当前退避秒, "successes": 连续成功数}
+_recovery_watch: Dict[str, Dict[str, float]] = {}
+
+
+def _begin_recovery_watch(alias: str) -> None:
+    """回退后纳入恢复观察：首次探测在 initial_backoff 后（给上游喘息窗口）"""
+    _recovery_watch[alias] = {
+        "next": time.time() + _CANARY_RECOVERY_INITIAL_BACKOFF,
+        "backoff": _CANARY_RECOVERY_INITIAL_BACKOFF,
+        "successes": 0,
+    }
 
 
 def _canary_key(alias: str) -> str:
@@ -1227,34 +1251,32 @@ async def canary_set(
     await redis_client.hset(_canary_key(alias), mapping=data)
     await redis_client.delete(f"yyc3:canary:fail:{alias}")
     _canary_cache.pop(alias, None)
+    # 人工显式配置权重 → 接管恢复流程：摘出观察集（人工意图优先于自动恢复）
+    _recovery_watch.pop(alias, None)
     await _audit(actor, "canary.updated", alias, None, data)
     return data
 
 
 async def canary_get(alias: str) -> Optional[dict]:
-    """读灰度配置（网关热路径；内存缓存 + 失败自动回退惰性判定）。"""
+    """读灰度配置（网关热路径；内存缓存 + Redis 故障自动回退）。
+
+    Redis 不可达/超时 → 返回 None（语义=无灰度，请求直连 baseline 模型），
+    并向内存回填 5s 负缓存避免故障期每请求重试。绝不在聊天主路径抛连接异常
+    （P0-1 闭环，2026-10-11 深度审计修复；此前裸调 hgetall，Redis 抖动即全量 500）。"""
     now = time.time()
     hit = _canary_cache.get(alias)
-    if hit and now - hit[1] < _CANARY_CACHE_TTL:
+    if hit and now - hit[1] < (_CANARY_FAIL_TTL if hit[0] is None else _CANARY_CACHE_TTL):
         return hit[0]
-    data = _decode_hash(await redis_client.hgetall(_canary_key(alias)))
+    try:
+        data = _decode_hash(await redis_client.hgetall(_canary_key(alias)))
+    except Exception as e:
+        logger.warning("[canary] Redis 不可达，回退为无灰度（alias=%s）: %s", alias, str(e)[:80])
+        _canary_cache[alias] = (None, now)
+        return None
     if data:
-        try:
-            fails = int(data.get("fails") or 0)
-        except ValueError:
-            fails = 0
-        if fails >= _CANARY_FAIL_LIMIT and int(data.get("weight") or 0) > 0:
-            data["weight"] = "0"
-            await redis_client.hset(_canary_key(alias), "weight", "0")
-            logger.error(
-                "[canary] %s 连续失败 %d 次（≤%ds 窗口）→ 自动回退 weight=0（P0）",
-                alias,
-                fails,
-                120,
-            )
-            await _audit("canary-auto", "canary.auto_rollback", alias, None, {"weight": 0})
-            _canary_cache.pop(alias, None)
-            return data
+        # 注：历史版本在此读 hash 字段 fails 做惰性回退，但该字段无任何写入方（死分支，
+        # 2026-10-11 审计活捉：自动回退从未真正发生）。回退统一由 canary_report_failure
+        # 达阈值时落库（见 _auto_rollback），此处不再保留死代码。
         _canary_cache[alias] = (data, now)
     return data
 
@@ -1262,6 +1284,7 @@ async def canary_get(alias: str) -> Optional[dict]:
 async def canary_delete(alias: str, actor: str = "registry-api") -> bool:
     existed = bool(await redis_client.delete(_canary_key(alias)))
     _canary_cache.pop(alias, None)
+    _recovery_watch.pop(alias, None)  # 配置删除 → 同步摘出恢复观察
     if existed:
         await _audit(actor, "canary.deleted", alias, None, None)
     return existed
@@ -1294,46 +1317,257 @@ async def canary_route(model: str) -> Optional[dict]:
 
 
 async def canary_report_failure(alias: str) -> None:
-    """canary 请求失败信号（chat 捕获后调用）；2 分钟滑窗计数，惰性回退依据。"""
-    key = f"yyc3:canary:fail:{alias}"
-    n = await redis_client.incr(key)
-    await redis_client.expire(key, 120)
+    """canary 请求失败信号（chat 捕获后调用）；2 分钟滑窗计数，达阈值触发自动回退。
+
+    信号路径故障容忍：Redis 异常仅记日志，绝不向调用方（chat 的异常处理器）抛出，
+    避免二次异常掩盖原始错误路径（P0-1 闭环，2026-10-11 审计修复）。
+
+    2026-10-11 中期项闭环（审计活捉 P0）：历史版本达阈值仅打印「触发惰性回退」日志，
+    weight=0 从未真正落库（惰性回退依赖的 hash fails 字段无写入方）——自动回退事实
+    不存在。现达阈值即由 _auto_rollback 落库并纳入恢复观察。"""
+    try:
+        key = f"yyc3:canary:fail:{alias}"
+        n = await redis_client.incr(key)
+        await redis_client.expire(key, 120)
+    except Exception as e:
+        logger.warning(
+            "[canary] 失败信号上报跳过（Redis 不可达，alias=%s）: %s",
+            alias,
+            str(e)[:80],
+        )
+        return
     from app.utils import metrics_manager
 
     metrics_manager.record_canary_failure(alias)
     if n >= _CANARY_FAIL_LIMIT:
         logger.error(
-            "[canary] %s 失败信号 #%d（阈值 %d，触发惰性回退）", alias, n, _CANARY_FAIL_LIMIT
+            "[canary] %s 失败信号 #%d（阈值 %d，触发自动回退）",
+            alias,
+            n,
+            _CANARY_FAIL_LIMIT,
         )
+        await _auto_rollback(alias)
 
 
-async def shadow_fire(shadow_model: str, body: dict) -> None:
-    """Shadow 最小采样（03 §4）：复制请求发 shadow 上游，fire-and-forget，
-    结果丢弃仅记指标（比对集 output_hash 等留后续）。"""
+async def _auto_rollback(alias: str) -> None:
+    """自动回退落地：weight>0 → 置 0 并记录 prev_weight，纳入恢复观察集。
+
+    幂等（weight==0 直接返回）；全程故障容忍，Redis 写入失败仅记日志——
+    信号路径绝不能在聊天请求的异常处理链上二次抛错。多 worker 并发到达时
+    重复执行安全：weight==0 守卫 + 相同值覆写。"""
+    try:
+        data = _decode_hash(await redis_client.hgetall(_canary_key(alias)))
+        if not data:
+            return  # 配置已不存在，无事可回退
+        weight = int(data.get("weight") or 0)
+        if weight <= 0:
+            return  # 已回退（幂等守卫）
+        await redis_client.hset(
+            _canary_key(alias), mapping={"weight": "0", "prev_weight": str(weight)}
+        )
+        logger.error(
+            "[canary] %s 自动回退 weight=0（原 weight=%d，alias 纳入恢复观察）",
+            alias,
+            weight,
+        )
+        await _audit(
+            "canary-auto",
+            "canary.auto_rollback",
+            alias,
+            None,
+            {"weight": 0, "prev_weight": weight},
+        )
+    except Exception as e:
+        logger.warning("[canary] 自动回退写入失败（alias=%s）: %s", alias, str(e)[:80])
+        return
+    _canary_cache.pop(alias, None)
+    _begin_recovery_watch(alias)
+
+
+# ── 自动恢复探测（回退后按指数退避重探测，达标自动恢复灰度权重）────────────
+
+
+async def _probe_canary_model(canary_model: str) -> bool:
+    """恢复探测：经上游池对 canary 模型发最小 chat 请求（max_tokens=1），200 判活。
+
+    与真实流量同路径（upstream_registry.select），探测结论即路由结论。
+    任何异常（选路失败/网络错/非 200）一律判不活，绝不抛出。"""
     import httpx
 
-    from app.services import upstream_registry
-
-    upstreams = upstream_registry.select(shadow_model)
-    if not upstreams:
-        return
-    u = upstreams[0]
-    addr = u.base_url.rstrip("/")
-    if not addr.endswith("/v1"):
-        addr += "/v1"
-    from app.utils import metrics_manager
+    from app.services.upstream_registry import registry as upstream_registry
 
     try:
+        u = upstream_registry.select(canary_model)
+        if u is None:
+            return False
+        addr = u.base_url.rstrip("/")
+        if not addr.endswith("/v1"):
+            addr += "/v1"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{addr}/chat/completions",
                 json={
-                    **body,
-                    "model": shadow_model,
-                    "max_tokens": min(int(body.get("max_tokens") or 256), 256),
+                    "model": canary_model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
                 },
                 headers={"Authorization": f"Bearer {u.api_key}"} if u.api_key else {},
             )
-            metrics_manager.record_shadow_request(shadow_model, str(resp.status_code))
+            return resp.status_code == 200
     except Exception:
-        metrics_manager.record_shadow_request(shadow_model, "error")
+        return False
+
+
+async def _restore_canary(alias: str, data: Dict[str, str]) -> None:
+    """恢复落地：weight 回写 prev_weight，清失败计数，摘出观察集。
+
+    prev_weight 缺失/异常时不恢复（安全默认：人工经 PUT 重新配置）。"""
+    try:
+        prev = int(data.get("prev_weight") or 0)
+        if not 0 < prev <= 100:
+            logger.warning(
+                "[canary] %s prev_weight=%d 异常，放弃自动恢复（待人工配置）",
+                alias,
+                prev,
+            )
+            _recovery_watch.pop(alias, None)
+            return
+        await redis_client.hset(_canary_key(alias), mapping={"weight": str(prev)})
+        await redis_client.delete(f"yyc3:canary:fail:{alias}")
+        logger.info(
+            "[canary] %s 恢复探测连续 %d 次成功 → 自动恢复 weight=%d",
+            alias,
+            _CANARY_RECOVERY_SUCCESS_LIMIT,
+            prev,
+        )
+        await _audit("canary-auto", "canary.auto_recovered", alias, None, {"weight": prev})
+    except Exception as e:
+        logger.warning("[canary] 自动恢复写入失败（alias=%s）: %s", alias, str(e)[:80])
+        return
+    _canary_cache.pop(alias, None)
+    _recovery_watch.pop(alias, None)
+
+
+async def canary_recovery_tick() -> None:
+    """一轮恢复探测：到期的观察 alias 逐个探测——成功计数达标即恢复，
+    失败清零计数并按指数退避（30s 起 ×2 封顶 300s）重排下次探测。
+
+    配置消失或 weight 已被人工/其他实例恢复 → 摘出观察集（人工接管优先）。"""
+    if not _recovery_watch:
+        return
+    now = time.time()
+    for alias in list(_recovery_watch.keys()):
+        st = _recovery_watch.get(alias)
+        if st is None or now < st["next"]:
+            continue
+        try:
+            data = _decode_hash(await redis_client.hgetall(_canary_key(alias)))
+        except Exception as e:
+            logger.warning(
+                "[canary] 恢复探测读配置失败（alias=%s，退避重排）: %s",
+                alias,
+                str(e)[:80],
+            )
+            st["next"] = now + st["backoff"]
+            continue
+        if not data or int(data.get("weight") or 0) != 0:
+            _recovery_watch.pop(alias, None)  # 配置消失或已被接管
+            continue
+        if await _probe_canary_model(data.get("canary") or ""):
+            st["successes"] += 1
+            if st["successes"] >= _CANARY_RECOVERY_SUCCESS_LIMIT:
+                await _restore_canary(alias, data)
+            else:
+                st["next"] = now + st["backoff"]  # 连续成功要求：按当前间隔复验
+        else:
+            st["successes"] = 0
+            st["backoff"] = min(
+                st["backoff"] * _CANARY_RECOVERY_BACKOFF_FACTOR,
+                _CANARY_RECOVERY_MAX_BACKOFF,
+            )
+            st["next"] = now + st["backoff"]
+
+
+async def _rebuild_watch_from_redis() -> None:
+    """启动重建：一次性 SCAN 找回 weight=0 且 prev_weight>0 的别名（重启不丢回退态）。
+
+    注意键空间同时含计数键 yyc3:canary:fail:{alias}，须按段过滤。规模=灰度别名数（个位数），
+    SCAN 一次性开销可忽略。"""
+    try:
+        keys = [
+            k
+            async for k in redis_client.scan_iter(match="yyc3:canary:*", count=100)
+            if (k.decode() if isinstance(k, bytes) else k).split(":")[2] != "fail"
+        ]
+        for key in keys:
+            data = _decode_hash(await redis_client.hgetall(key))
+            if not data:
+                continue
+            alias = (key.decode() if isinstance(key, bytes) else key).split(":")[2]
+            try:
+                if int(data.get("weight") or 0) == 0 and int(data.get("prev_weight") or 0) > 0:
+                    _begin_recovery_watch(alias)
+                    logger.info(
+                        "[canary] 启动重建观察集：%s（weight=0, prev_weight=%s）",
+                        alias,
+                        data["prev_weight"],
+                    )
+            except ValueError:
+                continue
+    except Exception as e:
+        logger.warning("[canary] 观察集启动重建失败（退化为空集，人工可恢复）: %s", str(e)[:80])
+
+
+async def canary_recovery_loop() -> None:
+    """后台恢复探测循环（10s tick；启动随机抖动防多 worker 同刻探测惊群——同 P1-4 口径）。
+
+    多实例安全：探测是只读健康检查，重复开销 = 每 worker 每退避间隔 1 次最小请求；
+    恢复落库幂等（weight==0 守卫 + 同值覆写）；并发恢复可能产生重复审计事件，可接受。"""
+    await asyncio.sleep(random.uniform(0, _CANARY_RECOVERY_TICK_SECONDS))
+    await _rebuild_watch_from_redis()
+    while True:
+        await asyncio.sleep(_CANARY_RECOVERY_TICK_SECONDS)
+        try:
+            await canary_recovery_tick()
+        except Exception as e:
+            logger.warning("[canary] 恢复探测轮次异常（下轮继续）: %s", str(e)[:80])
+
+
+async def shadow_fire(shadow_model: str, body: dict) -> None:
+    """Shadow 最小采样（03 §4）：复制请求发 shadow 上游，fire-and-forget，
+    结果丢弃仅记指标（比对集 output_hash 等留后续）。
+
+    整体故障容忍（P0-1 同批加固）：后台任务内任何异常不得逃逸为
+    unhandled task exception（uvicorn 日志噪音 + 误导性堆栈）。
+    顺带修复 shadow 采样历史双 bug（2026-10-11 审计活捉）：误 import 模块而非
+    registry 单例、select() 返回单对象却按下标取 [0]——此前 shadow 配置一旦
+    命中必抛 AttributeError/TypeError，采样从未真正发出过。"""
+    import httpx
+
+    from app.services.upstream_registry import registry as upstream_registry
+
+    try:
+        u = upstream_registry.select(shadow_model)
+        if u is None:
+            return
+        addr = u.base_url.rstrip("/")
+        if not addr.endswith("/v1"):
+            addr += "/v1"
+        from app.utils import metrics_manager
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{addr}/chat/completions",
+                    json={
+                        **body,
+                        "model": shadow_model,
+                        "max_tokens": min(int(body.get("max_tokens") or 256), 256),
+                    },
+                    headers=({"Authorization": f"Bearer {u.api_key}"} if u.api_key else {}),
+                )
+                metrics_manager.record_shadow_request(shadow_model, str(resp.status_code))
+        except Exception:
+            metrics_manager.record_shadow_request(shadow_model, "error")
+    except Exception as e:  # select() 等前置步骤异常兜底
+        logger.warning("[canary] shadow 采样内部异常（忽略）: %s", str(e)[:80])
