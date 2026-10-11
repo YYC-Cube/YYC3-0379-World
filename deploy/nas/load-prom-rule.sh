@@ -34,12 +34,20 @@ CONTAINER="yyc3-prometheus"
 BASE=$(basename "$RULE_SRC")
 DEST="/etc/prometheus/$BASE"
 docker cp "$RULE_SRC" "$CONTAINER:$DEST"
-# prometheus.yml 追加（查重幂等）
+# prometheus.yml rule_files 登记（查重幂等）
 docker cp "$CONTAINER:/etc/prometheus/prometheus.yml" /tmp/.prom.yml.tmp
 if grep -qF "$DEST" /tmp/.prom.yml.tmp; then
   echo "already-loaded: $BASE"
 else
-  echo "  - $DEST" >> /tmp/.prom.yml.tmp
+  # 插在最后一个既有 rules 条目之后——repo 版 prometheus.yml 尾段为 scrape_configs，
+  # >> EOF 会把规则路径追加成非法 YAML 且 reload 静默失败（2026-10-12 chaos 演练
+  # 前装载 redis-down 时实证：配置写坏、reload 报错、规则未生效且脚本误报成功）
+  LAST=$(grep -n '^  - /etc/prometheus/.*\.rules\.yml$' /tmp/.prom.yml.tmp | tail -1 | cut -d: -f1)
+  if [ -z "$LAST" ]; then
+    echo "verify-FAILED: $BASE（prometheus.yml 无 rule_files 条目可挂靠，人工检查）"
+    exit 1
+  fi
+  sed -i "${LAST}a\\  - $DEST" /tmp/.prom.yml.tmp
   docker cp /tmp/.prom.yml.tmp "$CONTAINER:/etc/prometheus/prometheus.yml"
   echo "appended: $BASE"
 fi
@@ -47,7 +55,7 @@ rm -f /tmp/.prom.yml.tmp
 # 热加载 + 规则验证（busybox wget：POST 用 --post-data）
 docker exec "$CONTAINER" wget -qO- --post-data "" http://localhost:9090/-/reload >/dev/null 2>&1
 sleep 2
-GROUP=$(grep -oE "^groups:|name: [a-z0-9-]+" "$RULE_SRC" | head -2 | tail -1 | awk '{print $2}')
+GROUP=$(grep -oE "^groups:|name: [a-z0-9.-]+" "$RULE_SRC" | head -2 | tail -1 | awk '{print $2}')
 docker exec "$CONTAINER" wget -qO- http://localhost:9090/api/v1/rules | grep -q "$GROUP" \
   && echo "verified: $GROUP" || { echo "verify-FAILED: $GROUP"; exit 1; }
 REMOTE
@@ -60,7 +68,9 @@ for RULE in "${RULES[@]}"; do
   scp -q -o BatchMode=yes "$RULE" "$NAS_HOST:/tmp/$NAME" || { log "❌ scp 失败: $NAME"; FAIL=$((FAIL+1)); continue; }
   scp -q -o BatchMode=yes /tmp/.load_rule_remote.sh "$NAS_HOST:/tmp/" || { log "❌ 远端脚本 scp 失败"; FAIL=$((FAIL+1)); continue; }
   OUT=$(nas "$NAME")
-  if echo "$OUT" | grep -q "verify-FAILED"; then
+  if ! echo "$OUT" | grep -q "verified:"; then
+    # 未产出 verified 即失败：可能是 reload 静默失败（set -e 中断在 verify 前），
+    # 不得因缺 verify-FAILED 字样而误判成功（2026-10-12 redis-down 装载事故复盘）
     log "❌ $NAME: $(echo "$OUT" | tr '\n' ' ')"
     FAIL=$((FAIL+1))
   else

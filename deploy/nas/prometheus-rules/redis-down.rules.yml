@@ -1,0 +1,37 @@
+# file: redis-down.rules.yml
+# description: Prometheus Redis 宕机告警规则 - 网关 yyc3_redis_up 指标（故障演练制度化配套）
+# author: YanYuCloudCube Team <admin@0379.email>
+# version: v1.0.0
+# created: 2026-10-11
+# status: active
+# tags: [prometheus],[alerting],[redis],[chaos-drill]
+# spec: docs/0379-world-执行记录/21-深度审核与实况测试报告.md §四中期项（Redis 宕机故障演练制度化）
+# note: 指标由 app.cache.probe_redis 双路维护（探活轮询 60s + /health 事件驱动）；
+#       演练脚本 scripts/chaos-redis.sh 注入 Redis 宕机后验收本告警 firing + 三能力降级 + 自动回切
+
+groups:
+  - name: yyc3.redis
+    interval: 30s
+    rules:
+      # ── Redis 宕机（核心）：网关视角连通性丢失 ──
+      # 0 持续 1m 触发；瞬断（<1m）不告警，与 rate_limit 10s 冷却回切语义对齐
+      - alert: RedisDown
+        expr: yyc3_redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: gateway-cache
+        annotations:
+          summary: "Redis 宕机: 网关连通性丢失（yyc3_redis_up=0 持续 1min）"
+          description: "降级态确认清单：/healthz 应保持 200；chat/embeddings/rerank 应 200（fail-open）；限流已切内存模式（10s 冷却自动回切）。演练入口：bash scripts/chaos-redis.sh"
+
+      # ── 观测面缺口：网关 /metrics 无 Redis 序列（探活循环未运行或抓取失败）──
+      - alert: RedisMetricsGap
+        expr: absent(yyc3_redis_up)
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway-cache
+        annotations:
+          summary: "yyc3_redis_up 指标整体缺失"
+          description: "探活循环（probe_enabled）未运行或 Prometheus 抓取 /metrics 失败；RedisDown 将失明，优先修复观测面"

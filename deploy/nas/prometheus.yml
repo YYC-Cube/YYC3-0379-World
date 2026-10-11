@@ -12,9 +12,11 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 # 规则文件（volume 平铺根目录；2026-10-05 修复：seed 覆盖曾丢失此段致规则卸载）
+# 2026-10-11 增 redis-down.rules.yml（RedisDown/RedisMetricsGap；故障演练制度化配套）
 rule_files:
   - /etc/prometheus/hotswap-gate.rules.yml
   - /etc/prometheus/registry-heartbeat.rules.yml
+  - /etc/prometheus/redis-down.rules.yml
 
 scrape_configs:
   - job_name: yyc3-gateway
