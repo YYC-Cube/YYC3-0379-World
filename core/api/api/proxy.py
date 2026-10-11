@@ -132,8 +132,8 @@ async def _forward(
         started = time.time()
         # 模型别名改写：请求 model 不在上游注册清单（如 OpenAI 客户端默认 whisper-1）
         # 时，改写为该上游首个注册模型，避免上游 404 model-not-found
-        payload_json = body_for(u) if body_for is not None else (
-            dict(json_body) if json_body else None
+        payload_json = (
+            body_for(u) if body_for is not None else (dict(json_body) if json_body else None)
         )
         payload_data = dict(data) if data else None
         if u.models:

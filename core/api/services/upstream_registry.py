@@ -146,9 +146,7 @@ class UpstreamRegistry:
                     priority=int(item.get("priority", 10)),
                     capacity=int(item.get("capacity", 32)),
                     health_path=str(item.get("health_path", "/health")),
-                    cap_paths={
-                        str(k): str(v) for k, v in (item.get("cap_paths") or {}).items()
-                    },
+                    cap_paths={str(k): str(v) for k, v in (item.get("cap_paths") or {}).items()},
                 )
                 pool[u.name] = u
             except Exception as e:
