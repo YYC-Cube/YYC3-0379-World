@@ -57,6 +57,9 @@ class Upstream:
     priority: int = 10  # 数字越小越优先
     capacity: int = 32
     health_path: str = "/health"
+    # capability → 覆写上游请求路径（如 rerank→/v1/ranking 走 NIM 原生协议；
+    # 缺省回退 proxy._CAP_PATH 的 vLLM 兼容路径）
+    cap_paths: Dict[str, str] = field(default_factory=dict)
 
     # ── 运行时状态 ──
     consecutive_failures: int = 0
@@ -143,6 +146,9 @@ class UpstreamRegistry:
                     priority=int(item.get("priority", 10)),
                     capacity=int(item.get("capacity", 32)),
                     health_path=str(item.get("health_path", "/health")),
+                    cap_paths={
+                        str(k): str(v) for k, v in (item.get("cap_paths") or {}).items()
+                    },
                 )
                 pool[u.name] = u
             except Exception as e:
@@ -339,6 +345,7 @@ class UpstreamRegistry:
                     "models": u.models,
                     "priority": u.priority,
                     "weight": u.weight,
+                    "cap_paths": dict(u.cap_paths),
                     "status": u.breaker_state,
                     "current_load": u.current_load,
                     "capacity": u.capacity,

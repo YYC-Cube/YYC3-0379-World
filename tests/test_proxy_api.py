@@ -212,6 +212,118 @@ def test_rerank_translation(client):
     assert r.headers.get("x-yyc3-upstream") == "rerank-main"
 
 
+# ── rerank：NIM 原生 ranking 协议（cap_paths 覆写） ──────────
+
+
+_NIM_POOL = json.dumps(
+    [
+        {
+            "name": "rerank-nim",
+            "base_url": "http://rerank-nim.test:18001",
+            "models": ["baai/bge-reranker-v2-m3", "*"],
+            "capability": "rerank",
+            "priority": 1,
+            "cap_paths": {"rerank": "/v1/ranking"},
+        }
+    ]
+)
+
+
+@respx.mock
+def test_rerank_nim_ranking_adapter(client):
+    """cap_paths 覆写 /v1/ranking → NIM 原生协议：query/passages 对象格式出站，
+    rankings logit → sigmoid 换算为 Cohere relevance_score"""
+    from app.config import settings as _settings
+
+    _settings.openai_compatible_upstreams = _NIM_POOL
+    registry.load_from_env()
+    route = respx.post("http://rerank-nim.test:18001/v1/ranking").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "rankings": [
+                    {"index": 0, "logit": -11.0},
+                    {"index": 1, "logit": 6.75},
+                ],
+                "usage": {"prompt_tokens": 34, "total_tokens": 34},
+            },
+        )
+    )
+    r = client.post(
+        "/v1/rerank",
+        headers=_auth(),
+        json={
+            "model": "baai/bge-reranker-v2-m3",
+            "query": "什么是API网关",
+            "documents": ["今天天气很好", "API网关是微服务统一入口"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["query"] == {"text": "什么是API网关"}  # 对象格式（NIM 契约）
+    assert sent["passages"] == [{"text": "今天天气很好"}, {"text": "API网关是微服务统一入口"}]
+    assert "prompt" not in sent  # 不走生成式打分格式
+    body = r.json()
+    assert body["results"][0]["index"] == 1  # logit 6.75 最高
+    assert body["results"][0]["relevance_score"] == pytest.approx(0.9988, abs=0.001)
+    assert body["results"][1]["index"] == 0  # logit -11 → sigmoid ≈ 1.7e-5
+    assert body["results"][1]["relevance_score"] < 0.001
+    assert r.headers.get("x-yyc3-upstream") == "rerank-nim"
+
+
+@respx.mock
+def test_rerank_degraded_generative_to_ranking(client):
+    """生成式主（completions 协议）失败 → cap_paths ranking 备接管：各走各的协议"""
+    mixed_pool = json.dumps(
+        [
+            {
+                "name": "rerank-gen",
+                "base_url": "http://rerank-gen.test:8101",
+                "models": ["qwen3-reranker-0.6b", "*"],
+                "capability": "rerank",
+                "priority": 1,
+            },
+            {
+                "name": "rerank-nim-b",
+                "base_url": "http://rerank-nim-b.test:18001",
+                "models": ["baai/bge-reranker-v2-m3"],
+                "capability": "rerank",
+                "priority": 2,
+                "cap_paths": {"rerank": "/v1/ranking"},
+            },
+        ]
+    )
+    from app.config import settings as _settings
+
+    _settings.openai_compatible_upstreams = mixed_pool
+    registry.load_from_env()
+    respx.post("http://rerank-gen.test:8101/v1/completions").mock(
+        return_value=httpx.Response(500, text="gen down")
+    )
+    ok = respx.post("http://rerank-nim-b.test:18001/v1/ranking").mock(
+        return_value=httpx.Response(
+            200,
+            json={"rankings": [{"index": 0, "logit": 2.0}]},
+        )
+    )
+    r = client.post(
+        "/v1/rerank",
+        headers=_auth(),
+        json={
+            "model": "qwen3-reranker-0.6b",
+            "query": "q",
+            "documents": ["d1"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert ok.called
+    sent = json.loads(ok.calls.last.request.content)
+    assert sent["query"] == {"text": "q"}  # 别名改写后仍走 ranking 契约
+    assert sent["model"] == "baai/bge-reranker-v2-m3"  # 模型别名改写生效
+    assert r.headers.get("x-yyc3-degraded") == "rerank-gen"
+    assert r.json()["results"][0]["relevance_score"] == pytest.approx(0.88, abs=0.01)
+
+
 # ── capability 隔离 ─────────────────────────────────────────
 
 

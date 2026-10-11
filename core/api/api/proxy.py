@@ -12,10 +12,12 @@
              分层选择 + 熔断降级，与 chat 共用 OPENAI_COMPATIBLE_UPSTREAMS 配置与
              X-YYC3-Upstream / X-YYC3-Degraded 响应头契约。
 
-             路径约定（上游为 vLLM/vLLM-兼容服务）：
+             路径约定（上游为 vLLM/vLLM-兼容服务；上游可用 cap_paths 按能力覆写路径并
+             切换协议，如 NIM reranker 的 {"rerank": "/v1/ranking"}）：
              - embedding → {base}/v1/embeddings（OpenAI 格式透传）
-             - reranker  → {base}/v1/score（vLLM --task score，Jina 格式；
-                           本端点对外暴露 Cohere 风格 /v1/rerank 并做双向转换）
+             - reranker  → {base}/v1/completions（Qwen3-Reranker 生成式打分）；
+                           cap_paths 覆写 /v1/ranking 时走 NIM 原生批量协议；
+                           本端点对外统一 Cohere 风格 /v1/rerank 并做双向转换
              - asr       → {base}/v1/audio/transcriptions（multipart 透传）
              - ocr       → {base}/v1/ocr（multipart 透传）
 @author: YanYuCloudCube Team <admin@0379.email>
@@ -111,10 +113,15 @@ async def _forward(
     data: Optional[Dict] = None,
     files: Optional[Dict] = None,
     headers_extra: Optional[Dict] = None,
+    body_for=None,
 ):
     """
     按 capability 降级链转发；返回 (response_dict, served_upstream, degraded_from)。
     所有上游失败时抛 RuntimeError（由调用方转 502）。
+
+    body_for: 可选 Callable[[Upstream], Dict]——按候选上游构造请求体（协议适配，
+    如 rerank 对生成式打分上游出 completions 格式、对 cap_paths 覆写 /v1/ranking
+    的 NIM 上游出 ranking 格式）。提供时忽略静态 json_body。
     """
     errors: list = []
     degraded_from: list = []
@@ -125,7 +132,9 @@ async def _forward(
         started = time.time()
         # 模型别名改写：请求 model 不在上游注册清单（如 OpenAI 客户端默认 whisper-1）
         # 时，改写为该上游首个注册模型，避免上游 404 model-not-found
-        payload_json = dict(json_body) if json_body else None
+        payload_json = body_for(u) if body_for is not None else (
+            dict(json_body) if json_body else None
+        )
         payload_data = dict(data) if data else None
         if u.models:
             req_model = (payload_json or payload_data or {}).get("model")
@@ -135,7 +144,7 @@ async def _forward(
                 if payload_data is not None:
                     payload_data["model"] = u.models[0]
         for addr in _addresses(u):
-            url = f"{addr}{_CAP_PATH[capability]}"
+            url = f"{addr}{u.cap_paths.get(capability, _CAP_PATH[capability])}"
             headers = {}
             if u.api_key():
                 headers["Authorization"] = f"Bearer {u.api_key()}"
@@ -267,6 +276,13 @@ def _yes_probability(choice: Dict) -> float:
     return 0.0
 
 
+def _sigmoid(x: float) -> float:
+    """logit → (0,1) 相关性分（BGE reranker 标准换算）"""
+    import math
+
+    return 1.0 / (1.0 + math.exp(-x))
+
+
 # ── 1) POST /v1/embeddings ─────────────────────────────────
 
 
@@ -300,25 +316,45 @@ async def embeddings(req: EmbeddingRequest, request: Request):
 
 @router.post("/v1/rerank")
 async def rerank(req: RerankRequest, request: Request):
-    """重排序（Cohere 风格对外；上游 Qwen3-Reranker 生成式打分；vk 白名单+预算+记账）"""
+    """重排序（Cohere 风格对外；按上游协议适配：Qwen3 生成式打分 / NIM 原生 ranking；
+    vk 白名单+预算+记账）"""
     started = time.time()
     try:
         vk = await _vk_gate(request, "rerank", req.model)
-        # Qwen3-Reranker 生成式打分：批量 prompt → completions(max_tokens=1, logprobs)
-        prompts = [_rerank_prompt(req.query, doc) for doc in req.documents]
-        score_body = {
-            "model": req.model,
-            "prompt": prompts,
-            "max_tokens": 1,
-            "temperature": 0,
-            "logprobs": 20,
-        }
-        result, u, degraded = await _forward("rerank", json_body=score_body)
-        choices = result.get("choices", [])
-        items = []
-        for i, ch in enumerate(choices):
-            score = _yes_probability(ch)
-            items.append({"index": i, "relevance_score": score})
+
+        def _rerank_body(u: Upstream) -> Dict:
+            if u.cap_paths.get("rerank") == "/v1/ranking":
+                # NIM 原生 ranking 协议：query/passages 对象格式，单次批量
+                return {
+                    "model": req.model,
+                    "query": {"text": req.query},
+                    "passages": [{"text": doc} for doc in req.documents],
+                }
+            # Qwen3-Reranker 生成式打分：批量 prompt → completions(max_tokens=1, logprobs)
+            return {
+                "model": req.model,
+                "prompt": [_rerank_prompt(req.query, doc) for doc in req.documents],
+                "max_tokens": 1,
+                "temperature": 0,
+                "logprobs": 20,
+            }
+
+        result, u, degraded = await _forward("rerank", body_for=_rerank_body)
+        if u.cap_paths.get("rerank") == "/v1/ranking":
+            # NIM ranking 响应：{"rankings": [{"index", "logit"}]} → sigmoid 换算
+            items = [
+                {
+                    "index": int(r.get("index", i)),
+                    "relevance_score": _sigmoid(float(r.get("logit", 0.0))),
+                }
+                for i, r in enumerate(result.get("rankings", []))
+            ]
+        else:
+            choices = result.get("choices", [])
+            items = []
+            for i, ch in enumerate(choices):
+                score = _yes_probability(ch)
+                items.append({"index": i, "relevance_score": score})
         items.sort(key=lambda x: x["relevance_score"], reverse=True)
         top_n = req.top_n or len(items)
         payload = {
