@@ -324,6 +324,46 @@ def test_rerank_degraded_generative_to_ranking(client):
     assert r.json()["results"][0]["relevance_score"] == pytest.approx(0.88, abs=0.01)
 
 
+@respx.mock
+def test_rerank_nim_wildcard_pool_rewrites_model(client):
+    """通配 models 上游（别名改写不触发）下，ranking 协议分支必须自带注册模型名
+    （NIM 对陌生模型名回 404——2026-10-11 故障切换演练实战抓获）"""
+    wildcard_pool = json.dumps(
+        [
+            {
+                "name": "rerank-nim-w",
+                "base_url": "http://rerank-nim-w.test:18001",
+                "models": ["baai/bge-reranker-v2-m3", "bge-reranker-v2-m3", "*"],
+                "capability": "rerank",
+                "priority": 1,
+                "cap_paths": {"rerank": "/v1/ranking"},
+            }
+        ]
+    )
+    from app.config import settings as _settings
+
+    _settings.openai_compatible_upstreams = wildcard_pool
+    registry.load_from_env()
+    route = respx.post("http://rerank-nim-w.test:18001/v1/ranking").mock(
+        return_value=httpx.Response(
+            200,
+            json={"rankings": [{"index": 0, "logit": 3.0}]},
+        )
+    )
+    r = client.post(
+        "/v1/rerank",
+        headers=_auth(),
+        json={
+            "model": "qwen3-reranker-0.6b",
+            "query": "q",
+            "documents": ["d1"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["model"] == "baai/bge-reranker-v2-m3"  # 上游注册名，非请求原名
+
+
 # ── capability 隔离 ─────────────────────────────────────────
 
 

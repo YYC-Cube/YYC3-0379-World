@@ -324,9 +324,10 @@ async def rerank(req: RerankRequest, request: Request):
 
         def _rerank_body(u: Upstream) -> Dict:
             if u.cap_paths.get("rerank") == "/v1/ranking":
-                # NIM 原生 ranking 协议：query/passages 对象格式，单次批量
+                # NIM ranking 协议：模型名必须是上游注册名（陌生名 404）；
+                # 通配 models 场景下 _forward 的别名改写不触发，此处直接取注册名
                 return {
-                    "model": req.model,
+                    "model": u.models[0] if u.models else req.model,
                     "query": {"text": req.query},
                     "passages": [{"text": doc} for doc in req.documents],
                 }
