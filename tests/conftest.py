@@ -91,16 +91,22 @@ _REDIS_BOUND_MODULES = (
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_redis(monkeypatch):
+def _hermetic_redis(monkeypatch, request):
     """每个测试注入独立 FakeRedis 实例，替换所有已绑定的 redis_client 引用。
 
-    CI 例外：GitHub Actions 的 CI=true 环境保留真 Redis 服务（docker compose），
-    维持「对真实 Redis 集成验证」的覆盖面；本机/外部贡献者无 Redis 时走 fakeredis，
-    语义对齐（已用命令集验证：string/zset/set/hash/pipeline/incr/lpush/pubsub）。
+    判定口径（2026-10-12 审计修复，消除分支保护 required check 绕过根因）：
+    - 单元层（pytest.mark.unit）**始终**注入 fakeredis——单元测试要求完全隔离，
+      且真 redis-py 连接池绑定首个 asyncio.run 事件循环，跨调用新循环必崩
+      （CI 实测 Event loop is closed / assert '20'=='0' 即此根因）。
+    - 集成层仅在 GitHub Actions 保留真 Redis 服务覆盖面（docker compose）：
+      判别用 GHA 专用变量 GITHUB_ACTIONS——CI=true 会被本机 shell 全局导出
+      误判（2026-10-12 实测本机 CI=true 致 12 用例连 host='redis' 超时）。
     测试若需自定义 Redis 行为（故障桩/NoopRedis），在测试内二次
     monkeypatch 本夹具注入的实例即可（后写覆盖先生，与既有范式兼容）。"""
-    if os.environ.get("CI") == "true":
-        yield None  # CI：真 Redis，不替换
+    in_gha = os.environ.get("GITHUB_ACTIONS") == "true"
+    is_unit = any(m.name == "unit" for m in request.node.iter_markers())
+    if not is_unit and in_gha:
+        yield None  # GHA CI：真 Redis，不替换（集成层覆盖面）
         return
 
     from fakeredis.aioredis import FakeRedis
