@@ -643,6 +643,7 @@ async def logs_query(
     model: Optional[str] = None,
     key_id: Optional[str] = None,
     status: Optional[str] = None,
+    request_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> Dict[str, Any]:
@@ -662,6 +663,7 @@ async def logs_query(
         "model": model,
         "key_id": key_id,
         "status": status,
+        "request_id": request_id,
         "lim": limit,
         "off": offset,
     }
@@ -678,6 +680,7 @@ async def logs_query(
                             "AND (:model IS NULL OR model = :model) "
                             "AND (:key_id IS NULL OR key_id = :key_id) "
                             "AND (:status IS NULL OR status = :status) "
+                            "AND (:request_id IS NULL OR request_id = :request_id) "
                             "ORDER BY id DESC LIMIT :lim OFFSET :off"
                         ),
                         params,
@@ -693,9 +696,10 @@ async def logs_query(
                         "WHERE created_at >= :since "
                         "AND (:model IS NULL OR model = :model) "
                         "AND (:key_id IS NULL OR key_id = :key_id) "
-                        "AND (:status IS NULL OR status = :status)"
+                        "AND (:status IS NULL OR status = :status) "
+                        "AND (:request_id IS NULL OR request_id = :request_id)"
                     ),
-                    {k: params[k] for k in ("since", "model", "key_id", "status")},
+                    {k: params[k] for k in ("since", "model", "key_id", "status", "request_id")},
                 )
             ).first()
         logs = []

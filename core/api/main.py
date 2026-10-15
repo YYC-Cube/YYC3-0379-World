@@ -976,6 +976,7 @@ async def get_logs(
     model: Optional[str] = Query(None, max_length=100),
     key_id: Optional[str] = Query(None, max_length=64),
     status: Optional[str] = Query(None, max_length=20),
+    request_id: Optional[str] = Query(None, max_length=64),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -985,7 +986,7 @@ async def get_logs(
 
     return await logs_query(
         minutes=minutes, model=model, key_id=key_id, status=status,
-        limit=limit, offset=offset,
+        request_id=request_id, limit=limit, offset=offset,
     )
 
 

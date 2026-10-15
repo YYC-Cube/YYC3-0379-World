@@ -74,6 +74,7 @@ def seeded_logs(tmp_path, monkeypatch):
                     "key_id": None, "model": "deepseek-v4", "upstream": "deepseek",
                     "capability": "chat", "prompt_tokens": 300, "completion_tokens": 100,
                     "cost_usd": 0.1, "latency_ms": 1200, "status": "error",
+                    "request_id": "chatcmpl-trace-001",
                 },
             ]
         )
@@ -104,7 +105,7 @@ def test_logs_query_filters(seeded_logs):
     )
     body = res.json()
     assert body["total"] == 2
-    assert all(l["model"] == "glm-4-flash" and l["status"] == "ok" for l in body["logs"])
+    assert all(row["model"] == "glm-4-flash" and row["status"] == "ok" for row in body["logs"])
 
     res_err = seeded_logs.get("/v1/logs?minutes=60&status=error", headers=_ADMIN_HEADERS)
     assert res_err.json()["total"] == 1
@@ -115,6 +116,16 @@ def test_logs_query_pagination(seeded_logs):
     body = res.json()
     assert len(body["logs"]) == 1
     assert body["offset"] == 2
+
+
+def test_logs_query_by_request_id(seeded_logs):
+    """R7 链路跳转数据面: request_id 精确过滤（/audit 追踪按钮消费）"""
+    res = client.get("/v1/logs?minutes=60&request_id=chatcmpl-trace-001", headers=_ADMIN_HEADERS)
+    body = res.json()
+    assert body["total"] == 1
+    assert body["logs"][0]["model"] == "deepseek-v4"
+    res_none = client.get("/v1/logs?minutes=60&request_id=chatcmpl-none", headers=_ADMIN_HEADERS)
+    assert res_none.json()["total"] == 0
 
 
 # ── BL-A2: /v1/usage/timeline ──────────────────────────────────────
