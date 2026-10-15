@@ -732,10 +732,13 @@ async def get_summary():
         row = result.first()
         total_requests = row.total_requests if row and row.total_requests else 0
         total_tokens = row.total_tokens if row and row.total_tokens else 0
+        # BL-A3（双端联通 P1）: cost_usd 接 spend_logs 真实合计（替换硬编码 0.0）
+        from app.services.virtual_key_manager import total_cost_usd
+
         return UsageSummary(
             total_requests=total_requests,
             total_tokens=total_tokens,
-            cost_usd=0.0,
+            cost_usd=await total_cost_usd(),
         )
 
 
@@ -962,6 +965,95 @@ async def admin_pricing_task_type_upsert(task_type: str, req: TaskPriceRequest):
         "price_usd": req.price_usd,
         "persisted": persisted,
     }
+
+
+# ── 双端联通 P1 数据端点（BL-A1/A2/A4 · Token-Console 看盘数据源 · 2026-10-15）──
+
+
+@app.get("/v1/logs")
+async def get_logs(
+    minutes: int = Query(60, ge=1, le=43200),
+    model: Optional[str] = Query(None, max_length=100),
+    key_id: Optional[str] = Query(None, max_length=64),
+    status: Optional[str] = Query(None, max_length=20),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """请求级日志查询（BL-A1）: spend_logs 近 N 分钟倒序分页（status/error_code/request_id
+    可观测性列随 007 迁移落库）; DB 不可达优雅降级 ok=false（B端显「无数据」）。"""
+    from app.services.virtual_key_manager import logs_query
+
+    return await logs_query(
+        minutes=minutes, model=model, key_id=key_id, status=status,
+        limit=limit, offset=offset,
+    )
+
+
+@app.get("/v1/usage/timeline")
+async def get_usage_timeline(
+    minutes: int = Query(1440, ge=5, le=10080),
+    step_minutes: int = Query(30, ge=1, le=1440),
+    group_by: str = Query("model", max_length=12),
+):
+    """用量时序聚合（BL-A2）: step 分桶 calls/tokens/cost（B端趋势图直读源,
+    替代前端差分）; group_by ∈ model/key/upstream/capability/total。"""
+    from app.services.virtual_key_manager import usage_timeline
+
+    try:
+        return await usage_timeline(
+            minutes=minutes, step_minutes=step_minutes, group_by=group_by
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail={"error": str(e)})
+
+
+@app.get("/v1/admin/alerts")
+async def admin_alerts(level: Optional[str] = Query(None, max_length=10)):
+    """告警聚合只读查询（BL-A4）: 上游池熔断态 + 注册中心事件流 两源合成。
+
+    - upstream 熔断: breaker open → critical / half-open → warning
+    - registry 事件: failover/drain/timeout/error 关键词 → critical, 其余 info
+    - level 过滤: critical / warning / info（缺省全量, 按级别倒序）
+    """
+    from app.services import model_registry_svc as mrs
+    from app.services.upstream_registry import registry as upstream_registry
+
+    alerts: List[dict] = []
+    for up in upstream_registry.snapshot():
+        state = str(up.get("breaker_state") or up.get("status") or "")
+        if state == "open":
+            alerts.append({
+                "source": "upstream", "level": "critical",
+                "title": f"上游 {up.get('name', '?')} 熔断开启",
+                "model": up.get("name"), "at": None,
+                "detail": {"breaker_state": state, "base_url": up.get("base_url")},
+            })
+        elif state == "half-open":
+            alerts.append({
+                "source": "upstream", "level": "warning",
+                "title": f"上游 {up.get('name', '?')} 半开探测中",
+                "model": up.get("name"), "at": None,
+                "detail": {"breaker_state": state},
+            })
+    for ev in await mrs.recent_events(since_id=0, limit=100):
+        etype = str(ev.get("event_type") or "")
+        lowered = etype.lower()
+        ev_level = (
+            "critical"
+            if any(k in lowered for k in ("failover", "drain", "timeout", "error", "deregister"))
+            else "info"
+        )
+        alerts.append({
+            "source": "registry", "level": ev_level,
+            "title": f"{ev.get('model_id', '?')}: {etype}",
+            "model": ev.get("model_id"), "at": str(ev.get("created_at") or ""),
+            "detail": ev.get("payload") or {},
+        })
+    if level:
+        alerts = [a for a in alerts if a["level"] == level]
+    order = {"critical": 0, "warning": 1, "info": 2}
+    alerts.sort(key=lambda a: order.get(a["level"], 9))
+    return {"alerts": alerts[:200], "total": len(alerts)}
 
 
 @app.on_event("startup")

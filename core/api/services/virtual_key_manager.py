@@ -222,9 +222,12 @@ class VirtualKeyManager:
                     "model VARCHAR(100), upstream VARCHAR(100), capability VARCHAR(20), "
                     "prompt_tokens INT DEFAULT 0, completion_tokens INT DEFAULT 0, "
                     "cost_usd FLOAT DEFAULT 0, latency_ms INT DEFAULT 0, "
+                    "status VARCHAR(20) DEFAULT 'ok', error_code VARCHAR(100), "
+                    "request_id VARCHAR(64), "
                     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
                 )
             )
+            # 注: 存量 sqlite 开发库需删除重建以获得新列（007 迁移为 PG 侧等价物; 开发库可再生不做 ALTER 容错）
 
     async def _ledger_loop(self) -> None:
         while True:
@@ -269,9 +272,11 @@ class VirtualKeyManager:
                 await session.execute(
                     text(
                         "INSERT INTO spend_logs (key_id, model, upstream, capability, "
-                        "prompt_tokens, completion_tokens, cost_usd, latency_ms) "
+                        "prompt_tokens, completion_tokens, cost_usd, latency_ms, "
+                        "status, error_code, request_id) "
                         "VALUES (:key_id, :model, :upstream, :capability, "
-                        ":prompt_tokens, :completion_tokens, :cost_usd, :latency_ms)"
+                        ":prompt_tokens, :completion_tokens, :cost_usd, :latency_ms, "
+                        ":status, :error_code, :request_id)"
                     ),
                     [
                         {
@@ -283,6 +288,10 @@ class VirtualKeyManager:
                             "completion_tokens": int(b.get("completion_tokens") or 0),
                             "cost_usd": float(b.get("cost_usd") or 0),
                             "latency_ms": int(b.get("latency_ms") or 0),
+                            # BL-A1 可观测性扩列: 记账载荷透传, 缺省 ok/NULL 不伪造
+                            "status": str(b.get("status") or "ok")[:20],
+                            "error_code": b.get("error_code"),
+                            "request_id": b.get("request_id"),
                         }
                         for b in batch
                     ],
@@ -622,6 +631,242 @@ async def usage_summary(
         "total_cost_usd": round(sum(r["cost_usd"] for r in rows), 6),
         "groups": rows,
     }
+
+
+# ── 双端联通 P1 数据端点内核（BL-A1/A2/A3 · 2026-10-15）──────────────
+# 全部只读查询; 可选过滤经 NULL 守卫绑定参数表达（字面量 SQL + 绑定, 无拼接）;
+# DB 不可达时优雅降级（B端显「无数据」而非 5xx）
+
+
+async def logs_query(
+    minutes: int = 60,
+    model: Optional[str] = None,
+    key_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """请求级日志查询（BL-A1）: 近 N 分钟 spend_logs 倒序分页 + 同条件总数。"""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    minutes = max(1, min(int(minutes or 60), 1440 * 30))
+    limit = max(1, min(int(limit or 100), 500))
+    offset = max(0, int(offset or 0))
+    since = datetime.utcnow() - timedelta(minutes=minutes)
+    params: Dict[str, Any] = {
+        "since": since,
+        "model": model,
+        "key_id": key_id,
+        "status": status,
+        "lim": limit,
+        "off": offset,
+    }
+    try:
+        async with async_session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT id, created_at, key_id, model, upstream, capability, "
+                            "prompt_tokens, completion_tokens, cost_usd, latency_ms, "
+                            "status, error_code, request_id FROM spend_logs "
+                            "WHERE created_at >= :since "
+                            "AND (:model IS NULL OR model = :model) "
+                            "AND (:key_id IS NULL OR key_id = :key_id) "
+                            "AND (:status IS NULL OR status = :status) "
+                            "ORDER BY id DESC LIMIT :lim OFFSET :off"
+                        ),
+                        params,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            total_row = (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) AS n FROM spend_logs "
+                        "WHERE created_at >= :since "
+                        "AND (:model IS NULL OR model = :model) "
+                        "AND (:key_id IS NULL OR key_id = :key_id) "
+                        "AND (:status IS NULL OR status = :status)"
+                    ),
+                    {k: params[k] for k in ("since", "model", "key_id", "status")},
+                )
+            ).first()
+        logs = []
+        for r in rows:
+            rec = dict(r)
+            rec["cost_usd"] = round(float(rec.get("cost_usd") or 0), 6)
+            rec["tokens"] = (
+                int(rec.get("prompt_tokens") or 0) + int(rec.get("completion_tokens") or 0)
+            )
+            logs.append(rec)
+        return {
+            "ok": True,
+            "minutes": minutes,
+            "total": int(total_row.n if total_row else 0),
+            "limit": limit,
+            "offset": offset,
+            "logs": logs,
+        }
+    except Exception as exc:
+        logger.warning(f"[p1] logs_query failed: {exc}")
+        return {
+            "ok": False, "minutes": minutes, "total": 0,
+            "limit": limit, "offset": offset, "logs": [],
+        }
+
+
+_TIMELINE_GROUP_COLS = {
+    "model": "model",
+    "key": "key_id",
+    "upstream": "upstream",
+    "capability": "capability",
+    "total": None,
+}
+
+
+def _ts_to_epoch(value: Any) -> float:
+    """created_at 兼容解析: PG 返回 datetime, sqlite 可能返回 ISO 字符串"""
+    from datetime import datetime, timezone
+
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc).timestamp()
+        return value.timestamp()
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc).timestamp()
+        return parsed.timestamp()
+    except Exception:
+        return 0.0
+
+
+async def usage_timeline(
+    minutes: int = 1440,
+    step_minutes: int = 30,
+    group_by: str = "model",
+) -> Dict[str, Any]:
+    """用量时序聚合（BL-A2）: 窗口内 spend_logs 按 step 分桶, Python 侧聚合
+    （portable——sqlite 无 date_bin; 原始行上限 50000 防大窗拖垮）。"""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    minutes = max(5, min(int(minutes or 1440), 1440 * 7))
+    step_minutes = max(1, min(int(step_minutes or 30), 1440))
+    col = _TIMELINE_GROUP_COLS.get(group_by)
+    if col is None and group_by != "total":
+        raise ValueError(f"invalid group_by '{group_by}'")
+    since = datetime.utcnow() - timedelta(minutes=minutes)
+    raw_cap = 50000
+    try:
+        async with async_session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT created_at, model, key_id, upstream, capability, "
+                            "prompt_tokens, completion_tokens, cost_usd FROM spend_logs "
+                            "WHERE created_at >= :since ORDER BY id LIMIT :cap"
+                        ),
+                        {"since": since, "cap": raw_cap + 1},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+    except Exception as exc:
+        logger.warning(f"[p1] usage_timeline failed: {exc}")
+        return {
+            "ok": False,
+            "minutes": minutes,
+            "step_minutes": step_minutes,
+            "group_by": group_by,
+            "series": {},
+            "totals": {"calls": 0, "tokens": 0, "cost_usd": 0.0},
+        }
+    truncated = len(rows) > raw_cap
+    if truncated:
+        rows = rows[:raw_cap]
+    start_epoch = since.replace(tzinfo=None).timestamp()
+    step_sec = step_minutes * 60
+    buckets: Dict[str, Dict[int, Dict[str, float]]] = {}
+
+    def _bucket_key(rec: Dict[str, Any]) -> str:
+        if group_by == "total":
+            return "total"
+        val = rec.get(col)
+        return str(val) if val is not None else "unknown"
+
+    totals = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
+    for rec in rows:
+        epoch = _ts_to_epoch(rec.get("created_at"))
+        if epoch <= 0:
+            continue
+        idx = int((epoch - start_epoch) // step_sec)
+        if idx < 0:
+            continue
+        gk = _bucket_key(rec)
+        series_g = buckets.setdefault(gk, {})
+        b = series_g.setdefault(idx, {"calls": 0, "tokens": 0, "cost_usd": 0.0})
+        b["calls"] += 1
+        b["tokens"] += int(rec.get("prompt_tokens") or 0) + int(rec.get("completion_tokens") or 0)
+        b["cost_usd"] += float(rec.get("cost_usd") or 0)
+        totals["calls"] += 1
+        totals["tokens"] += (
+            int(rec.get("prompt_tokens") or 0) + int(rec.get("completion_tokens") or 0)
+        )
+        totals["cost_usd"] += float(rec.get("cost_usd") or 0)
+
+    series_out: Dict[str, List[Dict[str, Any]]] = {}
+    for gk, series_g in buckets.items():
+        series_out[gk] = [
+            {
+                "t": int(start_epoch + idx * step_sec),
+                "calls": int(v["calls"]),
+                "tokens": int(v["tokens"]),
+                "cost_usd": round(v["cost_usd"], 6),
+            }
+            for idx, v in sorted(series_g.items())
+        ]
+    totals["cost_usd"] = round(totals["cost_usd"], 6)
+    return {
+        "ok": True,
+        "minutes": minutes,
+        "step_minutes": step_minutes,
+        "group_by": group_by,
+        "series": series_out,
+        "totals": totals,
+        "truncated": truncated,
+    }
+
+
+async def total_cost_usd() -> float:
+    """全量成本合计（BL-A3: /v1/models/summary cost_usd 真实化）; DB 不可达 → 0.0"""
+    from sqlalchemy import text
+
+    from app.db import async_session
+
+    try:
+        async with async_session() as session:
+            row = (
+                await session.execute(
+                    text("SELECT COALESCE(SUM(cost_usd), 0) AS c FROM spend_logs")
+                )
+            ).first()
+        return round(float(row.c if row else 0), 6)
+    except Exception as exc:
+        logger.warning(f"[p1] total_cost_usd failed: {exc}")
+        return 0.0
 
 
 # 模块级单例
