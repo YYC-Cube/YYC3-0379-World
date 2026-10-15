@@ -362,6 +362,10 @@ async def chat_completion(req: CompletionRequest, request: Request):
 
         if not vk_manager.check_model_allowed(vk, req.model):
             metrics_manager.decrement_active_requests()
+            _record_spend_error(
+                vk, req.model, vk,
+                req.model, "gateway", (time.time() - start_time) * 1000, "vk_model_not_allowed",
+            )
             raise HTTPException(
                 status_code=403,
                 detail={
@@ -373,6 +377,10 @@ async def chat_completion(req: CompletionRequest, request: Request):
             )
         if not vk_manager.check_budget(vk, est_cost=0.0):  # 预估 0：仅查已花超限
             metrics_manager.decrement_active_requests()
+            _record_spend_error(
+                vk, req.model, vk,
+                req.model, "gateway", (time.time() - start_time) * 1000, "vk_budget_exceeded",
+            )
             raise HTTPException(
                 status_code=402,
                 detail={
@@ -384,6 +392,10 @@ async def chat_completion(req: CompletionRequest, request: Request):
             )
         if not await vk_manager.check_tpm(vk):  # TPM 滑窗限流（Redis 分钟窗口）
             metrics_manager.decrement_active_requests()
+            _record_spend_error(
+                vk, req.model, vk,
+                req.model, "gateway", (time.time() - start_time) * 1000, "vk_tpm_limited",
+            )
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -428,6 +440,9 @@ def _record_spend(vk, response: dict, model: str, upstream_name: str, latency_ms
                     "completion_tokens": ct,
                     "cost_usd": cost,
                     "latency_ms": int(latency_ms),
+                    # R5/BL-A1 可观测性: 成功路径 status=ok + 网关响应 id 作链路标识
+                    "status": "ok",
+                    "request_id": str(response.get("id") or "")[:64] or None,
                 }
             )
         )
@@ -435,6 +450,34 @@ def _record_spend(vk, response: dict, model: str, upstream_name: str, latency_ms
     except Exception as e:
         logger.warning(f"记账失败（不影响响应）: {e}")
         return 0.0
+
+
+def _record_spend_error(vk, model, upstream_name, latency_ms, error_code) -> None:
+    """R5/BL-A1 错误请求也入流水: status=error + error_code, 零 token 零成本（只记事实不估损）。
+    网关直连（vk=None）同样留痕（key_id NULL）; 入队微秒级不阻塞错误响应。"""
+    try:
+        import asyncio
+
+        from app.services.virtual_key_manager import vk_manager
+
+        asyncio.get_running_loop().create_task(
+            vk_manager.enqueue_spend(
+                {
+                    "key_id": vk.get("id") if vk else None,
+                    "model": model,
+                    "upstream": str(upstream_name or "unknown")[:100],
+                    "capability": "chat",
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "cost_usd": 0.0,
+                    "latency_ms": int(latency_ms),
+                    "status": "error",
+                    "error_code": str(error_code)[:100],
+                }
+            )
+        )
+    except Exception as e:
+        logger.warning(f"错误记账失败（不影响响应）: {e}")
 
 
 async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=None):
@@ -505,6 +548,10 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=
                             "operation": "fallback_request",
                         },
                     )
+                    _record_spend_error(
+                        vk, req.model, backend_type,
+                        (time.time() - start_time) * 1000, "upstream_fallback_exhausted",
+                    )
                     raise HTTPException(
                         status_code=error_response["status_code"], detail=error_response
                     )
@@ -516,6 +563,10 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=
                         "backend": backend_type,
                         "operation": "backend_request",
                     },
+                )
+                _record_spend_error(
+                    vk, req.model, vk,
+                    req.model, backend_type, (time.time() - start_time) * 1000, "upstream_error",
                 )
                 raise HTTPException(
                     status_code=error_response["status_code"], detail=error_response
@@ -576,6 +627,10 @@ async def _handle_sync(req, backend, backend_name, backend_type, start_time, vk=
             out_violation = await run_guardrails(out_text, stage="output")
             if out_violation is not None:
                 metrics_manager.decrement_active_requests()
+                _record_spend_error(
+                    vk, req.model, backend_type,
+                    (time.time() - start_time) * 1000, "guardrail_output_blocked",
+                )
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -753,6 +808,10 @@ async def _handle_stream(req, backend, backend_name, backend_type, start_time, v
                 yield f"data: {json.dumps(flush_chunk, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}")
+            _record_spend_error(
+                vk, req.model, vk,
+                req.model, backend_type, (time.time() - start_time) * 1000, "stream_error",
+            )
             error_chunk = {
                 "error": {
                     "message": str(e),
