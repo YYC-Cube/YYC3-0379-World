@@ -8,7 +8,7 @@
 # @author: YanYuCloudCube Team <admin@0379.email>
 # @version: v1.0.0
 # @created: 2026-08-29
-# @updated: 2026-08-29
+# @updated: 2026-10-17 健康检查加固 (L-13): compose --wait + HTTP 轮询 + fail 收口, 消重建窗口竞态
 # @status: stable
 # @tags: bash,nas,gateway,deploy,env
 # @usage: bash scripts/deploy-nas-gateway.sh   # 需在 NAS 上运行
@@ -96,13 +96,27 @@ export PATH="$(dirname "$DOCKER_BIN"):$PATH"   # 确保 docker compose 插件可
 "$DOCKER_BIN" compose up -d --build
 ok "服务已启动"
 
-# ---------- 健康检查 ----------
-log "等待服务就绪 (15s)..."
-sleep 15
-if curl -sf http://localhost:8000/docs > /dev/null 2>&1; then
-    ok "API 服务正常: http://localhost:8000/docs"
+# ---------- 健康检查 (L-13 加固, 2026-10-17) ----------
+# 原实现: 固定 sleep 15 + 单次 curl + warn 放行 → 重建窗口竞态 (R8 SMOKE_FAIL 根因家族)。
+# 现: compose --wait (healthcheck 对齐) + HTTP 轮询兜底 (最长 ~120s), 未就绪 fail 收口。
+log "等待服务就绪 (healthcheck 对齐 + HTTP 轮询, 最长 ~120s)..."
+if "$DOCKER_BIN" compose ps --wait --timeout 100 >/dev/null 2>&1; then
+    ok "compose 服务全部 healthy"
 else
-    warn "API 暂未响应，请查看日志: $DOCKER_BIN logs -f $GATEWAY_CONTAINER"
+    warn "compose --wait 未全绿 (部分服务无 healthcheck 定义), 以 HTTP 探测兜底"
+fi
+READY=0
+for _ in $(seq 1 12); do
+    if curl -sf -m 4 http://localhost:8000/healthz > /dev/null 2>&1 \
+    || curl -sf -m 4 http://localhost:8000/docs  > /dev/null 2>&1; then
+        READY=1; break
+    fi
+    sleep 5
+done
+if [ "$READY" = "1" ]; then
+    ok "API 服务正常: http://localhost:8000"
+else
+    fail "API ~120s 未就绪 — 排查: $DOCKER_BIN logs --tail 50 $GATEWAY_CONTAINER"
 fi
 "$DOCKER_BIN" ps --filter "name=$GATEWAY_CONTAINER" --format "table {{.Names}}\t{{.Status}}"
 
