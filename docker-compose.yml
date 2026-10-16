@@ -88,8 +88,10 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./core/database/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./core/config/prometheus/rules:/etc/prometheus/rules
+      # fnOS 判例 (2026-10-16 S1 审计): bind-mount 配置被宿主祖先目录 ACL 拒 (容器 nobody 用户) —
+      # 具名卷形态对齐运行态 (prometheus-conf 持有生产配置 v1.1.0: gateway 抓取 + alertmanager 分发 + 3 组告警规则;
+      # 仓库 bind 的模板引用不存在的 exporters 属潜伏观测降级, 已弃用)。首次初始化: 从既有卷/备份 seed。
+      - prometheus-conf:/etc/prometheus
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -133,6 +135,8 @@ volumes:
   redis-data:
     driver: local
   prometheus-data:
+    driver: local
+  prometheus-conf:
     driver: local
   grafana-data:
     driver: local
