@@ -1,0 +1,17 @@
+[Unit]
+Description=PM2 process manager for YYC3 (yyc3-console-nas boot resurrect)
+Documentation=https://pm2.keymetrics.io/
+After=network.target network-online.target
+
+[Service]
+Type=forking
+User=YYC3
+LimitNPROC=infinity
+LimitNOFILE=65536
+Environment=PM2_HOME=/home/YYC3/.pm2
+ExecStart=/mnt/volume2/.nvm/versions/node/v24.18.0/bin/pm2 resurrect
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+%% 依赖分层图 — eslint boundaries 六层 elements（单向）
+%% 渲染: mermaid-cli 或任意 mermaid 预览器
+graph TD
+    APP["app 入口<br/>main.tsx · App.tsx · routes.ts"] --> COMP
+    subgraph COMP["components (116, 六域页面 + ui/shadcn 禁改)"]
+        direction LR
+        MON["监控"] --- OPS["运维"] --- AI["AI 智能"]
+        FAM["AI Family"] --- DEV["开发规范"] --- ADM["系统管理"]
+    end
+    COMP --> HOOKS["hooks (27)<br/>全部有直接单测"]
+    COMP --> STORES["stores<br/>createLocalStore · radar · node"]
+    HOOKS --> LIB
+    STORES --> LIB
+    subgraph LIB["lib (网络/存储/错误/补全/契约适配)"]
+        HTTP["http.ts<br/>fetchWithTimeout"]
+        ST["yyc3-storage<br/>LS + IDB 降级契约"]
+        EH["error-handler<br/>AppError + traceId"]
+        TC["terminal-completions<br/>五维协同引擎"]
+        GA["gateway-adapter<br/>WS 帧翻译"]
+    end
+    LIB --> TYPES["types (契约层, 不引任何层)<br/>core · network-sync · ops-monitor · ai-provider · ui-shared"]
+    HOOKS -.禁止.-> COMP
+    HOOKS -.禁止.-> STORES
+    LIB -.禁止.-> HOOKS
+    LIB -.禁止.-> COMP
+    TYPES -.禁止引用任何层.-> X["✗"]
+    style X fill:#663333,color:#fff

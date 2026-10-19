@@ -1,0 +1,35 @@
+%% 部署与数据流时序图 — 浏览器 ⇄ console-server ⇄ 网关（双形态共用协议）
+sequenceDiagram
+    participant B as 浏览器 (SPA)
+    participant CS as console-server (ECS:3100 / NAS:3210)
+    participant GW as 网关 :8000 (FastAPI)
+
+    Note over B,CS: 登录 (HMAC 会话, ADR-006)
+    B->>CS: POST /console/auth/login {password}
+    CS->>CS: RateLimiter(5/5min/IP) + constantTimeEqual
+    CS-->>B: 200 Set-Cookie HttpOnly {exp,jti} + audit(login_ok)
+
+    Note over B,CS: 静态壳 (gzip, ADR-001/007)
+    B->>CS: GET /console/ (Accept: text/html)
+    CS-->>B: index.html (相对路径资产) + sw.js precache
+
+    Note over B,GW: WS 实时 (中继, ADR-005)
+    B->>CS: GET /console/ws/monitor (Upgrade)
+    CS->>CS: verifyToken(cookie) → 401 拒未认证
+    CS->>GW: WS /ws/monitor?token=GW_ADMIN_KEY (注入)
+    GW-->>CS: {event:"metrics"} 帧
+    CS-->>B: 透传帧 (RFC 6455 手写)
+    B->>B: gateway-adapter 翻译 → node_status/system_stats/qps_update
+
+    Note over B,GW: REST 代理 (gw proxy)
+    B->>CS: GET /console/gw/v1/logs (Cookie)
+    CS->>GW: GET /v1/logs (X-API-Key: GW_ADMIN_KEY 注入)
+    GW-->>CS: JSON
+    CS-->>B: JSON (穿门 200)
+
+    Note over B,CS: 登出 (jti 吊销)
+    B->>CS: POST /console/auth/logout (Cookie)
+    CS->>CS: revokeToken(jti) + audit(logout)
+    CS-->>B: 200 Set-Cookie 过期
+    B->>CS: GET /console/gw/v1/models (旧 Cookie)
+    CS-->>B: 401 (jti 已吊销)

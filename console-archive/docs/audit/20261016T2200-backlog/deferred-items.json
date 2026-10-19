@@ -1,0 +1,48 @@
+{
+  "title": "剩余缓办登记（2026-10-16 全链审计后终态）",
+  "note": "当日已清偿项见记忆与实施日志 R11; 本登记为仍开口的缓办, 均附硬理由与重启条件",
+  "items": [
+    {
+      "id": "DEF-01",
+      "item": "色值 tokens 存量迁移 (6011 处)",
+      "reason": "长期批 — 首片模式已建立 (Dashboard 159→90, e6f9fb1); 基线冻结门禁已控增量",
+      "restart": "按首片映射表分批: NetworkConfig(240) → SecurityMonitor(163) → AIAssistant(152) → DatabaseManager(149); 授权 --chart-2/3/4 映射后 Dashboard 可再清 ~29; theme-presets.ts 豁免 (主题数据源本体)",
+      "owner": "重构批"
+    },
+    {
+      "id": "DEF-02",
+      "item": "NAS @reboot 自愈真实重启终验",
+      "reason": "生产破坏性操作不做",
+      "restart": "链路三环已静态验证完整 (cron 钩子 + resurrect dump 含进程 + ops.mjs boot 实测); 下次 NAS 自然重启后跑 ops.mjs boot 看 boot.log 即终验",
+      "owner": "自然重启时"
+    },
+    {
+      "id": "DEF-03",
+      "item": "路由级角色守卫",
+      "reason": "无守护对象 — /users mock CRUD 已于 R3 归档 (重定向 /settings), admin/developer 双角色仅剩导航文案差异",
+      "restart": "若未来恢复多角色页面 (真实用户管理), 同批加 RequireRole 守卫 + 路由测试",
+      "owner": "产品决策时"
+    },
+    {
+      "id": "DEF-04",
+      "item": "deploy/ 与 routes/i18n 纳入 coverage include",
+      "reason": "会改变统计基线口径, 须专项重评四阈值",
+      "restart": "deploy/*.m.ts 有 .d.ts 后 (顺带移除 6 处 @ts-expect-error) 一并评估",
+      "owner": "可选专项"
+    },
+    {
+      "id": "DEF-05",
+      "item": "S5 已论证豁免臂 (terminal-completions 14+2 / useLocalDatabase 3 / useOperationCenter 1 / usePatrol 5 / ai-family 子页 8)",
+      "reason": "全部为可证不可构造防御臂 (恒有键/取模恒界内/随机值域不含区间/MEMBERS 恒非空), 删除即改语义",
+      "restart": "源码重构触及对应文件时顺带收敛 (如防御臂消除)",
+      "owner": "随重构批"
+    },
+    {
+      "id": "DEF-06",
+      "item": "vitest4 json-reporter + coverage 并跑偶发 exit 1",
+      "reason": "零失败痕迹的一次性退出码误报, CI 契约命令为准",
+      "restart": "升级 vitest 小版本时复测",
+      "owner": "低优先"
+    }
+  ]
+}

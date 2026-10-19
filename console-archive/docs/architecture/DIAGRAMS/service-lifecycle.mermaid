@@ -1,0 +1,24 @@
+%% 状态机图 — NAS console 服务生命周期 (R10 事件 + L-04 判例)
+stateDiagram-v2
+    [*] --> OSBoot : fnOS 开机
+    OSBoot --> CronFired : crontab @reboot<br/>(sleep 20 等就绪)
+    CronFired --> Resurrect : pm2 resurrect
+    Resurrect --> Online : dump.pm2 含进程<br/>(env 随 dump 恢复)
+    Resurrect --> Offline : dump 缺进程<br/>(须先 pm2 save)
+    Online --> Online : 手工探针/正常服务<br/>(七项验证绿)
+    Online --> Crashed : EADDRINUSE / 未捕获异常
+    Crashed --> Online : ops.mjs heal<br/>(resurrect → 失败则解析 env 全新拉起)
+    Online --> OSReboot : fnOS 重启<br/>(polkit: SSH 五路全封, 只能自然重启)
+    OSReboot --> CronFired : 下一轮 @reboot
+    Offline --> ManualStart : ops.mjs heal<br/>(解析 console.env 免 shell 拉起)
+    ManualStart --> Online
+
+    note right of Online
+        健康探针: ops.mjs status/verify
+        (七项: auth/401/login/gw/SPA/WS101/admin)
+        端口: 0.0.0.0:3210 (3100/3113 被占判例)
+    end note
+    note left of Crashed
+        R10 事件: 08:08 重启 → 守护消亡
+        → 3210 拒连 (exit 7)
+    end note
