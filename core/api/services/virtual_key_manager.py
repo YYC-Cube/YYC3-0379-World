@@ -706,8 +706,8 @@ async def logs_query(
         for r in rows:
             rec = dict(r)
             rec["cost_usd"] = round(float(rec.get("cost_usd") or 0), 6)
-            rec["tokens"] = (
-                int(rec.get("prompt_tokens") or 0) + int(rec.get("completion_tokens") or 0)
+            rec["tokens"] = int(rec.get("prompt_tokens") or 0) + int(
+                rec.get("completion_tokens") or 0
             )
             logs.append(rec)
         return {
@@ -721,8 +721,12 @@ async def logs_query(
     except Exception as exc:
         logger.warning(f"[p1] logs_query failed: {exc}")
         return {
-            "ok": False, "minutes": minutes, "total": 0,
-            "limit": limit, "offset": offset, "logs": [],
+            "ok": False,
+            "minutes": minutes,
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "logs": [],
         }
 
 
@@ -826,8 +830,8 @@ async def usage_timeline(
         b["tokens"] += int(rec.get("prompt_tokens") or 0) + int(rec.get("completion_tokens") or 0)
         b["cost_usd"] += float(rec.get("cost_usd") or 0)
         totals["calls"] += 1
-        totals["tokens"] += (
-            int(rec.get("prompt_tokens") or 0) + int(rec.get("completion_tokens") or 0)
+        totals["tokens"] += int(rec.get("prompt_tokens") or 0) + int(
+            rec.get("completion_tokens") or 0
         )
         totals["cost_usd"] += float(rec.get("cost_usd") or 0)
 
