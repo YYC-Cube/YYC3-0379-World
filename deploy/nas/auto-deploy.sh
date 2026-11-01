@@ -1,11 +1,13 @@
 #!/bin/bash
-# NAS cron 自动部署脚本（仓库分发副本——NAS 本机 crontab 调用路径待锚定，见 OPS-RECOVERY 铁律区）
-# 误删警示: 若 cron 指向 /Volume2/yyc3-33 工作树路径，删除本文件将断裂生产自动部署链（2026-09-28 处置评审定案保留）
+# NAS cron 自动部署脚本（仓库分发副本；2026-11-01 迁移现代化：工作区可经 YYC3_NAS_WS 覆盖，
+# 默认 /Volume3/docker/yyc3-0379-world。拉取通道 origin=github https——私有仓需 NAS 侧凭据，
+# 未配凭据时本脚本静默跳过，主部署通道为 Mac 部署桥 ~/yyc3-deploy/watch.sh 的 ssh push）
 set -u
-cd /Volume2/yyc3-33 || exit 1
+WS=${YYC3_NAS_WS:-/Volume3/docker/yyc3-0379-world}
+cd "$WS" || exit 1
 D=/Volume3/@apps/DockerEngine/dockerd/bin/docker
 LOCK=/tmp/yyc3_autodeploy.lock
-LOG=/Volume2/yyc3-33/auto-deploy.log
+LOG="$WS/auto-deploy.log"
 [ -f "$LOCK" ] && exit 0
 trap 'rm -f "$LOCK"' EXIT
 touch "$LOCK"
@@ -37,8 +39,8 @@ fi
 
 echo "$(date '+%F %T') new commit ${REMOTE:0:8}, deploying" >> "$LOG"
 git reset --hard origin/main >> "$LOG" 2>&1
-if $D compose --project-directory . -f deploy/nas/docker-compose.nas.yml up -d --build gateway >> "$LOG" 2>&1; then
-  # /health 就绪轮询（2026-09-26 防再发整改）：最长 60s（12×5s），消除固定 sleep 20 的启动竞态误报
+# 工程名由 compose 文件顶层 name: 锚定（2026-11-01 修正），不传 -p
+if $D compose --project-directory "$WS" -f deploy/nas/docker-compose.nas.yml up -d --build gateway >> "$LOG" 2>&1; then
   READY=0
   for _i in $(seq 1 12); do
     if curl -sf --max-time 5 http://localhost:8000/healthz >/dev/null 2>&1; then READY=1; break; fi

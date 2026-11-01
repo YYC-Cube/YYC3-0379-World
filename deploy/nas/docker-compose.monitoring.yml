@@ -6,7 +6,7 @@
 # 读取 bind mount 一律 Permission Denied（chmod -N 无效）。故全部改 named volume +
 # 部署后 seeding（脚本：deploy/nas/seed-monitoring.sh，容器内 root 复制+chmod）。
 #
-# 用法（NAS 工作树 /Volume2/yyc3-33，.env 需 GRAFANA_ADMIN_PASSWORD）：
+# 用法（NAS 工作树 /Volume3/docker/yyc3-0379-world，.env 需 GRAFANA_ADMIN_PASSWORD）：
 #   $D compose --project-directory . -f deploy/nas/docker-compose.monitoring.yml up -d
 #   bash deploy/nas/seed-monitoring.sh   # 首次部署后执行一次
 services:
@@ -61,7 +61,7 @@ services:
       # 2026-10-06 修复：原相对路径 ./loki-config.yaml 在 --project-directory 指工作树根时
       # 解析错位（源不存在 → Docker 自动建同名目录挂载 → "config is a directory" 崩溃环）；
       # NAS 专用栈锚定绝对路径（与 rebuild-gateway/seed 等脚本同惯例）
-      - /Volume2/yyc3-33/deploy/nas/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - /Volume3/docker/yyc3-0379-world/deploy/nas/loki-config.yaml:/etc/loki/loki-config.yaml:ro # 2026-11-01 随工作区迁移锚定新路径
     ports:
       # 仅绑 Tailscale IP（与 grafana 同安全模式，公网不可直连）
       - "100.65.172.88:3100:3100"
@@ -85,16 +85,25 @@ services:
       - yyc3-network
 
 volumes:
+  # 2026-11-01 显式卷名锚定在役栈（防工程名漂移重建异构卷；NAS 实勘命名）
   prometheus-conf:
+    name: yyc3-0379-world_prometheus-conf
   prometheus-data:
+    name: yyc3-0379-world_prometheus-data
   grafana-provisioning:
+    name: yyc3-0379-world_grafana-provisioning
   grafana-dashboards:
+    name: yyc3-0379-world_grafana-dashboards
   grafana-data:
+    name: yyc3-0379-world_grafana-data
   loki-data:
+    name: yyc3-0379-world_loki-data
   alertmanager-conf:
+    name: yyc3-0379-world_alertmanager-conf
   alertmanager-data:
+    name: yyc3-0379-world_alertmanager-data
 
 networks:
   yyc3-network:
     external: true
-    name: yyc3-33_yyc3-network # NAS compose 项目前缀实名（docker network ls 实勘）
+    name: yyc3-0379-world_yyc3-network # NAS compose 项目前缀实名（2026-11-01 随工程名修正实勘）
