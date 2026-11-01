@@ -16,8 +16,32 @@
 set -u
 BASE="${GATEWAY_BASE:-http://127.0.0.1:8000}"
 KEY="${API_KEY:-}"
-MODEL="${SMOKE_MODEL:-deepseek-v4-flash}"
 REQUIRE_UPSTREAM="${REQUIRE_UPSTREAM_HEADER:-1}"
+
+# ── 旗舰模型动态解析（2026-11-02：随代际自愈，杜绝 dsv4 时代硬编码复发）──
+# 优先级：SMOKE_MODEL 显式指定 > 上游池 priority=1 首个上游首个精确型号 > 旧默认
+MODEL="${SMOKE_MODEL:-}"
+if [ -z "$MODEL" ]; then
+  ENV_FILE="${SMOKE_ENV:-/Volume3/docker/yyc3-0379-world/.env}"
+  [ -f "$ENV_FILE" ] || ENV_FILE="$(dirname "$0")/../../.env"
+  if [ -f "$ENV_FILE" ] && command -v python3 >/dev/null 2>&1; then
+    UPS=$(grep "^OPENAI_COMPATIBLE_UPSTREAMS=" "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+    [ -n "$UPS" ] && MODEL=$(python3 -c '
+import json, sys
+try:
+    pool = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+for u in sorted(pool, key=lambda x: x.get("priority", 99)):
+    if (u.get("capability") or "chat") == "chat":
+        for m in u.get("models", []):
+            if "*" not in m and "?" not in m:
+                print(m)
+                sys.exit(0)
+' "$UPS" 2>/dev/null)
+  fi
+fi
+MODEL="${MODEL:-deepseek-v4-flash}"
 
 PASS=0
 FAIL=0
