@@ -1,0 +1,342 @@
+{
+ "model": "nemotron-3.5-super-vl",
+ "base": "http://100.65.172.88:8000",
+ "generated_at": "2026-11-02 04:12:43",
+ "results": [
+  {
+   "dim": "D1-off",
+   "case": "数学#1",
+   "pass": true,
+   "wall_s": 2.5,
+   "detail": "9"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#2",
+   "pass": true,
+   "wall_s": 5.8,
+   "detail": "240"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#3",
+   "pass": true,
+   "wall_s": 4.0,
+   "detail": "360"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#4",
+   "pass": true,
+   "wall_s": 5.0,
+   "detail": "240"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#5",
+   "pass": true,
+   "wall_s": 8.3,
+   "detail": "780"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#6",
+   "pass": true,
+   "wall_s": 5.5,
+   "detail": "4"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#7",
+   "pass": true,
+   "wall_s": 4.4,
+   "detail": "7"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#8",
+   "pass": true,
+   "wall_s": 4.3,
+   "detail": "1"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#9",
+   "pass": true,
+   "wall_s": 3.3,
+   "detail": "270"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#10",
+   "pass": true,
+   "wall_s": 5.9,
+   "detail": "5"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#11",
+   "pass": true,
+   "wall_s": 4.3,
+   "detail": "5/36"
+  },
+  {
+   "dim": "D1-off",
+   "case": "数学#12",
+   "pass": true,
+   "wall_s": 4.5,
+   "detail": "72"
+  },
+  {
+   "dim": "D1-on",
+   "case": "数学思考#1",
+   "pass": true,
+   "wall_s": 2.5,
+   "detail": "9"
+  },
+  {
+   "dim": "D1-on",
+   "case": "数学思考#2",
+   "pass": true,
+   "wall_s": 2.6,
+   "detail": "240"
+  },
+  {
+   "dim": "D1-on",
+   "case": "数学思考#3",
+   "pass": true,
+   "wall_s": 4.3,
+   "detail": "360"
+  },
+  {
+   "dim": "D1-on",
+   "case": "数学思考#4",
+   "pass": true,
+   "wall_s": 2.6,
+   "detail": "240"
+  },
+  {
+   "dim": "D1-on",
+   "case": "数学思考#5",
+   "pass": true,
+   "wall_s": 12.0,
+   "detail": "780"
+  },
+  {
+   "dim": "D1-on",
+   "case": "数学思考#6",
+   "pass": true,
+   "wall_s": 4.8,
+   "detail": "4"
+  },
+  {
+   "dim": "D2",
+   "case": "代码#1",
+   "pass": true,
+   "wall_s": 4.6,
+   "detail": "exec ok"
+  },
+  {
+   "dim": "D2",
+   "case": "代码#2",
+   "pass": true,
+   "wall_s": 2.3,
+   "detail": "exec ok"
+  },
+  {
+   "dim": "D2",
+   "case": "代码#3",
+   "pass": true,
+   "wall_s": 4.5,
+   "detail": "exec ok"
+  },
+  {
+   "dim": "D2",
+   "case": "代码#4",
+   "pass": true,
+   "wall_s": 3.1,
+   "detail": "exec ok"
+  },
+  {
+   "dim": "D2",
+   "case": "代码#5",
+   "pass": true,
+   "wall_s": 3.9,
+   "detail": "exec ok"
+  },
+  {
+   "dim": "D2",
+   "case": "代码#6",
+   "pass": true,
+   "wall_s": 4.8,
+   "detail": "exec ok"
+  },
+  {
+   "dim": "D3",
+   "case": "阅读#1",
+   "pass": false,
+   "wall_s": 2.0,
+   "detail": "2.5"
+  },
+  {
+   "dim": "D3",
+   "case": "阅读#2",
+   "pass": true,
+   "wall_s": 0.6,
+   "detail": "星期三"
+  },
+  {
+   "dim": "D3",
+   "case": "阅读#3",
+   "pass": true,
+   "wall_s": 0.9,
+   "detail": "老张、小周"
+  },
+  {
+   "dim": "D3",
+   "case": "阅读#4",
+   "pass": true,
+   "wall_s": 2.7,
+   "detail": "24"
+  },
+  {
+   "dim": "D4",
+   "case": "逻辑#1",
+   "pass": false,
+   "wall_s": 1.8,
+   "detail": "甲-教师,乙-工程师,丙-医生",
+   "adjudicated": "excluded-题面缺陷"
+  },
+  {
+   "dim": "D4",
+   "case": "逻辑#2",
+   "pass": false,
+   "wall_s": 19.0,
+   "detail": "小d",
+   "adjudicated": "excluded-题面缺陷"
+  },
+  {
+   "dim": "D4",
+   "case": "逻辑#3",
+   "pass": true,
+   "wall_s": 21.0,
+   "detail": "乙说“不是我”,丙说“乙在说谎”如果乙打碎了花瓶",
+   "adjudicated": "pass-after-review"
+  },
+  {
+   "dim": "D4",
+   "case": "逻辑#4",
+   "pass": true,
+   "wall_s": 4.0,
+   "detail": "红队"
+  },
+  {
+   "dim": "D4",
+   "case": "逻辑#5",
+   "pass": true,
+   "wall_s": 1.2,
+   "detail": "水"
+  },
+  {
+   "dim": "D4",
+   "case": "逻辑#6",
+   "pass": true,
+   "wall_s": 5.3,
+   "detail": "13"
+  },
+  {
+   "dim": "D5",
+   "case": "指令#1",
+   "pass": true,
+   "wall_s": 1.9,
+   "detail": "",
+   "adjudicated": "pass-after-review"
+  },
+  {
+   "dim": "D5",
+   "case": "指令#2",
+   "pass": true,
+   "wall_s": 3.1,
+   "detail": "",
+   "adjudicated": "pass-after-review"
+  },
+  {
+   "dim": "D5",
+   "case": "指令#3",
+   "pass": true,
+   "wall_s": 3.0,
+   "detail": "len=7"
+  },
+  {
+   "dim": "D5",
+   "case": "指令#4",
+   "pass": true,
+   "wall_s": 1.0,
+   "detail": "lines=4"
+  },
+  {
+   "dim": "D5",
+   "case": "指令#5",
+   "pass": true,
+   "wall_s": 1.0,
+   "detail": ""
+  },
+  {
+   "dim": "D6",
+   "case": "检索#1(600行)",
+   "pass": true,
+   "wall_s": 6.7,
+   "detail": "x7k9-q2"
+  },
+  {
+   "dim": "D6",
+   "case": "检索#2(1200行)",
+   "pass": true,
+   "wall_s": 10.8,
+   "detail": "m-88-d"
+  },
+  {
+   "dim": "D7",
+   "case": "多轮#1·轮3",
+   "pass": true,
+   "wall_s": 4.8,
+   "detail": "所以数量没有变化,还是4个",
+   "adjudicated": "pass-after-review"
+  },
+  {
+   "dim": "D7",
+   "case": "多轮#1全链",
+   "pass": false,
+   "wall_s": 16.0,
+   "detail": "4轮"
+  },
+  {
+   "dim": "D7",
+   "case": "多轮#2全链",
+   "pass": true,
+   "wall_s": 11.6,
+   "detail": "4轮"
+  },
+  {
+   "dim": "D7",
+   "case": "多轮#3全链",
+   "pass": true,
+   "wall_s": 11.1,
+   "detail": "4轮"
+  },
+  {
+   "dim": "D8",
+   "case": "视觉#1",
+   "pass": false,
+   "wall_s": 0.0,
+   "detail": "infra {'http_error': 422}"
+  },
+  {
+   "dim": "D8",
+   "case": "视觉#2",
+   "pass": false,
+   "wall_s": 0.0,
+   "detail": "infra {'http_error': 422}"
+  }
+ ]
+}
