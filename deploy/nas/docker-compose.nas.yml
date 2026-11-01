@@ -1,13 +1,16 @@
 # @file: docker-compose.nas.yml
 # @description: YYC³ NAS 网关部署模板（.env 变量化，无硬编码凭据）
-# @usage: 由 scripts/deploy-nas-gateway.sh 自动同步为 /Volume2/yyc3-33/docker-compose.yml
+# @usage: NAS 工作区 /Volume3/docker/yyc3-0379-world（2026-10-22 自 /Volume2/yyc3-33 迁入）
 # @note: 所有凭据从同目录 .env 读取；DB_HOST/REDIS_HOST 使用服务名走容器网络直连
 version: "3.8"
+# 工程名显式锚定（2026-11-01 修正：此前 NAS 侧手改把 name 粘进 version 行，
+# 被 compose 规范化为 yyc3-0379-world38 → 与在役栈 yyc3-0379-world 撞固定容器名）
+name: yyc3-0379-world
 
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: 0379-world-postgres-1
+    container_name: yyc3-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -28,7 +31,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: 0379-world-redis-1
+    container_name: yyc3-redis
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - ./redis:/data
@@ -46,7 +49,7 @@ services:
     build:
       context: .
       target: production
-    container_name: 0379-world-gateway-1
+    container_name: yyc3-gateway
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -97,7 +100,9 @@ services:
     volumes:
       - /Volume1/yyc3_hd/video_tasks:/data/video_archive
       # 上游池写通道（2026-09-27 第 3 步）：CRUD 双写宿主 .env（真源），registry 热重载零重启
-      - /Volume2/yyc3-33/.env:/run/secrets/gateway.env
+      # 2026-11-01 路径迁移修正：旧 /Volume2/yyc3-33/.env 已随工作区迁移消失（docker 自动建空目录
+      # 占位——注册中心写通道一直在写垃圾目录），锚定新工作区真源
+      - /Volume3/docker/yyc3-0379-world/.env:/run/secrets/gateway.env
       # BM25 索引持久化（2026-09-29 根治，TOP3#1）：data/ 原为容器层，rebuild 即丢
       # 索引致 hybrid 降级（三次实证）——命名卷跨重建存活，首次 reindex 后免维护
       - gateway-data:/app/data
@@ -127,7 +132,7 @@ services:
     build:
       context: .
       target: production
-    container_name: 0379-world-worker-1
+    container_name: yyc3-worker
     command: ["python", "-m", "app.worker_entry"]
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -157,7 +162,7 @@ services:
     build:
       context: .
       target: production
-    container_name: 0379-world-orchestrator-1
+    container_name: yyc3-orchestrator
     command: ["python", "-m", "app.orchestrator_entry"]
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -184,4 +189,6 @@ networks:
 
 volumes:
   # 网关运行时数据（BM25 索引）：命名卷跨 rebuild 存活（2026-09-29 TOP3#1 根治）
+  # 显式卷名锚定在役栈（防止工程名漂移时重建同名异构卷）
   gateway-data:
+    name: yyc3-0379-world_gateway-data
