@@ -383,15 +383,17 @@ def test_capability_isolation_chat_pool_not_used_for_embedding(client):
     assert r.headers.get("x-yyc3-upstream") == "embed-main"
 
 
-def test_models_list_excludes_non_chat_capabilities(client):
-    """embedding/rerank 上游的 models 不进 /v1/models（chat 专属清单）"""
+def test_models_list_includes_nonchat_exact_models(client):
+    """embedding/rerank 上游的精确型号进 /v1/models（2026-11-02 盲区修复）；
+    通配符是路由兜底语义，仍不入列"""
     registry.load_from_env()
     r = client.get("/v1/models", headers=_auth())
     assert r.status_code == 200
     ids = [m["id"] for m in r.json()]
     assert "deepseek-v4-flash" in ids  # chat 在
-    assert "qwen3-embedding-0.6b" not in ids  # embedding 不在
-    assert "qwen3-reranker-0.6b" not in ids
+    assert "qwen3-embedding-0.6b" in ids  # embedding 精确型号入列
+    assert "qwen3-reranker-0.6b" in ids  # rerank 精确型号入列
+    assert not any(i.endswith("*") or i == "" for i in ids)  # 通配/空名不入列
 
 
 # ── multipart：asr / ocr ────────────────────────────────────
