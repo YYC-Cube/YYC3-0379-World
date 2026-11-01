@@ -985,8 +985,13 @@ async def get_logs(
     from app.services.virtual_key_manager import logs_query
 
     return await logs_query(
-        minutes=minutes, model=model, key_id=key_id, status=status,
-        request_id=request_id, limit=limit, offset=offset,
+        minutes=minutes,
+        model=model,
+        key_id=key_id,
+        status=status,
+        request_id=request_id,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -1001,9 +1006,7 @@ async def get_usage_timeline(
     from app.services.virtual_key_manager import usage_timeline
 
     try:
-        return await usage_timeline(
-            minutes=minutes, step_minutes=step_minutes, group_by=group_by
-        )
+        return await usage_timeline(minutes=minutes, step_minutes=step_minutes, group_by=group_by)
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": str(e)})
 
@@ -1023,19 +1026,27 @@ async def admin_alerts(level: Optional[str] = Query(None, max_length=10)):
     for up in upstream_registry.snapshot():
         state = str(up.get("breaker_state") or up.get("status") or "")
         if state == "open":
-            alerts.append({
-                "source": "upstream", "level": "critical",
-                "title": f"上游 {up.get('name', '?')} 熔断开启",
-                "model": up.get("name"), "at": None,
-                "detail": {"breaker_state": state, "base_url": up.get("base_url")},
-            })
+            alerts.append(
+                {
+                    "source": "upstream",
+                    "level": "critical",
+                    "title": f"上游 {up.get('name', '?')} 熔断开启",
+                    "model": up.get("name"),
+                    "at": None,
+                    "detail": {"breaker_state": state, "base_url": up.get("base_url")},
+                }
+            )
         elif state == "half-open":
-            alerts.append({
-                "source": "upstream", "level": "warning",
-                "title": f"上游 {up.get('name', '?')} 半开探测中",
-                "model": up.get("name"), "at": None,
-                "detail": {"breaker_state": state},
-            })
+            alerts.append(
+                {
+                    "source": "upstream",
+                    "level": "warning",
+                    "title": f"上游 {up.get('name', '?')} 半开探测中",
+                    "model": up.get("name"),
+                    "at": None,
+                    "detail": {"breaker_state": state},
+                }
+            )
     for ev in await mrs.recent_events(since_id=0, limit=100):
         etype = str(ev.get("event_type") or "")
         lowered = etype.lower()
@@ -1044,12 +1055,16 @@ async def admin_alerts(level: Optional[str] = Query(None, max_length=10)):
             if any(k in lowered for k in ("failover", "drain", "timeout", "error", "deregister"))
             else "info"
         )
-        alerts.append({
-            "source": "registry", "level": ev_level,
-            "title": f"{ev.get('model_id', '?')}: {etype}",
-            "model": ev.get("model_id"), "at": str(ev.get("created_at") or ""),
-            "detail": ev.get("payload") or {},
-        })
+        alerts.append(
+            {
+                "source": "registry",
+                "level": ev_level,
+                "title": f"{ev.get('model_id', '?')}: {etype}",
+                "model": ev.get("model_id"),
+                "at": str(ev.get("created_at") or ""),
+                "detail": ev.get("payload") or {},
+            }
+        )
     if level:
         alerts = [a for a in alerts if a["level"] == level]
     order = {"critical": 0, "warning": 1, "info": 2}

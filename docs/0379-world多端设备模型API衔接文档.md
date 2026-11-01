@@ -2,8 +2,9 @@
 file: 0379-world多端设备模型API衔接文档.md
 description: 0379-World 多端设备模型 API 衔接总图——公网入口→网关→多端模型池的端点地图、设备-模型-API 三方矩阵与衔接规则
 author: YYC³ 总指挥（ZCode 生成）
-version: v1.0.0
+version: v1.1.0
 created: 2026-09-03
+updated: 2026-11-01
 status: active
 tags: [api],[model-endpoints],[integration],[multi-device]
 category: documentation
@@ -12,7 +13,7 @@ category: documentation
 # 0379-World 多端设备模型 API 衔接文档
 
 > **定位**: 站在 **API 消费者视角**，回答"每个端点在哪个设备、由什么引擎承载、什么模型、怎么衔接"——与《全链路模型部署规划》（部署视角）、《API全链路闭环文档 v1.1》（契约视角）三文档互为索引
-> **数据基准**: 2026-09-03 设备实测
+> **数据基准**: 2026-09-03 设备实测 → 09-14 增量（文末） → **最新实况见文末「11-01 衔接实况」**（super-vl TP2 代际；09-03/09-14 段保留作沿革）
 
 ---
 
@@ -104,3 +105,35 @@ curl http://100.76.167.103:25600/health
 | Agents 内网 | N2 :25600-07（VLLM_ENDPOINT=QSFP:8001）+ :25700 治理 ✅ 9 容器 |
 | RAG 存储 | N2 :8102 ChromaDB（持久化 /home/yyc3/chroma-data） |
 | GLM 第二旗舰 | 封存（容量硬约束，见部署指南 §20） |
+
+---
+
+## 11-01 衔接实况（第三代际 · super-vl TP2 时代）
+
+> **数据源**：`/Users/yanyu/models/OPS/dgx-ops/`（《01-双机实况/双机实况快照-2026-11-01.md》脚本采集 + 《05-运维日志/OPS-LOG.md》10-30~11-01 时间线 + README 态势行）
+> **代际注记**：09-03 基准与 09-14 增量中的旗舰/组件/Agent 行已被三代更替超越（deepseek-v4-flash → Qwen3.8-Flash-Next TP2 → super-vl TP2），以下为**现役口径**；上行历史段保留作沿革，引用时以本段为准。
+
+| 端点/位 | 11-01 现役口径 | 沿革注记（历史行处置） |
+|---|---|---|
+| **强推理（旗舰位）** | **super-vl TP2 双机**：N1 `svl2-head`（**TS 100.65.64.49:8888**）+ N2 `svl2-worker`；vLLM v0.32.0 + Ray TP2，模型名 **`nemotron-3.5-super-vl`**，max-num-seqs 8 / util 0.62 / mamba 全套；验收四绿（1M ctx · 文本 · 视觉 · KV 池 76.9+78.4G） | #1 行废止：dsv4 TP2（09-03~10-22，回滚线已关闭）→ Qwen3.8-Flash-Next TP2（10-30~10-31 12:51 退役清理，文档/脚本/镜像全档保留，复装≈重拉 1h+起服 1.5h）→ **super-vl TP2（10-31 14:5x 起在役）** |
+| **网关（yyc3-33 aify · pm2）** | `local_dgx` 一级 → svl2（`LOCAL_DGX_BASE=http://100.65.64.49:8888/v1`，模型名 21 处已换）；`/v1` OpenAI 兼容代理：`enable_thinking` 默认 off、`reasoning_content`→`reasoning` 归一、**max_tokens 硬顶 1024**（`x-llm-profile: long` → 4096）；apiKeys 持久化 `data/apikeys.json`；`/v1` 与 `/api/v1/llm/local_dgx/chat` 现均**免 key** | 兜底 = Ollama@77 自动发现（qwen3-coder-30b 优先；⚠ SERVICES §五 U9：77 ollama 疑空转待核）；云适配器通道停用（**自用不上云**红线，GLM4/云上游已清） |
+| **RAG 嵌入** | **N2 `yyc3-n2-embed-1b-nvfp4` :8002**（模型 `nemotron-3-embed-1b-nvfp4`；10-30 由 embed-8b 降档 + 迁 N2 再平衡） | 09-14 行「embed-n1:8100 / 1024 维」与 10-23 总账「N1 六槽 :8002 Embed」均废止；Qwen3-Embedding-8B 权重 10-31 已删（从未接线） |
+| **RAG 重排** | **按需化**：容器保留默认停（启停脚本 `OPS/定义/yyc3-n1-rerank-8b/rerank-按需.sh`；按需容器实挂 Nemotron-BF16 版） | 09-14 行「rerank-n1:8101 现役」废止；Qwen3-Reranker-8B 权重已删 |
+| **视频生成** | **Wan2.2-TI2V-5B 双机**（视频主力 · 错峰日更，实测 7.7min/镜）+ **H3-NF4 热备**（N2 共存） | 10-31~11-01 建成（OPS README 态势行 + 产能 v2 实测四跑数据） |
+| ASR / OCR / Parse / Safety | N1 **让路停用**（`docker start` 可逆；部署档案归档 `OPS/定义/` 7 目录） | 10-30 08:3x 让路令（为 TP2 腾内存，MemAvailable 7.4G→54G）；三只幽灵容器（yyc3-embedding/reranker/ocr）已删 |
+| **Agent 消费层** | **TS 仓 `YYC3-AI-FAmily-Agent` = 唯一消费主线**（E0 接线三值：`LLM_STEP_PROVIDER=local` · `LLM_STEP_BASE_URL=http://100.126.132.112:10086/v1` · `LLM_STEP_MODEL=nemotron-3.5-super-vl`） | 本文 #7/#8 行（N2 :25600-07 八家臣 + :25700 治理）**废止**：10-31 13:3x 退役归档（`OPS/定义/yyc3-family-ai-agents-runtime/`，146K tar 双留档） |
+| 公网 `api.0379.world` | NAS 网关 v2.3.0（GitOps 部署桥）chat 全绿；⚠ **embeddings/rerank 公网口径待核**：上游池原指 N1:8002/:8003，现 embed 已迁 N2:8002、rerank 默认停——网关上游 env 需对齐后重验（RAG golden 对比的前置项） | 09-14 行「embeddings/rerank ✅」基于旧上游，引用前先核 |
+| 资源水位（11-01 快照） | N1：GPU 池 72.4G/121.7G · MA 34.4G · 模型 31 项/373G · NVMe 余 2.3T；N2：GPU 池 73.9G · MA 37.4G · 41 项/538G · 余 2.5T | 双机 uptime 1d8h（10-30 晚固件双机升级后首巡检周期） |
+
+**调用速查增量（11-01）**：
+
+```bash
+# E0 消费端（TS 仓 family server · 网关 /v1 免 key · OpenAI 兼容）
+curl http://100.126.132.112:10086/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"nemotron-3.5-super-vl","messages":[{"role":"user","content":"ping"}],"max_tokens":64}'
+# svl2 直连（内网联调；消费端显式关思考或走网关默认 off——三条生产纪律见 Qwen3.8 生产闭环报告 §一）
+curl http://100.65.64.49:8888/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"nemotron-3.5-super-vl","messages":[{"role":"user","content":"ping"}],"max_tokens":64,"chat_template_kwargs":{"enable_thinking":false}}'
+# RAG 嵌入现役端点（N2 · 10-30 降档迁移后；若容器为 127.0.0.1 绑定则经 ssh 隧道或网关代理）
+curl http://100.76.167.103:8002/v1/embeddings -d '{"model":"nemotron-3-embed-1b-nvfp4","input":"文本"}'
+```

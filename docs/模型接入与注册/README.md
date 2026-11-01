@@ -2,9 +2,9 @@
 file: README.md
 description: 模型接入与注册文档体系索引 - 现状基线与目标架构分层总览
 author: YanYuCloudCube Team <admin@0379.email>
-version: v1.4.0
+version: v1.4.1
 created: 2026-09-27
-updated: 2026-10-05
+updated: 2026-11-01
 status: active
 tags: [index],[model-registry],[onboarding]
 category: spec
@@ -84,6 +84,7 @@ category: spec
 - [A2A开放API契约.md](../架构与部署/A2A开放API契约.md)（Agent 注册生产契约）
 - [API全链路闭环文档.md](../架构与部署/API全链路闭环文档.md)
 - [CI-CD部署配置指南.md](../架构与部署/CI-CD部署配置指南.md)
+- **OPS 双机资产台账（双账互链 · 2026-11-01）**：`/Users/yanyu/models/OPS/dgx-ops/02-资产台账/`（模型**部署/在役状态**的 OPS 侧口径：权重/容器/镜像盘点，状态变化时更新当日份）＋ 快照 `/Users/yanyu/models/OPS/dgx-ops/01-双机实况/双机实况快照-2026-11-01.md` ＋ 时间线 `05-运维日志/OPS-LOG.md`。**双账分工**：本表 = 网关 Registry「注册/路由/心跳」状态；OPS 台账 = 模型资产「部署/磁盘/在役」状态；两账以 `model_id ↔ 模型目录名` 对齐（svl2 换代已两账同步，例：`nemotron-3.5-super-vl` ↔ svl2-head/worker 容器组）
 
 ## 变更记录
 
@@ -94,3 +95,4 @@ category: spec
 | v1.2.0 | 2026-09-28 | Phase C 热切换落地：别名 alias（006 迁移 + 3 端点 + 网关解析）+ draining 排空（R-15 + 观测）；冒烟脚本状态修正；规范 03 §3 转已实施 |
 | v1.3.0 | 2026-10-05 | 审核刷新日（01 v3.1 / 02 v1.2 / 03 v1.2 / 04 v1.1 / 05 v1.4）：状态标注全面对齐代码；当日新增落地——容器日志外送（05 §2.4 双节点）、Registry-Token 心跳认证代码（待启用）、SOP-04 归档上线触发卡（§3.5）、03 §9 指标先行清单；状态表补四行 |
 | v1.4.0 | 2026-10-05 | 新增 [06-运维脚本工具箱](06-运维脚本工具箱.md)：全链脚本闭环清单 + 四新脚本（health-full/canary-manage/dsv4-recover/load-prom-rule）实测记录 + 十条运维教训沉淀；README 清单表 +1 |
+| v1.4.1 | 2026-11-01 | **双账互链**：上游参考增 OPS 双机资产台账（`models/OPS/dgx-ops/02-资产台账/` 目录级 + 11-01 快照 + OPS-LOG），明确双账分工（Registry=注册/路由/心跳 · OPS=部署/磁盘/在役）；OPS 侧回挂建议行随 0379-World 推进总账 11-01 增记知会 |
