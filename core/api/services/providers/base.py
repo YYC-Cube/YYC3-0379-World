@@ -76,6 +76,13 @@ def _default_transform_request(
         body["top_p"] = top_p
     if stream:
         body["stream"] = True
+    # 上游池 chat 默认关思考（2026-11-01）：思考型上游会把短 max_tokens 预算全耗在
+    # reasoning_tokens（content=null·finish=length，svl2 实测 16/16）；云适配器路径不
+    # 经此函数不受影响。env UPSTREAM_THINKING_OFF=false 可整体关闭注入
+    from app.config import settings
+
+    if settings.upstream_thinking_off:
+        body.setdefault("chat_template_kwargs", {"enable_thinking": False})
     return body
 
 

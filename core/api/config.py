@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     openai_compatible_upstreams: str = "[]"
     # 灰度开关：False 时 chat 路由完全走旧逻辑（云前缀+Ollama 兜底）
     router_enabled: bool = True
+    # 上游 chat 默认关思考（2026-11-01，aify 先例 + Qwen3.8 生产纪律「消费端关思考或走网关」）：
+    # 思考型上游（svl2 等）会把短预算全耗在 reasoning_tokens 上（content=null·finish=length）；
+    # True 时对上游池 chat 注入 chat_template_kwargs.enable_thinking=false，UPSTREAM_THINKING_OFF=false 可关
+    upstream_thinking_off: bool = True
 
     # ── 上游池主动验活（P0-2：学 one-api 渠道自愈）──
     probe_enabled: bool = True
