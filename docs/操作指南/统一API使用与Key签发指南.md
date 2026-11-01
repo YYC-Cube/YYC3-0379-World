@@ -53,8 +53,8 @@ Key 分两类，权限不同：
 
 | 模型 | 能力 | 上游 | 实测 |
 |---|---|---|---|
-| `nemotron-3.5-super-vl` | chat 深推理/视觉/1M ctx | svl2 TP2（DGX 双机） | ✅ 秒级·content 实答（网关已默认关思考） |
-| `bge-m3`（未列于 /v1/models，直调可用） | embeddings 1024 维 | 77 Ollama | ✅ dim=1024 |
+| `nemotron-3.5-super-vl` | chat 深推理/视觉/1M ctx | svl2 TP2（DGX 双机） | ✅ 秒级·content 实答（默认关思考）；**视觉可用**（content-parts 传 PNG，11-02 实测红圆计数正确） |
+| `bge-m3`（已入 /v1/models，11-02 修复） | embeddings 1024 维 | 77 Ollama | ✅ dim=1024 |
 
 ### ❌ 已知死链（勿引用，待恢复）
 
