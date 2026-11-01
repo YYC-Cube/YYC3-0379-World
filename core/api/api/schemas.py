@@ -20,22 +20,40 @@
 @tags: schemas,python,api,public
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
 
 class Message(BaseModel):
-    """消息模型"""
+    """消息模型（content 兼容 OpenAI content-parts：str 或 [{type,text|image_url}] 列表）"""
 
     role: Literal["system", "user", "assistant"] = Field(..., description="消息角色")
-    content: str = Field(..., min_length=1, max_length=100000, description="消息内容")
+    content: Union[str, List[Dict[str, Any]]] = Field(..., description="消息内容（文本或 parts）")
 
     @validator("content")
     def validate_content(cls, v):
-        if not v or not v.strip():
-            raise ValueError("消息内容不能为空")
-        return v.strip()
+        if isinstance(v, str):
+            if not v or not v.strip():
+                raise ValueError("消息内容不能为空")
+            return v.strip()
+        if isinstance(v, list) and v:
+            # content-parts 白名单：text / image_url（视觉多模态，2026-11-02）
+            for p in v:
+                if not isinstance(p, dict) or p.get("type") not in ("text", "image_url"):
+                    raise ValueError("content parts 仅支持 type=text|image_url")
+            return v
+        raise ValueError("消息内容不能为空")
+
+    def text_content(self) -> str:
+        """提取纯文本（str 原样；parts 取全部 text 段拼接——守卫rails/日志/缓存键用）"""
+        if isinstance(self.content, str):
+            return self.content
+        return "\n".join(
+            p.get("text", "")
+            for p in self.content
+            if isinstance(p, dict) and p.get("type") == "text"
+        )
 
 
 class CompletionRequest(BaseModel):

@@ -601,6 +601,24 @@ async def list_models():
     from app.services.upstream_registry import registry as upstream_registry
 
     for u in upstream_registry.upstreams.values():
+        # 非 chat 上游（embedding/rerank）仅列精确型号——通配符是路由兜底语义，
+        # 不是可调用型号；消除 /v1/models 的 embed 盲区（2026-11-02 评测产出）
+        if u.capability in ("embedding", "rerank"):
+            for m in u.models:
+                if "*" in m or "?" in m:
+                    continue
+                models.append(
+                    ModelConfig(
+                        id=m,
+                        display_name=f"{m} @ {u.name} ({u.capability})",
+                        backend="upstream",
+                        enabled=True,
+                        max_tokens=8192,
+                        temperature=0.0,
+                        cost_per_1k_tokens=0.0,
+                    )
+                )
+            continue
         if u.capability != "chat":
             continue
         for m in u.models:

@@ -288,7 +288,9 @@ async def chat_completion(req: CompletionRequest, request: Request):
         from app.services.guardrails import run_guardrails
 
         user_text = "\n".join(
-            m.content for m in req.messages if getattr(m, "role", "") == "user" and m.content
+            m.text_content()
+            for m in req.messages
+            if getattr(m, "role", "") == "user" and m.text_content()
         )
         violation = await run_guardrails(user_text, stage="input")
         if violation is not None:
