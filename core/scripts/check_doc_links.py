@@ -23,6 +23,7 @@ EXCLUDE_PREFIXES = (
     "docs/archive/",
     "docs/templates/",
     "docs/YYC3-多端部署-Agent代码/",
+    "console-archive/",  # Token Console 历史归档（47ae0a6 并入）：同政策豁免，不随档文件不改写
 )
 EXCLUDE_PARTS = {"node_modules", ".venv", "htmlcov", "test-results", ".git"}
 
