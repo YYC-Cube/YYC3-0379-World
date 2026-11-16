@@ -13,7 +13,7 @@ fastapi>=0.109.0
 uvicorn[standard]>=0.54.0
 pydantic>=2.5.3
 python-multipart>=0.0.6
-pydantic-settings>=2.1.0
+pydantic-settings>=2.15.0
 PyJWT>=2.15.1
 passlib[bcrypt]>=1.7.4
 # 2026-10-11 审计修复：crypto.py（API Key 加密）的 cryptography 依赖此前漏声明，
