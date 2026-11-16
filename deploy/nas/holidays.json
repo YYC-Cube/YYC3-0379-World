@@ -1,0 +1,17 @@
+{
+  "_comment": "YYC³ LeisureManage · 告警节假日静默表(2027 版;配 am-holiday-silence.sh 使用)。日期为按农历/惯例预估,以国务院每年 11-12 月公告为准——Owner 每年 12 月核定更新后重跑 --apply(幂等,同 name+year 静默自动覆盖)。默认 matchers 静默房间容量类 warning/info(节假日=营业高峰外值班减负),LeisureApiDown(critical 可用性)永不静默;单条可自定义 matchers 覆盖默认。",
+  "year": 2027,
+  "defaultMatchers": [
+    { "name": "alertname", "value": "LeisureRooms(High|Saturated)", "isRegex": true },
+    { "name": "severity", "value": "warning|info", "isRegex": true }
+  ],
+  "holidays": [
+    { "name": "元旦", "start": "2027-01-01", "end": "2027-01-03" },
+    { "name": "春节", "start": "2027-02-05", "end": "2027-02-12" },
+    { "name": "清明", "start": "2027-04-04", "end": "2027-04-06" },
+    { "name": "劳动节", "start": "2027-05-01", "end": "2027-05-05" },
+    { "name": "端午", "start": "2027-06-09", "end": "2027-06-11" },
+    { "name": "中秋", "start": "2027-09-15", "end": "2027-09-17" },
+    { "name": "国庆", "start": "2027-10-01", "end": "2027-10-07" }
+  ]
+}
