@@ -94,11 +94,22 @@ class RerankRequest(BaseModel):
 # ── 通用转发（降级链 + 熔断上报 + X 头） ────────────────────
 
 
-def _chain(capability: str) -> List[Upstream]:
-    """同 capability 上游按优先级排序（作为降级链）"""
-    return sorted(
-        [u for u in registry.upstreams.values() if u.capability == capability],
-        key=lambda u: (u.priority, -u.weight),
+def _chain(capability: str, model: Optional[str] = None) -> List[Upstream]:
+    """同 capability 上游的降级链。
+
+    v2.1 修正（2026-11-16）：同 capability 多上游并存时，纯 priority 排序会让
+    小序号上游独占全部流量（bge-m3 被 embed-1b 劫持 → 2048/1024 维度静默
+    污染）。修正语义：**精确型号命中者优先**（层内按 priority），其余（通配
+    命中 + capability 兜底）保持旧优先级降级链在后——未知模型仍走旧降级语义
+    （embed-main→backup 用例），精确命中不再被劫持。model 缺省保持旧行为。
+    """
+    ups = [u for u in registry.upstreams.values() if u.capability == capability]
+    if not model:
+        return sorted(ups, key=lambda u: (u.priority, -u.weight))
+    exact = [u for u in ups if model in u.models]
+    rest = [u for u in ups if u not in exact]
+    return sorted(exact, key=lambda u: (u.priority, -u.weight)) + sorted(
+        rest, key=lambda u: (u.priority, -u.weight)
     )
 
 
@@ -109,6 +120,7 @@ def _addresses(u: Upstream) -> List[str]:
 async def _forward(
     capability: str,
     *,
+    model: Optional[str] = None,
     json_body: Optional[Dict] = None,
     data: Optional[Dict] = None,
     files: Optional[Dict] = None,
@@ -125,7 +137,7 @@ async def _forward(
     """
     errors: list = []
     degraded_from: list = []
-    for u in _chain(capability):
+    for u in _chain(capability, model=model):
         if not registry.available(u):
             continue
         registry.acquire(u)
@@ -295,7 +307,7 @@ async def embeddings(req: EmbeddingRequest, request: Request):
         body = {"model": req.model, "input": req.input}
         if req.dimensions:
             body["dimensions"] = req.dimensions
-        result, u, degraded = await _forward("embedding", json_body=body)
+        result, u, degraded = await _forward("embedding", model=req.model, json_body=body)
         metrics_manager.record_model_usage(req.model, f"embedding:{u.name}")
         _vk_spend(vk, "embedding", req.model, u.name, started, result)
         return _json_or_502(result, u, degraded)
@@ -340,7 +352,7 @@ async def rerank(req: RerankRequest, request: Request):
                 "logprobs": 20,
             }
 
-        result, u, degraded = await _forward("rerank", body_for=_rerank_body)
+        result, u, degraded = await _forward("rerank", model=req.model, body_for=_rerank_body)
         if u.cap_paths.get("rerank") == "/v1/ranking":
             # NIM ranking 响应：{"rankings": [{"index", "logit"}]} → sigmoid 换算
             items = [
