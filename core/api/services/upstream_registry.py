@@ -29,9 +29,39 @@ import random
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.config import settings
+
+# ── 多 worker 热一致性（2026-11-16）────────────────────────────────────────
+# admin 管理面写「真源挂载文件」+ 命中 worker 的进程 env/registry；其他 worker 的
+# env 私有副本不变 → 路由视图分裂（11-16 embed-1b-n2 接入实证）。修复=路由入口
+# 懒重载：stat 真源文件签名（mtime+size），变化即从文件重读 pool 并 load_from_env。
+# stat 每路由请求一次（μs 级）；文件不存在（Mac/本地开发无挂载）静默 no-op。
+ENV_FILE = Path(os.environ.get("GATEWAY_ENV_FILE", "/run/secrets/gateway.env"))
+_env_sig_cache: Dict[str, object] = {"sig": None}
+
+
+def reload_if_env_changed() -> None:
+    """真源挂载文件签名变化 → 重读 OPENAI_COMPATIBLE_UPSTREAMS 行并热重建注册表。"""
+    try:
+        st = ENV_FILE.stat()
+        sig = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return
+    if sig == _env_sig_cache["sig"]:
+        return
+    _env_sig_cache["sig"] = sig
+    try:
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if line.startswith("OPENAI_COMPATIBLE_UPSTREAMS="):
+                settings.openai_compatible_upstreams = line.split("=", 1)[1]
+                registry.load_from_env()
+                break
+    except Exception as exc:  # 热重载失败不阻断路由（保持旧视图）
+        logging.getLogger(__name__).warning(f"env 热重载失败（保留旧视图）: {exc}")
+
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +214,7 @@ class UpstreamRegistry:
     def select(self, model: str, capability: str = "chat") -> Optional[Upstream]:
         """优先级分层选择：仅在最优可用层（最小 priority）内加权随机；
         该层全部熔断/不可用才落到下一层。无可用返回 None"""
+        reload_if_env_changed()
         avail = [u for u in self.candidates(model, capability) if self._breaker_available(u)]
         if not avail:
             return None
@@ -193,6 +224,7 @@ class UpstreamRegistry:
 
     def select_sovereign(self, model: str, capability: str = "chat") -> Optional[Upstream]:
         """主权路由：仅在 sovereign=True 上游内选择；无可用返回 None（调用方不得降级到云）"""
+        reload_if_env_changed()
         avail = [
             u
             for u in self.candidates(model, capability)

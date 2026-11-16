@@ -36,7 +36,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.errors.handler import error_handler
-from app.services.upstream_registry import Upstream, registry
+from app.services.upstream_registry import Upstream, registry, reload_if_env_changed
 from app.utils import metrics_manager
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,9 @@ def _chain(capability: str, model: Optional[str] = None) -> List[Upstream]:
     （embed-main→backup 用例），精确命中不再被劫持。model 缺省保持旧行为。
     """
     ups = [u for u in registry.upstreams.values() if u.capability == capability]
+    if model:
+        reload_if_env_changed()  # 多 worker 热一致性（11-16）
+        ups = [u for u in registry.upstreams.values() if u.capability == capability]
     if not model:
         return sorted(ups, key=lambda u: (u.priority, -u.weight))
     exact = [u for u in ups if model in u.models]
