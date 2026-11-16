@@ -1,0 +1,32 @@
+# YYC³ LeisureAPI 告警规则(2026-11-07;008 #6 批:轻落地二段)
+# 数据源:leisure-api /api/v1/metrics(lm_* 指标;抓取 15s)
+groups:
+  - name: leisure-api
+    rules:
+      # API 掉线:uptime 指标消失 2 分钟(抓取连续失败/进程死)
+      - alert: LeisureApiDown
+        expr: absent(lm_uptime_seconds)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'LeisureAPI 抓取失败(lm_uptime_seconds 消失)'
+          description: 'Mac 生产 API(100.87.159.21:3002)/metrics 连续 2 分钟不可抓取——进程死/KeepAlive 异常/网络断。'
+      # 开房峰值:进行中场次 ≥40 持续 5 分钟(异常峰值=爆单/系统误判)
+      - alert: LeisureRoomSessionsHigh
+        expr: lm_room_sessions_open >= 40
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '进行中场次异常峰值(≥40 持续 5 分钟)'
+          description: '当前 {{ $value }} 场 OPEN。核对房态看板与关房结算是否存在积压。'
+      # 房间饱和:OPEN 占总房间 ≥90%(容量预警)
+      - alert: LeisureRoomsSaturated
+        expr: lm_room_sessions_open >= lm_rooms_total * 0.9
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: '包厢饱和(OPEN ≥ 总数 90% 持续 10 分钟)'
+          description: '当前 {{ $value }} 场/总 {{ printf "%.0f" (query "lm_rooms_total") }}。营业高峰提示,建议增开清扫排班。'

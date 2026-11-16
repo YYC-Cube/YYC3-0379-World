@@ -24,7 +24,21 @@ ENV_PATH = Path("/run/secrets") / "gateway.env"
 
 
 def _read_pool() -> list:
-    raw = os.environ.get(ENV_VAR, "[]")
+    """v2 修正（2026-11-16）：文件优先——多 worker 场景下 os.environ 是各进程私有
+    副本（admin 写只在命中 worker 生效，GET/路由 worker 读旧 env → 视图分裂）；
+    ENV_PATH 为真源挂载（宿主 chown 1000:1000 后容器可写，root:600 会静默写失败
+    ——2026-11-16 实证），文件不存在/不可读时回退进程 env。"""
+    raw = None
+    try:
+        if ENV_PATH.is_file():
+            for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+                if line.startswith(ENV_VAR + "="):
+                    raw = line.split("=", 1)[1]
+                    break
+    except OSError:
+        raw = None
+    if raw is None:
+        raw = os.environ.get(ENV_VAR, "[]")
     try:
         pool = json.loads(raw)
         return pool if isinstance(pool, list) else []
@@ -54,7 +68,10 @@ def _write_pool(pool: list) -> None:
         tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
         tmp.replace(ENV_PATH)
     except OSError as e:
-        logger.warning(f"env 文件写入失败（仅进程内生效）: {e}")
+        logger.warning(
+            f"env 文件写入失败（仅进程内生效，重启后丢失）: {e}；"
+            f"修复=宿主 chown 1000:1000 {ENV_PATH}（容器 uid=1000，root:600 会静默写失败）"
+        )
 
 
 class UpstreamIn(BaseModel):
