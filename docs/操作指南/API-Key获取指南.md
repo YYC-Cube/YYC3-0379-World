@@ -18,6 +18,32 @@ priority: high
 > **你将得到**：一把 `vk-` 开头的虚拟密钥（含预算/限速/模型白名单/用量计量）。
 > 管理员侧签发操作见《[统一API使用与Key签发指南](统一API使用与Key签发指南.md)》§四——本文只讲"怎么拿到、怎么用、丢了怎么办"。
 
+
+## 〇、自研本地项目 · 自助获取命令（可直接复制，零凭据字面量）
+
+> 适用：本机自研/自部署项目接入统一 API——你就是管理员，自己签发。
+> 前置：本机已克隆本仓（scripts/ops_vkey.py）；NAS `.env` 的 ADMIN_API_KEYS 为权威管理钥。
+
+```bash
+# ① 取管理钥（NAS .env 权威源直读，只进环境变量不落盘不回显）
+export YYC3_ADMIN_KEY=$(ssh yyc3-45 'grep "^ADMIN_API_KEYS" /Volume3/docker/yyc3-0379-world/.env | cut -d= -f2' | cut -d, -f1)
+
+# ② 一键签发（只改 --name/--owner/--budget/--tpm/--whitelist 五个字段）
+python3 ~/YYC-Cube/personal/YYC3-0379-World/scripts/ops_vkey.py \
+  --base http://100.65.172.88:8000 \
+  issue --name my-local-project --owner "本机自研" --budget 5 --tpm 60000 \
+  --whitelist "nemotron-3.5-super-vl"
+
+# ③ 回显 vk-… 明文（仅此一次）→ 立即写入你项目的 .env / 密钥保管处
+# ④ 30 秒验证（模型按你的白名单换）
+curl -s http://100.65.172.88:8000/v1/chat/completions \
+  -H "X-API-Key: <你的vk>" -H "Content-Type: application/json" \
+  -d '{"model":"nemotron-3.5-super-vl","messages":[{"role":"user","content":"回复ok即可"}],"max_tokens":16}'
+```
+
+> 管理钥已在本机环境常备时，①可跳过；`--base` 缺省即 TS 入口，可不写。
+
+
 ## 一、三步获取（给管理员发申请即可）
 
 **第 1 步 · 提供四要素**（发给管理员/贴给签发命令）：
