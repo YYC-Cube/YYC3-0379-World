@@ -21,7 +21,7 @@ mypy>=1.5.0
 pylint>=2.17.0
 
 # 类型检查
-types-requests>=2.33.0.20260712
+types-requests>=2.33.0.20261006
 types-redis>=4.6.0.20241004
 
 # 文档生成
