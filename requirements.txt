@@ -27,7 +27,7 @@ sqlalchemy>=2.0.25
 greenlet>=3.5.6
 psycopg2-binary>=2.9.13
 redis>=8.1.0
-asyncpg>=0.31.0
+asyncpg>=0.32.0
 prometheus-fastapi-instrumentator>=8.1.0
 
 # 知识库系统依赖
