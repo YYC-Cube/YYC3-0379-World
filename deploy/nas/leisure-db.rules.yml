@@ -1,0 +1,33 @@
+# file: leisure-db.rules.yml
+# description: YYC³ LeisureManage 生产主库可达性告警(lm_db_up 指标;2026-11-17 NAS45 掉线 7h 盲区事故固化)
+# author: YYC-Cube Team
+# version: v1.0.0
+# created: 2026-11-17
+# status: seed(待 NAS 恢复后 reseed 生效;流程第十·一条=NAS 监控卷同步 seed 源)
+# note: 数据源=leisure-api /metrics lm_db_up(SELECT 1 探针,10s 缓存);API 进程活而库不可达时=0。
+#       分层告警:①本规则(NAS 活而库断)②NAS 整机掉线由 Mac 侧 watchdog(yyc3-nas45-watchdog)兜底——
+#       自监控无法告警自身掉线,双层探针互补。
+
+groups:
+  - name: leisure-db
+    interval: 30s
+    rules:
+      - alert: LeisureDbDown
+        expr: lm_db_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: leisure-prod-db
+        annotations:
+          summary: "LeisureAPI 生产主库不可达(lm_db_up=0 持续 1min)"
+          description: "API 进程存活但 SELECT 1 失败——NAS PG 容器停/网络断/主库故障。写路径已断,登录等查库路径同步失败。处置:检查 NAS PG 容器与宿主网络;必要时经 Owner 授权走 promote-22 预案。"
+
+      - alert: LeisureDbFlapping
+        expr: changes(lm_db_up[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          service: leisure-prod-db
+        annotations:
+          summary: "生产主库 15 分钟内可达性抖动 >3 次"
+          description: "链路不稳(掉线-恢复循环)。检查 NAS 网络/Tailscale relay;抖动期间写路径间歇失败,建议降级公告。"
